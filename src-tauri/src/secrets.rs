@@ -1,5 +1,6 @@
-use keyring::{Entry, Error as KeyringError};
 use std::fmt;
+
+use keyring::{Entry, Error as KeyringError};
 
 const KEYCHAIN_SERVICE: &str = "com.stashpeak.credentials";
 
