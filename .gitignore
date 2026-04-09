@@ -16,6 +16,19 @@ dist-ssr
 src-tauri/target/
 src-tauri/gen/
 
+# SQLite databases (dev data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
