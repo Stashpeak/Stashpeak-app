@@ -1,4 +1,5 @@
 import { useState, type ReactElement } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { SubscriptionsView } from "./components/SubscriptionsView";
 import { StashpeakLogo } from "./components/StashpeakLogo";
 import "./App.css";
@@ -95,23 +96,28 @@ export default function App() {
     >
       {/* Sidebar */}
       <aside className="w-52 flex flex-col border-r border-zinc-100 shrink-0">
-        {/* Logo pill — matches LP navbar pill style */}
+        {/* Logo pill — matches LP navbar pill style, links to stashpeak.com */}
         <div className="px-4 py-4 border-b border-zinc-100 flex items-center">
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "7px 14px 7px 7px",
-            borderRadius: "80px",
-            background: "rgba(43, 0, 81, 0.35)",
-            backdropFilter: "blur(10px)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 rgba(255,255,255,0.2), inset 1px 0 0 rgba(255,255,255,0.5), inset -1px 0 0 rgba(255,255,255,0.2)",
-          }}>
+          <button
+            onClick={() => openUrl("https://stashpeak.com")}
+            className="cursor-pointer"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "7px 14px 7px 7px",
+              borderRadius: "80px",
+              background: "rgba(43, 0, 81, 0.35)",
+              backdropFilter: "blur(10px)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 rgba(255,255,255,0.2), inset 1px 0 0 rgba(255,255,255,0.5), inset -1px 0 0 rgba(255,255,255,0.2)",
+              border: "none",
+            }}
+          >
             <StashpeakLogo width={28} height={27} />
             <span style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 400, fontSize: "14px", color: "white", whiteSpace: "nowrap" }}>
               Stashpeak
             </span>
-          </div>
+          </button>
         </div>
 
         {/* Nav */}
