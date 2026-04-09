@@ -1,6 +1,7 @@
 mod db;
 mod logging;
 mod secrets;
+mod subscriptions;
 
 #[tauri::command]
 fn db_path() -> String {
@@ -30,6 +31,31 @@ fn has_provider_api_key(provider: String) -> Result<bool, String> {
     secrets::has_provider_api_key(&provider).map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn list_subscriptions() -> Result<Vec<subscriptions::Subscription>, String> {
+    subscriptions::list_subscriptions().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn create_subscription(
+    input: subscriptions::SubscriptionInput,
+) -> Result<subscriptions::Subscription, String> {
+    subscriptions::create_subscription(input).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn update_subscription(
+    id: i64,
+    input: subscriptions::SubscriptionInput,
+) -> Result<subscriptions::Subscription, String> {
+    subscriptions::update_subscription(id, input).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn delete_subscription(id: i64) -> Result<(), String> {
+    subscriptions::delete_subscription(id).map_err(|err| err.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::init().expect("failed to initialize logging");
@@ -45,7 +71,11 @@ pub fn run() {
             store_provider_api_key,
             get_provider_api_key,
             delete_provider_api_key,
-            has_provider_api_key
+            has_provider_api_key,
+            list_subscriptions,
+            create_subscription,
+            update_subscription,
+            delete_subscription
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

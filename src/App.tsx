@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SubscriptionsView } from "./components/SubscriptionsView";
 import "./App.css";
 
 type Section = "dashboard" | "subscriptions" | "docker" | "spend" | "map";
@@ -83,7 +84,7 @@ export default function App() {
 
         {/* Content */}
         <div className="flex-1 overflow-auto">
-          <EmptyState section={active} />
+          {active === "subscriptions" ? <SubscriptionsView /> : <EmptyState section={active} />}
         </div>
       </main>
     </div>
