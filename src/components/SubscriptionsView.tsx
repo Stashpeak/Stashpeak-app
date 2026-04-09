@@ -76,15 +76,9 @@ function formatCurrency(amount: number, currency: string): string {
 }
 
 function formatDate(value: string | null): string {
-  if (!value) {
-    return "Not set";
-  }
-
+  if (!value) return "Not set";
   const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
+  if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
     month: "short",
@@ -110,6 +104,11 @@ function toPayload(form: FormState): SubscriptionInput {
     notes: form.notes,
   };
 }
+
+const inputClass =
+  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-[#6750a4] focus:ring-2 focus:ring-[#6750a4]/10 placeholder:text-zinc-300";
+
+const labelClass = "text-xs text-[#625b71] tracking-wide";
 
 export function SubscriptionsView() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -147,7 +146,7 @@ export function SubscriptionsView() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: { preventDefault(): void }) {
     event.preventDefault();
 
     if (form.monthlyCost.trim() === "") {
@@ -182,9 +181,7 @@ export function SubscriptionsView() {
   }
 
   async function handleDelete(id: number) {
-    if (!window.confirm("Delete this subscription?")) {
-      return;
-    }
+    if (!window.confirm("Delete this subscription?")) return;
 
     try {
       setError(null);
@@ -200,9 +197,7 @@ export function SubscriptionsView() {
   }
 
   async function handleQuickAdd() {
-    if (selectedPresets.length === 0) {
-      return;
-    }
+    if (selectedPresets.length === 0) return;
 
     try {
       setIsSaving(true);
@@ -210,9 +205,7 @@ export function SubscriptionsView() {
 
       for (const presetId of selectedPresets) {
         const preset = PRESETS.find((item) => item.id === presetId);
-        if (!preset) {
-          continue;
-        }
+        if (!preset) continue;
 
         await createSubscription({
           name: preset.name,
@@ -236,46 +229,72 @@ export function SubscriptionsView() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950">
-      <div className="border-b border-zinc-800 px-6 py-5">
+    <div
+      className="flex h-full flex-col bg-white"
+      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+    >
+      {/* Page header */}
+      <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Recurring spend</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Subscription tracker</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              Track recurring AI subscriptions, quick-add common tools, and keep monthly totals grouped by
-              currency. Annual plans are prorated in the totals below.
+            <p
+              className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60"
+            >
+              Recurring spend
+            </p>
+            <h2
+              className="mt-1.5 text-3xl text-[#6750a4]"
+              style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
+            >
+              Subscription tracker
+            </h2>
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[#625b71]">
+              Track recurring AI subscriptions, quick-add common tools, and keep monthly totals grouped by currency.
+              Annual plans are prorated in the totals below.
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 px-4 py-3 text-right">
-            <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Tracked subscriptions</p>
-            <p className="mt-2 text-3xl font-semibold text-white">{subscriptions.length}</p>
+
+          {/* Tracked count */}
+          <div className="rounded-2xl border border-zinc-100 bg-zinc-50 px-5 py-3.5 text-right shadow-sm">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">Tracked</p>
+            <p className="mt-1 text-3xl text-[#6750a4]" style={{ fontWeight: 300 }}>
+              {subscriptions.length}
+            </p>
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
+        {/* Currency totals */}
+        <div className="mt-4 flex flex-wrap gap-2.5">
           {totals.size === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-800 px-4 py-3 text-sm text-zinc-500">
-              No subscription totals yet.
+            <div className="rounded-full border border-dashed border-zinc-200 px-4 py-2 text-xs text-zinc-400">
+              No totals yet
             </div>
           ) : (
             Array.from(totals.entries()).map(([currency, total]) => (
-              <div key={currency} className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">{currency}</p>
-                <p className="mt-2 text-lg font-semibold text-white">{formatCurrency(total, currency)}/mo</p>
+              <div
+                key={currency}
+                className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm"
+              >
+                <span className="text-[10px] uppercase tracking-[0.2em] text-[#625b71]/60 mr-2">{currency}</span>
+                <span className="text-sm font-medium text-[#6750a4]">{formatCurrency(total, currency)}/mo</span>
               </div>
             ))
           )}
         </div>
       </div>
 
-      <div className="grid flex-1 gap-6 overflow-auto px-6 py-6 xl:grid-cols-[1.4fr_0.9fr]">
-        <section className="space-y-6">
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/70 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Body */}
+      <div className="grid flex-1 gap-6 overflow-auto px-8 py-6 xl:grid-cols-[1.4fr_0.9fr]">
+        {/* Left column */}
+        <section className="space-y-5">
+          {/* Quick-add presets */}
+          <div className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">Quick-add presets</h3>
-                <p className="mt-1 text-sm text-zinc-400">
+                <h3 className="text-base text-[#6750a4]" style={{ fontWeight: 400 }}>
+                  Quick-add presets
+                </h3>
+                <p className="mt-1 text-sm text-[#625b71]">
                   Add common subscriptions with one click. Presets start at zero cost so you can fill in your real
                   billing amount afterward.
                 </p>
@@ -284,23 +303,23 @@ export function SubscriptionsView() {
                 type="button"
                 onClick={() => void handleQuickAdd()}
                 disabled={selectedPresets.length === 0 || isSaving}
-                className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full border border-[#6750a4]/30 bg-[#6750a4]/8 px-4 py-2 text-sm text-[#6750a4] transition hover:bg-[#6750a4]/15 disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 500 }}
               >
                 Add selected
               </button>
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <div className="mt-5 grid gap-2.5 md:grid-cols-2">
               {PRESETS.map((preset) => {
                 const isChecked = selectedPresets.includes(preset.id);
-
                 return (
                   <label
                     key={preset.id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition ${
                       isChecked
-                        ? "border-emerald-400/50 bg-emerald-500/10"
-                        : "border-zinc-800 bg-zinc-950/70 hover:border-zinc-700"
+                        ? "border-[#6750a4]/30 bg-[#6750a4]/5"
+                        : "border-zinc-100 bg-zinc-50/50 hover:border-zinc-200"
                     }`}
                   >
                     <input
@@ -313,11 +332,11 @@ export function SubscriptionsView() {
                             : current.filter((value) => value !== preset.id),
                         );
                       }}
-                      className="mt-1 h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-emerald-400"
+                      className="h-4 w-4 rounded-full border-zinc-300 text-[#6750a4] accent-[#6750a4]"
                     />
                     <span className="min-w-0">
-                      <span className="block text-sm font-medium text-white">{preset.name}</span>
-                      <span className="mt-1 block text-xs uppercase tracking-[0.25em] text-zinc-500">
+                      <span className="block text-sm text-zinc-800">{preset.name}</span>
+                      <span className="mt-0.5 block text-[10px] uppercase tracking-[0.2em] text-[#625b71]/50">
                         {preset.provider}
                       </span>
                     </span>
@@ -327,42 +346,53 @@ export function SubscriptionsView() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/70 p-5">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Saved subscriptions</h3>
-              <p className="mt-1 text-sm text-zinc-400">Everything here is persisted in local SQLite storage.</p>
-            </div>
+          {/* Saved subscriptions */}
+          <div className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm">
+            <h3 className="text-base text-[#6750a4]" style={{ fontWeight: 400 }}>
+              Saved subscriptions
+            </h3>
+            <p className="mt-1 text-sm text-[#625b71]">Everything here is persisted in local SQLite storage.</p>
 
             {isLoading ? (
-              <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-8 text-center text-sm text-zinc-500">
-                Loading subscriptions...
+              <div className="mt-5 rounded-2xl border border-zinc-100 px-4 py-8 text-center text-sm text-[#625b71]/50">
+                Loading subscriptions…
               </div>
             ) : subscriptions.length === 0 ? (
-              <div className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/50 px-4 py-8 text-center">
-                <p className="text-base font-medium text-white">No subscriptions yet</p>
-                <p className="mt-2 text-sm text-zinc-500">Use the form or quick-add presets to create your first entry.</p>
+              <div className="mt-5 rounded-2xl border border-dashed border-zinc-200 px-4 py-10 text-center">
+                <p className="text-sm text-zinc-500">No subscriptions yet</p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  Use the form or quick-add presets to create your first entry.
+                </p>
               </div>
             ) : (
-              <div className="mt-6 space-y-3">
+              <div className="mt-5 space-y-2.5">
                 {subscriptions.map((subscription) => (
-                  <article key={subscription.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                  <article
+                    key={subscription.id}
+                    className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4 transition hover:border-zinc-200"
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-base font-semibold text-white">{subscription.name}</h4>
-                          <span className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-zinc-400">
+                          <h4 className="text-sm font-medium text-zinc-900">{subscription.name}</h4>
+                          <span className="rounded-full border border-[#6750a4]/20 px-2 py-0.5 text-[9px] uppercase tracking-[0.25em] text-[#6750a4]/70">
                             {subscription.category}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm text-zinc-400">
-                          {subscription.provider} · {formatCurrency(subscription.monthlyCost, subscription.currency)} per{" "}
-                          {subscription.billingPeriod === "yearly" ? "year" : "month"}
+                        <p className="mt-1.5 text-xs text-[#625b71]">
+                          {subscription.provider} ·{" "}
+                          <span className="text-zinc-700">
+                            {formatCurrency(subscription.monthlyCost, subscription.currency)} per{" "}
+                            {subscription.billingPeriod === "yearly" ? "year" : "month"}
+                          </span>
                         </p>
-                        <p className="mt-1 text-sm text-zinc-500">
+                        <p className="mt-0.5 text-xs text-[#625b71]/60">
                           Next billing: {formatDate(subscription.nextBillingAt)}
                         </p>
                         {subscription.notes ? (
-                          <p className="mt-3 text-sm leading-relaxed text-zinc-400">{subscription.notes}</p>
+                          <p className="mt-2.5 text-xs leading-relaxed text-[#625b71]/70 italic">
+                            {subscription.notes}
+                          </p>
                         ) : null}
                       </div>
 
@@ -374,14 +404,14 @@ export function SubscriptionsView() {
                             setForm(toFormState(subscription));
                             setError(null);
                           }}
-                          className="rounded-full border border-zinc-700 px-3 py-2 text-sm text-zinc-200 transition hover:border-zinc-500 hover:text-white"
+                          className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => void handleDelete(subscription.id)}
-                          className="rounded-full border border-rose-500/40 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-500/10"
+                          className="rounded-full border border-rose-200 px-3 py-1.5 text-xs text-rose-400 transition hover:bg-rose-50"
                         >
                           Delete
                         </button>
@@ -394,13 +424,14 @@ export function SubscriptionsView() {
           </div>
         </section>
 
-        <aside className="rounded-3xl border border-zinc-800 bg-zinc-900/70 p-5">
+        {/* Right column — form */}
+        <aside className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm self-start">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-base text-[#6750a4]" style={{ fontWeight: 400 }}>
                 {editingId === null ? "Add subscription" : "Edit subscription"}
               </h3>
-              <p className="mt-1 text-sm text-zinc-400">
+              <p className="mt-1 text-sm text-[#625b71]">
                 Store the original amount and billing cadence. Totals are grouped per currency.
               </p>
             </div>
@@ -412,109 +443,107 @@ export function SubscriptionsView() {
                   setForm(EMPTY_FORM);
                   setError(null);
                 }}
-                className="rounded-full border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                className="shrink-0 rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
               >
-                Cancel edit
+                Cancel
               </button>
             ) : null}
           </div>
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-sm text-zinc-300">Name</span>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className={labelClass}>Name</span>
                 <input
                   value={form.name}
-                  onChange={(event) => updateForm("name", event.target.value)}
+                  onChange={(e) => updateForm("name", e.target.value)}
                   placeholder="ChatGPT Plus"
-                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                  className={inputClass}
                 />
               </label>
-
-              <label className="space-y-2">
-                <span className="text-sm text-zinc-300">Provider</span>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Provider</span>
                 <input
                   value={form.provider}
-                  onChange={(event) => updateForm("provider", event.target.value)}
+                  onChange={(e) => updateForm("provider", e.target.value)}
                   placeholder="OpenAI"
-                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                  className={inputClass}
                 />
               </label>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-sm text-zinc-300">Cost</span>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className={labelClass}>Cost</span>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.monthlyCost}
-                  onChange={(event) => updateForm("monthlyCost", event.target.value)}
+                  onChange={(e) => updateForm("monthlyCost", e.target.value)}
                   placeholder="20"
-                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                  className={inputClass}
                 />
               </label>
-
-              <label className="space-y-2">
-                <span className="text-sm text-zinc-300">Currency</span>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Currency</span>
                 <input
                   value={form.currency}
-                  onChange={(event) => updateForm("currency", event.target.value.toUpperCase())}
+                  onChange={(e) => updateForm("currency", e.target.value.toUpperCase())}
                   maxLength={8}
                   placeholder="USD"
-                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                  className={inputClass}
                 />
               </label>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-sm text-zinc-300">Billing period</span>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className={labelClass}>Billing period</span>
                 <select
                   value={form.billingPeriod}
-                  onChange={(event) => updateForm("billingPeriod", event.target.value as BillingPeriod)}
-                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                  onChange={(e) => updateForm("billingPeriod", e.target.value as BillingPeriod)}
+                  className={inputClass}
                 >
                   <option value="monthly">Monthly</option>
                   <option value="yearly">Annual</option>
                 </select>
               </label>
-
-              <label className="space-y-2">
-                <span className="text-sm text-zinc-300">Next billing date</span>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Next billing date</span>
                 <input
                   type="date"
                   value={form.nextBillingAt}
-                  onChange={(event) => updateForm("nextBillingAt", event.target.value)}
-                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                  onChange={(e) => updateForm("nextBillingAt", e.target.value)}
+                  className={inputClass}
                 />
               </label>
             </div>
 
-            <label className="space-y-2">
-              <span className="text-sm text-zinc-300">Category</span>
+            <label className="space-y-1.5">
+              <span className={labelClass}>Category</span>
               <input
                 value={form.category}
-                onChange={(event) => updateForm("category", event.target.value)}
+                onChange={(e) => updateForm("category", e.target.value)}
                 placeholder="assistant"
-                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                className={inputClass}
               />
             </label>
 
-            <label className="space-y-2">
-              <span className="text-sm text-zinc-300">Notes</span>
+            <label className="space-y-1.5">
+              <span className={labelClass}>Notes</span>
               <textarea
                 value={form.notes}
-                onChange={(event) => updateForm("notes", event.target.value)}
-                rows={4}
-                placeholder="Seat count, billing quirks, or reminder notes..."
-                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                onChange={(e) => updateForm("notes", e.target.value)}
+                rows={3}
+                placeholder="Seat count, billing quirks, or reminder notes…"
+                className={inputClass}
+                style={{ resize: "none" }}
               />
             </label>
 
             {error ? (
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-500">
                 {error}
               </div>
             ) : null}
@@ -522,9 +551,10 @@ export function SubscriptionsView() {
             <button
               type="submit"
               disabled={isSaving}
-              className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-full bg-[#6750a4] px-4 py-3 text-sm text-white transition hover:bg-[#5a4490] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 500 }}
             >
-              {isSaving ? "Saving..." : editingId === null ? "Create subscription" : "Save changes"}
+              {isSaving ? "Saving…" : editingId === null ? "Create subscription" : "Save changes"}
             </button>
           </form>
         </aside>
