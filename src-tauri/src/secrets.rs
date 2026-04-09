@@ -133,6 +133,7 @@ fn store_provider_api_key_with_store(
     value: &str,
 ) -> Result<(), SecretError> {
     let provider = ProviderId::parse(provider)?;
+    crate::logging::remember_secret(value);
     store
         .set_password(KEYCHAIN_SERVICE, &provider.account_name(), value)
         .map_err(|_| SecretError::StorageUnavailable)
@@ -145,7 +146,10 @@ fn get_provider_api_key_with_store(
     let provider = ProviderId::parse(provider)?;
 
     match store.get_password(KEYCHAIN_SERVICE, &provider.account_name()) {
-        Ok(value) => Ok(Some(value)),
+        Ok(value) => {
+            crate::logging::remember_secret(&value);
+            Ok(Some(value))
+        }
         Err(CredentialStoreError::MissingEntry) => Ok(None),
         Err(CredentialStoreError::Backend) => Err(SecretError::StorageUnavailable),
     }

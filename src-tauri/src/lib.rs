@@ -1,4 +1,5 @@
 mod db;
+mod logging;
 mod secrets;
 
 #[tauri::command]
@@ -31,6 +32,8 @@ fn has_provider_api_key(provider: String) -> Result<bool, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    logging::init().expect("failed to initialize logging");
+
     // Open (and migrate) the database before the window opens.
     // Panic early if the DB is broken rather than showing a corrupt UI.
     db::open().expect("failed to open database");
