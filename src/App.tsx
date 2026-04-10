@@ -1,11 +1,13 @@
 import { useState, type ReactElement } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { DashboardView } from "./components/DashboardView";
+import { SpendView } from "./components/SpendView";
 import { SubscriptionsView } from "./components/SubscriptionsView";
 import { SettingsView } from "./components/SettingsView";
 import { StashpeakLogo } from "./components/StashpeakLogo";
 import "./App.css";
 
-type Section = "dashboard" | "subscriptions" | "docker" | "spend" | "map" | "settings";
+export type Section = "dashboard" | "subscriptions" | "docker" | "spend" | "map" | "settings";
 
 const GEAR_ICON = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -170,8 +172,12 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden bg-zinc-50/50">
         <div className="flex-1 overflow-auto">
-          {active === "subscriptions" ? (
+          {active === "dashboard" ? (
+            <DashboardView onNavigate={setActive} />
+          ) : active === "subscriptions" ? (
             <SubscriptionsView />
+          ) : active === "spend" ? (
+            <SpendView onNavigate={setActive} />
           ) : active === "settings" ? (
             <SettingsView />
           ) : (
