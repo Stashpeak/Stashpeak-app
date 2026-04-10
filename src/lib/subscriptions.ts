@@ -28,17 +28,33 @@ export interface SubscriptionInput {
 }
 
 export async function listSubscriptions(): Promise<Subscription[]> {
-  return invoke<Subscription[]>("list_subscriptions");
+  try {
+    return await invoke<Subscription[]>("list_subscriptions");
+  } catch (e) {
+    throw new Error(`Failed to load subscriptions: ${e}`);
+  }
 }
 
 export async function createSubscription(input: SubscriptionInput): Promise<Subscription> {
-  return invoke<Subscription>("create_subscription", { input });
+  try {
+    return await invoke<Subscription>("create_subscription", { input });
+  } catch (e) {
+    throw new Error(`Failed to create subscription: ${e}`);
+  }
 }
 
 export async function updateSubscription(id: number, input: SubscriptionInput): Promise<Subscription> {
-  return invoke<Subscription>("update_subscription", { id, input });
+  try {
+    return await invoke<Subscription>("update_subscription", { id, input });
+  } catch (e) {
+    throw new Error(`Failed to update subscription ${id}: ${e}`);
+  }
 }
 
 export async function deleteSubscription(id: number): Promise<void> {
-  await invoke("delete_subscription", { id });
+  try {
+    await invoke("delete_subscription", { id });
+  } catch (e) {
+    throw new Error(`Failed to delete subscription ${id}: ${e}`);
+  }
 }

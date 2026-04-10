@@ -3,17 +3,33 @@ import { invoke } from "@tauri-apps/api/core";
 export type ProviderId = "openai" | "anthropic" | "openrouter" | "groq";
 
 export async function storeProviderApiKey(provider: ProviderId, value: string): Promise<void> {
-  await invoke("store_provider_api_key", { provider, value });
+  try {
+    await invoke("store_provider_api_key", { provider, value });
+  } catch (e) {
+    throw new Error(`Failed to store API key for ${provider}: ${e}`);
+  }
 }
 
 export async function getProviderApiKey(provider: ProviderId): Promise<string | null> {
-  return invoke<string | null>("get_provider_api_key", { provider });
+  try {
+    return await invoke<string | null>("get_provider_api_key", { provider });
+  } catch (e) {
+    throw new Error(`Failed to get API key for ${provider}: ${e}`);
+  }
 }
 
 export async function deleteProviderApiKey(provider: ProviderId): Promise<void> {
-  await invoke("delete_provider_api_key", { provider });
+  try {
+    await invoke("delete_provider_api_key", { provider });
+  } catch (e) {
+    throw new Error(`Failed to delete API key for ${provider}: ${e}`);
+  }
 }
 
 export async function hasProviderApiKey(provider: ProviderId): Promise<boolean> {
-  return invoke<boolean>("has_provider_api_key", { provider });
+  try {
+    return await invoke<boolean>("has_provider_api_key", { provider });
+  } catch (e) {
+    throw new Error(`Failed to check API key for ${provider}: ${e}`);
+  }
 }

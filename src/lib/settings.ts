@@ -6,13 +6,25 @@ export interface NotificationSettings {
 }
 
 export async function getNotificationSettings(): Promise<NotificationSettings> {
-  return invoke<NotificationSettings>("get_notification_settings");
+  try {
+    return await invoke<NotificationSettings>("get_notification_settings");
+  } catch (e) {
+    throw new Error(`Failed to load notification settings: ${e}`);
+  }
 }
 
 export async function setNotificationDays(days: number): Promise<void> {
-  await invoke("set_notification_days", { days });
+  try {
+    await invoke("set_notification_days", { days });
+  } catch (e) {
+    throw new Error(`Failed to set notification days: ${e}`);
+  }
 }
 
 export async function setNotificationsEnabled(enabled: boolean): Promise<void> {
-  await invoke("set_notifications_enabled", { enabled });
+  try {
+    await invoke("set_notifications_enabled", { enabled });
+  } catch (e) {
+    throw new Error(`Failed to set notifications enabled: ${e}`);
+  }
 }
