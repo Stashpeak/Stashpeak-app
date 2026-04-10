@@ -1,3 +1,4 @@
+mod connectors;
 mod db;
 mod logging;
 mod notifications;
@@ -73,6 +74,22 @@ fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
     settings::set_notifications_enabled(enabled)
 }
 
+#[tauri::command]
+fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
+    use connectors::spend::openrouter::OpenRouterConnector;
+    use connectors::{http, SpendConnector, DEFAULT_RETRY};
+
+    let client = http::build_client();
+
+    let connector: Box<dyn SpendConnector> = match provider.as_str() {
+        "openrouter" => Box::new(OpenRouterConnector::new(client)),
+        other => return Err(format!("unknown provider '{other}'")),
+    };
+
+    tracing::debug!(provider = connector.provider_id(), "spend fetch requested");
+    connectors::with_retry(&DEFAULT_RETRY, || connector.fetch()).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::init().expect("failed to initialize logging");
@@ -101,6 +118,7 @@ pub fn run() {
             get_notification_settings,
             set_notification_days,
             set_notifications_enabled,
+            fetch_provider_spend,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
