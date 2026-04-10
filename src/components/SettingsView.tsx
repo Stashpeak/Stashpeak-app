@@ -20,19 +20,22 @@ export function SettingsView() {
   const [customInput, setCustomInput] = useState("");
   const [isCustom, setIsCustom] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getNotificationSettings().then(({ daysBefore, enabled }) => {
-      setEnabled(enabled);
-      if (PRESETS.includes(daysBefore)) {
-        setDays(daysBefore);
-        setIsCustom(false);
-      } else {
-        setDays(daysBefore);
-        setCustomInput(String(daysBefore));
-        setIsCustom(true);
-      }
-    });
+    getNotificationSettings()
+      .then(({ daysBefore, enabled }) => {
+        setEnabled(enabled);
+        if (PRESETS.includes(daysBefore)) {
+          setDays(daysBefore);
+          setIsCustom(false);
+        } else {
+          setDays(daysBefore);
+          setCustomInput(String(daysBefore));
+          setIsCustom(true);
+        }
+      })
+      .catch((e) => setLoadError(String(e)));
   }, []);
 
   async function saveDays(newDays: number) {
@@ -76,6 +79,10 @@ export function SettingsView() {
         Settings
       </h1>
       <p className="text-sm text-[#625b71] mb-8">App preferences</p>
+
+      {loadError && (
+        <p className="text-sm text-red-500 mb-4">{loadError}</p>
+      )}
 
       {loaded && (
         <section className="space-y-6">
