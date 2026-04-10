@@ -1,0 +1,45 @@
+use reqwest::blocking::Client;
+
+use crate::connectors::{ConnectorError, SpendConnector, SpendData};
+
+/// Connector for the Groq provider.
+///
+/// **Groq does not currently expose a public billing API** (as of 2026).
+/// Usage data is only available via the Groq Console dashboard at
+/// https://console.groq.com. Two community feature requests for a billing
+/// API were open as of early 2026.
+///
+/// This connector returns an informative `ApiError` so the framework and stale
+/// indicator in the UI still function correctly. Update `fetch()` when Groq
+/// ships the endpoint — the rest of the framework requires no changes.
+pub struct GroqConnector {
+    // Retained for when the API becomes available.
+    #[allow(dead_code)]
+    client: Client,
+}
+
+impl GroqConnector {
+    pub fn new(client: Client) -> Self {
+        Self { client }
+    }
+}
+
+impl SpendConnector for GroqConnector {
+    fn provider_id(&self) -> &'static str {
+        "groq"
+    }
+
+    fn fetch(&self) -> Result<SpendData, ConnectorError> {
+        tracing::info!(
+            provider = "groq",
+            "fetch called but Groq has no public billing API yet"
+        );
+        Err(ConnectorError::ApiError {
+            status: 0,
+            body: "Groq does not currently expose a public billing API. \
+                   View usage manually at https://console.groq.com. \
+                   This connector will be updated when Groq ships the endpoint."
+                .to_string(),
+        })
+    }
+}

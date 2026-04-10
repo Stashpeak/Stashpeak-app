@@ -76,13 +76,19 @@ fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
 
 #[tauri::command]
 fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
+    use connectors::spend::anthropic::AnthropicConnector;
+    use connectors::spend::groq::GroqConnector;
+    use connectors::spend::openai::OpenAiConnector;
     use connectors::spend::openrouter::OpenRouterConnector;
     use connectors::{http, SpendConnector, DEFAULT_RETRY};
 
     let client = http::build_client();
 
     let connector: Box<dyn SpendConnector> = match provider.as_str() {
+        "anthropic" => Box::new(AnthropicConnector::new(client)),
+        "openai" => Box::new(OpenAiConnector::new(client)),
         "openrouter" => Box::new(OpenRouterConnector::new(client)),
+        "groq" => Box::new(GroqConnector::new(client)),
         other => return Err(format!("unknown provider '{other}'")),
     };
 
