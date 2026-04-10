@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "Stashpeak",
+        "icon": "icons/icon.png",
         "width": 1100,
         "height": 700,
         "minWidth": 800,
