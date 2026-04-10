@@ -1,6 +1,8 @@
 mod db;
 mod logging;
+mod notifications;
 mod secrets;
+mod settings;
 mod subscriptions;
 
 #[tauri::command]
@@ -56,6 +58,21 @@ fn delete_subscription(id: i64) -> Result<(), String> {
     subscriptions::delete_subscription(id).map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn get_notification_settings() -> Result<settings::NotificationSettings, String> {
+    settings::get_notification_settings()
+}
+
+#[tauri::command]
+fn set_notification_days(days: u32) -> Result<(), String> {
+    settings::set_notification_days_before(days)
+}
+
+#[tauri::command]
+fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
+    settings::set_notifications_enabled(enabled)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::init().expect("failed to initialize logging");
@@ -66,6 +83,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            notifications::check_and_notify(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             db_path,
             store_provider_api_key,
@@ -75,7 +97,10 @@ pub fn run() {
             list_subscriptions,
             create_subscription,
             update_subscription,
-            delete_subscription
+            delete_subscription,
+            get_notification_settings,
+            set_notification_days,
+            set_notifications_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

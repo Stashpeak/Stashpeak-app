@@ -12,18 +12,24 @@ pub fn data_dir() -> PathBuf {
 }
 
 /// Opens (or creates) the SQLite database, runs all pending migrations,
-/// and returns the connection.
+/// and returns the connection. Call this only once at startup.
 pub fn open() -> rusqlite::Result<Connection> {
+    let mut conn = connect()?;
+    migrations().to_latest(&mut conn).expect("database migration failed");
+    Ok(conn)
+}
+
+/// Opens a connection to the existing database without running migrations.
+/// Use this for all runtime operations (commands, background checks).
+pub fn connect() -> rusqlite::Result<Connection> {
     let dir = data_dir();
     std::fs::create_dir_all(&dir).expect("could not create Stashpeak data directory");
 
     let path = dir.join("stashpeak.db");
-    let mut conn = Connection::open(path)?;
+    let conn = Connection::open(path)?;
 
     // WAL mode: better concurrent read performance, safer crash recovery
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-
-    migrations().to_latest(&mut conn).expect("database migration failed");
 
     Ok(conn)
 }
@@ -31,5 +37,6 @@ pub fn open() -> rusqlite::Result<Connection> {
 fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(include_str!("migrations/001_initial.sql")),
+        M::up(include_str!("migrations/002_settings.sql")),
     ])
 }

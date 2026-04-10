@@ -187,7 +187,7 @@ pub fn delete_subscription(id: i64) -> Result<(), SubscriptionError> {
 }
 
 fn open_connection() -> Result<Connection, SubscriptionError> {
-    db::open().map_err(|_| SubscriptionError::Database)
+    db::connect().map_err(|_| SubscriptionError::Database)
 }
 
 fn fetch_subscription(conn: &Connection, id: i64) -> Result<Subscription, SubscriptionError> {
