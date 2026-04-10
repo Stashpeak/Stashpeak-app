@@ -10,7 +10,7 @@ Built with Tauri 2 · React 19 · Rust · SQLite
 
 - **Subscription tracker** — track monthly costs across AI services (ChatGPT Plus, Claude Pro, Cursor, Copilot, Midjourney, etc.)
 - **API key vault** — store provider keys securely in the OS keychain (no plaintext)
-- **Spend tracking** _(coming soon)_ — live API usage & cost per provider
+- **Spend tracking** _(in progress)_ — live API usage & cost per provider; OpenRouter connector live, Anthropic/OpenAI/Groq coming
 - **Docker monitoring** _(coming soon)_ — watch locally running AI containers
 - **Visual map** _(coming soon)_ — overview of your entire AI stack
 
@@ -23,6 +23,7 @@ Built with Tauri 2 · React 19 · Rust · SQLite
 | Backend | Rust (stable-x86_64-pc-windows-msvc) |
 | Database | SQLite via rusqlite 0.32 (bundled) |
 | Secrets | OS keychain via `keyring` crate |
+| HTTP client | reqwest 0.12 + rustls (no OpenSSL) |
 | Bundler | Vite 7 |
 
 ## Getting started
