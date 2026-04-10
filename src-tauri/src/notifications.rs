@@ -10,6 +10,7 @@ struct PendingNotification {
     currency: String,
     cost: f64,
     billing_period: String,
+    days_until: i64,
 }
 
 pub fn check_and_notify(app: &AppHandle) {
@@ -40,9 +41,9 @@ pub fn check_and_notify(app: &AppHandle) {
         }
     };
 
-    // Find subscriptions whose billing date falls exactly `days` days from today.
-    // Use 'localtime' so the comparison matches dates as the user sees them on their
-    // system. Handle days=0 separately to avoid '+0 days' edge cases in SQLite.
+    // Find subscriptions renewing between today and `days` days from now (inclusive).
+    // Using <= instead of = means missed days are caught on the next app open.
+    // Use 'localtime' so comparisons match dates as the user sees them on their system.
     let date_expr = if days == 0 {
         "date('now', 'localtime')".to_string()
     } else {
@@ -51,10 +52,12 @@ pub fn check_and_notify(app: &AppHandle) {
 
     let query = format!(
         r#"
-        SELECT s.id, s.next_billing_at, s.name, s.currency, s.monthly_cost, s.billing_period
+        SELECT s.id, s.next_billing_at, s.name, s.currency, s.monthly_cost, s.billing_period,
+               CAST(julianday(date(s.next_billing_at)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_until
         FROM subscriptions s
         WHERE s.next_billing_at IS NOT NULL
-          AND date(s.next_billing_at) = {date_expr}
+          AND date(s.next_billing_at) >= date('now', 'localtime')
+          AND date(s.next_billing_at) <= {date_expr}
           AND NOT EXISTS (
               SELECT 1 FROM notification_log nl
               WHERE nl.subscription_id = s.id
@@ -79,6 +82,7 @@ pub fn check_and_notify(app: &AppHandle) {
             currency: row.get(3)?,
             cost: row.get(4)?,
             billing_period: row.get(5)?,
+            days_until: row.get(6)?,
         })
     }) {
         Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
@@ -89,7 +93,7 @@ pub fn check_and_notify(app: &AppHandle) {
     };
 
     for n in pending {
-        let when = match days {
+        let when = match n.days_until {
             0 => "today".to_string(),
             1 => "in 1 day".to_string(),
             d => format!("in {d} days"),
