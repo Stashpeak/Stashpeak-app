@@ -3,6 +3,7 @@ import { listSubscriptions, type Subscription } from "../lib/subscriptions";
 import { fetchProviderSpend, type SpendData } from "../lib/connectors";
 import { deleteProviderApiKey, hasProviderApiKey, storeProviderApiKey } from "../lib/credentials";
 import type { Section } from "../App";
+import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -140,9 +141,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
       <p className="text-sm text-[#625b71] mb-6">API usage and subscription costs</p>
 
       {loadError && (
-        <div className="mb-6 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <SelectableErrorMessage className="mb-6">
           {loadError}
-        </div>
+        </SelectableErrorMessage>
       )}
 
       {/* Headline totals */}
@@ -238,7 +239,12 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                       </div>
                     )}
                     {!comingSoon && s.tag === "stale" && (
-                      <p className="text-xs text-rose-500 mt-1 leading-relaxed max-w-sm">{staleMessage}</p>
+                      <SelectableErrorMessage
+                        kind="inline"
+                        className="mt-1 max-w-sm text-xs leading-relaxed"
+                      >
+                        {staleMessage}
+                      </SelectableErrorMessage>
                     )}
 
                     {/* Add/update key form — hidden for comingSoon providers */}
@@ -273,7 +279,11 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                             Cancel
                           </button>
                         </div>
-                        {addError && <p className="text-xs text-rose-500">{addError}</p>}
+                        {addError && (
+                          <SelectableErrorMessage kind="inline" className="text-xs">
+                            {addError}
+                          </SelectableErrorMessage>
+                        )}
                       </div>
                     )}
                   </div>

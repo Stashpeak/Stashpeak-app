@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
 import type { Section } from "../App";
+import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -74,9 +75,9 @@ export function DashboardView({ onNavigate }: { onNavigate: (s: Section) => void
       <p className="text-sm text-[#625b71] mb-6">Your AI ecosystem at a glance</p>
 
       {loadError && (
-        <div className="mb-6 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <SelectableErrorMessage className="mb-6">
           {loadError}
-        </div>
+        </SelectableErrorMessage>
       )}
 
       <div className="space-y-4">
