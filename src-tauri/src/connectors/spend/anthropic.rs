@@ -40,66 +40,101 @@ impl AnthropicConnector {
             "fetching cost report"
         );
 
-        let response = self
-            .client
-            .get(COST_REPORT_URL)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .query(&[("starting_at", starting_at), ("ending_at", ending_at)])
-            .send()
-            .map_err(|e| ConnectorError::Network(e.to_string()))?;
+        let mut total_usd: f64 = 0.0;
+        let mut next_page: Option<String> = None;
+        let mut first_nonempty_checked = false;
+        let mut page_count = 0u32;
+        const MAX_PAGES: u32 = 50;
 
-        let status = response.status();
-        match status.as_u16() {
-            401 | 403 => return Err(ConnectorError::Config(
-                "Requires an Admin API key (sk-ant-admin-…), not a regular user key. \
-                 Generate one in Anthropic Console → Settings → API Keys → Create Key → Role: Admin."
-                    .to_string(),
-            )),
-            429 => return Err(ConnectorError::RateLimited),
-            s if s >= 400 => {
-                let body = response.text().unwrap_or_default();
-                return Err(ConnectorError::ApiError { status: s, body });
+        loop {
+            if page_count >= MAX_PAGES {
+                tracing::warn!(
+                    provider = "anthropic",
+                    starting_at,
+                    ending_at,
+                    "hit page limit of {MAX_PAGES}, stopping pagination"
+                );
+                break;
             }
-            _ => {}
+            page_count += 1;
+            let mut query: Vec<(&str, &str)> =
+                vec![("starting_at", starting_at), ("ending_at", ending_at)];
+            let page_val; // keep owned string alive for the borrow
+            if let Some(ref p) = next_page {
+                page_val = p.clone();
+                query.push(("page", &page_val));
+            }
+
+            let response = self
+                .client
+                .get(COST_REPORT_URL)
+                .header("x-api-key", api_key)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .query(&query)
+                .send()
+                .map_err(|e| ConnectorError::Network(e.to_string()))?;
+
+            let status = response.status();
+            match status.as_u16() {
+                401 | 403 => {
+                    return Err(ConnectorError::Config(
+                        "Requires an Admin API key (sk-ant-admin-…), not a regular user key. \
+                         Generate one in Anthropic Console → Settings → API Keys → Create Key → Role: Admin."
+                            .to_string(),
+                    ))
+                }
+                429 => return Err(ConnectorError::RateLimited),
+                s if s >= 400 => {
+                    let body = response.text().unwrap_or_default();
+                    return Err(ConnectorError::ApiError { status: s, body });
+                }
+                _ => {}
+            }
+
+            let bytes = response
+                .bytes()
+                .map_err(|e| ConnectorError::Network(e.to_string()))?;
+
+            tracing::debug!(
+                provider = "anthropic",
+                page = next_page.as_deref().unwrap_or("first"),
+                body = %String::from_utf8_lossy(&bytes),
+                "cost report page"
+            );
+
+            let parsed: CostReportResponse =
+                serde_json::from_slice(&bytes).map_err(|e| ConnectorError::ApiError {
+                    status: status.as_u16(),
+                    body: format!("failed to parse cost report wrapper: {e}"),
+                })?;
+
+            let page_results: Vec<&serde_json::Value> =
+                parsed.data.iter().flat_map(|p| p.results.iter()).collect();
+
+            if !first_nonempty_checked {
+                if let Some(first) = page_results.first() {
+                    if extract_cost(first).is_none() {
+                        let keys: Vec<&str> = first
+                            .as_object()
+                            .map(|o| o.keys().map(String::as_str).collect())
+                            .unwrap_or_default();
+                        return Err(ConnectorError::ApiError {
+                            status: 200,
+                            body: format!("no cost field found. Result entry keys: {keys:?}"),
+                        });
+                    }
+                    first_nonempty_checked = true;
+                }
+            }
+
+            total_usd += page_results.iter().filter_map(|e| extract_cost(e)).sum::<f64>();
+
+            if parsed.has_more {
+                next_page = parsed.next_page;
+            } else {
+                break;
+            }
         }
-
-        let bytes = response
-            .bytes()
-            .map_err(|e| ConnectorError::Network(e.to_string()))?;
-
-        tracing::info!(
-            provider = "anthropic",
-            body = %String::from_utf8_lossy(&bytes),
-            "raw cost report response"
-        );
-
-        let parsed: CostReportResponse =
-            serde_json::from_slice(&bytes).map_err(|e| ConnectorError::ApiError {
-                status: status.as_u16(),
-                body: format!("failed to parse cost report wrapper: {e}"),
-            })?;
-
-        // Structure: data[].results[] where each result is a cost entry per model.
-        let all_results: Vec<&serde_json::Value> =
-            parsed.data.iter().flat_map(|p| p.results.iter()).collect();
-
-        let total_usd: f64 = if all_results.is_empty() {
-            0.0
-        } else {
-            let first = all_results[0];
-            if extract_cost(first).is_none() {
-                let keys: Vec<&str> = first
-                    .as_object()
-                    .map(|o| o.keys().map(String::as_str).collect())
-                    .unwrap_or_default();
-                return Err(ConnectorError::ApiError {
-                    status: 200,
-                    body: format!("no cost field found. Result entry keys: {keys:?}"),
-                });
-            }
-            all_results.iter().filter_map(|e| extract_cost(e)).sum()
-        };
 
         Ok(total_usd)
     }
@@ -110,6 +145,9 @@ impl AnthropicConnector {
 #[derive(Deserialize)]
 struct CostReportResponse {
     data: Vec<PeriodEntry>,
+    #[serde(default)]
+    has_more: bool,
+    next_page: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -117,7 +155,13 @@ struct PeriodEntry {
     results: Vec<serde_json::Value>,
 }
 
+/// Costs in the API response are in cents. Convert to USD by dividing by 100.
 fn extract_cost(entry: &serde_json::Value) -> Option<f64> {
+    let cents = extract_cost_cents(entry)?;
+    Some(cents / 100.0)
+}
+
+fn extract_cost_cents(entry: &serde_json::Value) -> Option<f64> {
     for field in &["cost", "total_cost", "amount", "amount_usd"] {
         if let Some(v) = entry.get(field) {
             if let Some(f) = v.as_f64() {
@@ -191,21 +235,26 @@ impl SpendConnector for AnthropicConnector {
 mod tests {
     use super::*;
 
+    // Note: extract_cost returns USD (cents / 100). Test values reflect cents input → dollar output.
+
     #[test]
     fn extracts_amount_as_string() {
-        let entry = serde_json::json!({"amount": "0.00315", "currency": "USD", "token_type": "input"});
+        // 0.315 cents → $0.00315
+        let entry = serde_json::json!({"amount": "0.315", "currency": "USD", "token_type": "input"});
         assert!((extract_cost(&entry).unwrap() - 0.00315).abs() < 1e-9);
     }
 
     #[test]
     fn extracts_cost_field() {
-        let entry = serde_json::json!({"cost": 10.5, "model": "claude-3-5-sonnet"});
+        // 1050 cents → $10.50
+        let entry = serde_json::json!({"cost": 1050.0, "model": "claude-3-5-sonnet"});
         assert!((extract_cost(&entry).unwrap() - 10.5).abs() < 0.001);
     }
 
     #[test]
     fn extracts_input_output_cost_split() {
-        let entry = serde_json::json!({"input_cost": 3.0, "output_cost": 1.5});
+        // 300 + 150 cents → $4.50
+        let entry = serde_json::json!({"input_cost": 300.0, "output_cost": 150.0});
         assert!((extract_cost(&entry).unwrap() - 4.5).abs() < 0.001);
     }
 
@@ -217,10 +266,11 @@ mod tests {
 
     #[test]
     fn sums_across_nested_results() {
+        // 1000 + 500 + 250.5 cents = 1750.5 cents → $17.505
         let json = r#"{"data": [
-            {"starting_at": "2026-04-01", "ending_at": "2026-04-11", "results": [{"cost": 10.0}, {"cost": 5.0}]},
-            {"starting_at": "2026-03-01", "ending_at": "2026-03-31", "results": [{"cost": 2.505}]}
-        ]}"#;
+            {"starting_at": "2026-04-01", "ending_at": "2026-04-11", "results": [{"cost": 1000.0}, {"cost": 500.0}]},
+            {"starting_at": "2026-03-01", "ending_at": "2026-03-31", "results": [{"cost": 250.5}]}
+        ], "has_more": false}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
         let total: f64 = parsed.data.iter().flat_map(|p| p.results.iter()).filter_map(extract_cost).sum();
         assert!((total - 17.505).abs() < 0.001, "got {total}");
