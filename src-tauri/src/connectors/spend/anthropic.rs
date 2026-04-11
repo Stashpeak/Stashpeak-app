@@ -68,7 +68,7 @@ impl AnthropicConnector {
             .bytes()
             .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
-        tracing::debug!(
+        tracing::info!(
             provider = "anthropic",
             body = %String::from_utf8_lossy(&bytes),
             "raw cost report response"
