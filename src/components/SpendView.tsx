@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
 import { fetchProviderSpend, type SpendData } from "../lib/connectors";
-import { hasProviderApiKey, storeProviderApiKey } from "../lib/credentials";
+import { deleteProviderApiKey, hasProviderApiKey, storeProviderApiKey } from "../lib/credentials";
 import type { Section } from "../App";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +35,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   const [loadError, setLoadError]             = useState<string | null>(null);
   const [providers, setProviders]             = useState<Record<ProviderId, ProviderStatus>>(EMPTY_STATES);
   const [addingKey, setAddingKey]             = useState<ProviderId | null>(null);
+  const [confirmRevoke, setConfirmRevoke]     = useState<ProviderId | null>(null);
   const [keyInput, setKeyInput]               = useState("");
   const [addError, setAddError]               = useState<string | null>(null);
   const [savingKey, setSavingKey]             = useState(false);
@@ -87,6 +88,18 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
       setAddError(String(e));
     } finally {
       setSavingKey(false);
+    }
+  }
+
+  async function handleRevokeKey(id: ProviderId) {
+    try {
+      await deleteProviderApiKey(id);
+      setStatus(id, { tag: "unconfigured" });
+      setConfirmRevoke(null);
+    } catch {
+      // silently reset - key may already be gone
+      setStatus(id, { tag: "unconfigured" });
+      setConfirmRevoke(null);
     }
   }
 
@@ -267,7 +280,10 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
                   {/* Right-side actions — hidden for comingSoon providers */}
                   {!comingSoon && (
-                    <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+                    <div
+                      className="shrink-0 flex flex-col items-end gap-1 pt-0.5"
+                      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                    >
                       {s.tag === "ok" && (
                         <>
                           <p className="text-[10px] text-[#625b71]/50">
@@ -279,19 +295,96 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                           >
                             Refresh
                           </button>
+                          {confirmRevoke === id ? (
+                            <div className="flex gap-1 items-center">
+                              <button
+                                onClick={() => handleRevokeKey(id)}
+                                className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
+                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                              >
+                                Revoke
+                              </button>
+                              <span
+                                className="text-[10px] text-[#625b71]/40"
+                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                              >
+                                /
+                              </span>
+                              <button
+                                onClick={() => setConfirmRevoke(null)}
+                                className="text-xs text-[#625b71] hover:text-[#625b71]/70 cursor-pointer transition-colors"
+                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                if (addingKey === id) cancelAddKey();
+                                setConfirmRevoke(id);
+                              }}
+                              className="text-xs text-[#625b71]/50 hover:text-rose-400 cursor-pointer transition-colors"
+                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                            >
+                              Revoke key
+                            </button>
+                          )}
                         </>
                       )}
                       {s.tag === "stale" && (
-                        <button
-                          onClick={() => runFetch(id)}
-                          className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer transition-colors"
-                        >
-                          Retry
-                        </button>
+                        <>
+                          <button
+                            onClick={() => runFetch(id)}
+                            className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer transition-colors"
+                          >
+                            Retry
+                          </button>
+                          {confirmRevoke === id ? (
+                            <div className="flex gap-1 items-center">
+                              <button
+                                onClick={() => handleRevokeKey(id)}
+                                className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
+                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                              >
+                                Revoke
+                              </button>
+                              <span
+                                className="text-[10px] text-[#625b71]/40"
+                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                              >
+                                /
+                              </span>
+                              <button
+                                onClick={() => setConfirmRevoke(null)}
+                                className="text-xs text-[#625b71] hover:text-[#625b71]/70 cursor-pointer transition-colors"
+                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                if (addingKey === id) cancelAddKey();
+                                setConfirmRevoke(id);
+                              }}
+                              className="text-xs text-[#625b71]/50 hover:text-rose-400 cursor-pointer transition-colors"
+                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                            >
+                              Revoke key
+                            </button>
+                          )}
+                        </>
                       )}
                       {(s.tag === "unconfigured" || s.tag === "stale") && !isAdding && (
                         <button
-                          onClick={() => { setAddingKey(id); setAddError(null); setKeyInput(""); }}
+                          onClick={() => {
+                            setConfirmRevoke(null);
+                            setAddingKey(id);
+                            setAddError(null);
+                            setKeyInput("");
+                          }}
                           className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
                         >
                           {s.tag === "unconfigured" ? "Add key" : "Update key"}
