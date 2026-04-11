@@ -10,6 +10,8 @@ import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } 
 import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./SubscriptionList";
 import { PRESETS, SubscriptionPresets } from "./SubscriptionPresets";
 
+const SEED_CATEGORIES = ["ai", "assistant", "audio", "coding", "image", "research", "video"];
+
 export function SubscriptionsView() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -40,6 +42,12 @@ export function SubscriptionsView() {
       acc.set(subscription.currency, current + monthlyEquivalent(subscription));
       return acc;
     }, new Map());
+  }, [subscriptions]);
+
+  const categories = useMemo(() => {
+    const fromSubs = subscriptions.map((s) => s.category.trim().toLowerCase()).filter(Boolean);
+    const fromPresets = PRESETS.map((p) => p.category);
+    return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubs])].sort();
   }, [subscriptions]);
 
   function updateForm(key: keyof FormState, value: string) {
@@ -200,6 +208,7 @@ export function SubscriptionsView() {
 
         <SubscriptionForm
           form={form}
+          categories={categories}
           editingId={editingId}
           isSaving={isSaving}
           error={error}
