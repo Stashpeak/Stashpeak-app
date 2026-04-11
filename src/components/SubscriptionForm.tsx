@@ -1,4 +1,5 @@
 import { type BillingPeriod, type Subscription, type SubscriptionInput } from "../lib/subscriptions";
+import { CategorySelector } from "./CategorySelector";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 export type FormState = {
@@ -56,6 +57,7 @@ const labelClass = "text-xs text-[#625b71] tracking-wide";
 
 interface SubscriptionFormProps {
   form: FormState;
+  categories: string[];
   editingId: number | null;
   isSaving: boolean;
   error: string | null;
@@ -66,6 +68,7 @@ interface SubscriptionFormProps {
 
 export function SubscriptionForm({
   form,
+  categories,
   editingId,
   isSaving,
   error,
@@ -171,15 +174,15 @@ export function SubscriptionForm({
           </label>
         </div>
 
-        <label className="space-y-1.5">
+        <div className="space-y-1.5">
           <span className={labelClass}>Category</span>
-          <input
+          <CategorySelector
             value={form.category}
-            onChange={(e) => onChange("category", e.target.value)}
+            categories={categories}
+            onChange={(value) => onChange("category", value)}
             placeholder="assistant"
-            className={inputClass}
           />
-        </label>
+        </div>
 
         <label className="space-y-1.5">
           <span className={labelClass}>Notes</span>
