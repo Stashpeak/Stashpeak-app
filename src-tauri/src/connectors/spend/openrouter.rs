@@ -52,7 +52,7 @@ impl SpendConnector for OpenRouterConnector {
         let response = self
             .client
             .get("https://openrouter.ai/api/v1/auth/key")
-            .header("Authorization", format!("Bearer {api_key}"))
+            .header("Authorization", format!("Bearer {}", &*api_key))
             .send()
             .map_err(|e| ConnectorError::Network(e.to_string()))?;
 

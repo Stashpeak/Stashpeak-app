@@ -1,40 +1,16 @@
 use std::fmt;
 
 use keyring::{Entry, Error as KeyringError};
+use zeroize::Zeroizing;
+
+use crate::providers::ProviderId;
 
 const KEYCHAIN_SERVICE: &str = "com.stashpeak.credentials";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ProviderId {
-    OpenAi,
-    Anthropic,
-    OpenRouter,
-    Groq,
-}
-
-impl ProviderId {
-    fn parse(value: &str) -> Result<Self, SecretError> {
-        match value {
-            "openai" => Ok(Self::OpenAi),
-            "anthropic" => Ok(Self::Anthropic),
-            "openrouter" => Ok(Self::OpenRouter),
-            "groq" => Ok(Self::Groq),
-            other => Err(SecretError::InvalidProvider(other.to_string())),
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::OpenAi => "openai",
-            Self::Anthropic => "anthropic",
-            Self::OpenRouter => "openrouter",
-            Self::Groq => "groq",
-        }
-    }
-
-    fn account_name(self) -> String {
-        format!("provider:{}", self.as_str())
-    }
+/// Keychain account name for a provider — this format is a storage
+/// implementation detail and lives here, not in providers.rs.
+fn account_name(id: ProviderId) -> String {
+    format!("provider:{}", id.as_str())
 }
 
 #[derive(Debug)]
@@ -115,7 +91,7 @@ pub fn store_provider_api_key(provider: &str, value: &str) -> Result<(), SecretE
     store_provider_api_key_with_store(&KeyringStore, provider, value)
 }
 
-pub fn get_provider_api_key(provider: &str) -> Result<Option<String>, SecretError> {
+pub fn get_provider_api_key(provider: &str) -> Result<Option<Zeroizing<String>>, SecretError> {
     get_provider_api_key_with_store(&KeyringStore, provider)
 }
 
@@ -132,23 +108,23 @@ fn store_provider_api_key_with_store(
     provider: &str,
     value: &str,
 ) -> Result<(), SecretError> {
-    let provider = ProviderId::parse(provider)?;
+    let provider = ProviderId::parse(provider).map_err(SecretError::InvalidProvider)?;
     crate::logging::remember_secret(value);
     store
-        .set_password(KEYCHAIN_SERVICE, &provider.account_name(), value)
+        .set_password(KEYCHAIN_SERVICE, &account_name(provider), value)
         .map_err(|_| SecretError::StorageUnavailable)
 }
 
 fn get_provider_api_key_with_store(
     store: &dyn CredentialStore,
     provider: &str,
-) -> Result<Option<String>, SecretError> {
-    let provider = ProviderId::parse(provider)?;
+) -> Result<Option<Zeroizing<String>>, SecretError> {
+    let provider = ProviderId::parse(provider).map_err(SecretError::InvalidProvider)?;
 
-    match store.get_password(KEYCHAIN_SERVICE, &provider.account_name()) {
+    match store.get_password(KEYCHAIN_SERVICE, &account_name(provider)) {
         Ok(value) => {
             crate::logging::remember_secret(&value);
-            Ok(Some(value))
+            Ok(Some(Zeroizing::new(value)))
         }
         Err(CredentialStoreError::MissingEntry) => Ok(None),
         Err(CredentialStoreError::Backend) => Err(SecretError::StorageUnavailable),
@@ -159,9 +135,9 @@ fn delete_provider_api_key_with_store(
     store: &dyn CredentialStore,
     provider: &str,
 ) -> Result<(), SecretError> {
-    let provider = ProviderId::parse(provider)?;
+    let provider = ProviderId::parse(provider).map_err(SecretError::InvalidProvider)?;
 
-    match store.delete_credential(KEYCHAIN_SERVICE, &provider.account_name()) {
+    match store.delete_credential(KEYCHAIN_SERVICE, &account_name(provider)) {
         Ok(()) | Err(CredentialStoreError::MissingEntry) => Ok(()),
         Err(CredentialStoreError::Backend) => Err(SecretError::StorageUnavailable),
     }
@@ -268,20 +244,14 @@ mod tests {
     }
 
     #[test]
-    fn validates_provider_ids() {
-        assert_eq!(ProviderId::parse("openai").unwrap(), ProviderId::OpenAi);
-        assert_eq!(
-            ProviderId::parse("not-a-provider").unwrap_err(),
-            SecretError::InvalidProvider("not-a-provider".to_string())
-        );
-    }
-
-    #[test]
     fn formats_provider_account_names() {
-        assert_eq!(ProviderId::OpenAi.account_name(), "provider:openai");
-        assert_eq!(ProviderId::Anthropic.account_name(), "provider:anthropic");
-        assert_eq!(ProviderId::OpenRouter.account_name(), "provider:openrouter");
-        assert_eq!(ProviderId::Groq.account_name(), "provider:groq");
+        assert_eq!(account_name(ProviderId::OpenAi), "provider:openai");
+        assert_eq!(account_name(ProviderId::Anthropic), "provider:anthropic");
+        assert_eq!(
+            account_name(ProviderId::OpenRouter),
+            "provider:openrouter"
+        );
+        assert_eq!(account_name(ProviderId::Groq), "provider:groq");
     }
 
     #[test]
@@ -291,8 +261,11 @@ mod tests {
         store_provider_api_key_with_store(&store, "openai", "sk-test").unwrap();
 
         assert_eq!(
-            get_provider_api_key_with_store(&store, "openai").unwrap(),
-            Some("sk-test".to_string())
+            get_provider_api_key_with_store(&store, "openai")
+                .unwrap()
+                .as_ref()
+                .map(|z| z.as_str()),
+            Some("sk-test")
         );
     }
 
@@ -357,6 +330,20 @@ mod tests {
         assert_eq!(
             delete_provider_api_key_with_store(&delete_store, "openai").unwrap_err(),
             SecretError::StorageUnavailable
+        );
+    }
+
+    #[test]
+    fn invalid_provider_is_rejected() {
+        let store = MockStore::default();
+
+        assert_eq!(
+            store_provider_api_key_with_store(&store, "unknown-provider", "key").unwrap_err(),
+            SecretError::InvalidProvider("unknown-provider".to_string())
+        );
+        assert_eq!(
+            get_provider_api_key_with_store(&store, "unknown-provider").unwrap_err(),
+            SecretError::InvalidProvider("unknown-provider".to_string())
         );
     }
 }

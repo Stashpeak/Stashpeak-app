@@ -181,10 +181,10 @@ impl SpendConnector for OpenAiConnector {
         let prev_end = current_start - Duration::seconds(1);
 
         let current_month_usd =
-            self.fetch_period_cost(&api_key, current_start.timestamp(), now.timestamp())?;
+            self.fetch_period_cost(&*api_key, current_start.timestamp(), now.timestamp())?;
 
         let previous_month_usd =
-            self.fetch_period_cost(&api_key, prev_start.timestamp(), prev_end.timestamp())?;
+            self.fetch_period_cost(&*api_key, prev_start.timestamp(), prev_end.timestamp())?;
 
         tracing::debug!(
             provider = "openai",

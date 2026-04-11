@@ -2,6 +2,7 @@ mod connectors;
 mod db;
 mod logging;
 mod notifications;
+mod providers;
 mod secrets;
 mod settings;
 mod subscriptions;
@@ -21,7 +22,9 @@ fn store_provider_api_key(provider: String, value: String) -> Result<(), String>
 
 #[tauri::command]
 fn get_provider_api_key(provider: String) -> Result<Option<String>, String> {
-    secrets::get_provider_api_key(&provider).map_err(|err| err.to_string())
+    secrets::get_provider_api_key(&provider)
+        .map(|opt| opt.map(|z| (*z).clone()))
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

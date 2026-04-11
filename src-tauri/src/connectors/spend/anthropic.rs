@@ -199,7 +199,7 @@ impl SpendConnector for AnthropicConnector {
             .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
             .unwrap();
         let current_month_usd =
-            self.fetch_period_cost(&api_key, &current_start.to_rfc3339(), &now.to_rfc3339())?;
+            self.fetch_period_cost(&*api_key, &current_start.to_rfc3339(), &now.to_rfc3339())?;
 
         // Previous month: first of last month → last second of last month
         let (prev_year, prev_month) = if now.month() == 1 {
@@ -212,7 +212,7 @@ impl SpendConnector for AnthropicConnector {
             .unwrap();
         let prev_end = current_start - Duration::seconds(1);
         let previous_month_usd = self
-            .fetch_period_cost(&api_key, &prev_start.to_rfc3339(), &prev_end.to_rfc3339())?;
+            .fetch_period_cost(&*api_key, &prev_start.to_rfc3339(), &prev_end.to_rfc3339())?;
 
         tracing::debug!(
             provider = "anthropic",
