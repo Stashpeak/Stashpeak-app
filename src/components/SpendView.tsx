@@ -14,11 +14,11 @@ type ProviderStatus =
   | { tag: "ok"; data: SpendData; refreshedAt: Date }
   | { tag: "stale"; error: string };
 
-const PROVIDERS: { id: ProviderId; name: string; note?: string }[] = [
+const PROVIDERS: { id: ProviderId; name: string; note?: string; comingSoon?: boolean }[] = [
   { id: "anthropic", name: "Anthropic", note: "Requires Admin API key (sk-ant-admin-…)" },
   { id: "openai",    name: "OpenAI",    note: "Requires API key with usage read scope" },
   { id: "openrouter", name: "OpenRouter" },
-  { id: "groq",      name: "Groq" },
+  { id: "groq",      name: "Groq",      comingSoon: true },
 ];
 
 const EMPTY_STATES: Record<ProviderId, ProviderStatus> = {
@@ -44,8 +44,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
       .then(setSubscriptions)
       .catch((e) => setLoadError(String(e)));
 
-    // Check which providers have keys and fetch them concurrently
-    PROVIDERS.forEach(({ id }) => {
+    // Check which providers have keys and fetch them concurrently (skip comingSoon)
+    PROVIDERS.forEach(({ id, comingSoon }) => {
+      if (comingSoon) return;
       hasProviderApiKey(id)
         .then((has) => { if (has) runFetch(id); })
         .catch(() => {});
@@ -175,27 +176,39 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         </div>
 
         <div className="space-y-2">
-          {PROVIDERS.map(({ id, name, note }) => {
+          {PROVIDERS.map(({ id, name, note, comingSoon }) => {
             const s = providers[id];
             const isAdding = addingKey === id;
+
+            // Strip verbose Rust error prefix from stale messages
+            const staleMessage = s.tag === "stale"
+              ? s.error.replace(/^Error:\s*/i, "").replace(/^Failed to fetch spend for \w+:\s*/i, "")
+              : "";
 
             return (
               <div key={id} className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
 
-                    <p className="text-sm font-medium text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
-                      {name}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                        {name}
+                      </p>
+                      {comingSoon && (
+                        <span className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.18em] border border-zinc-200 rounded-full px-2 py-0.5" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                          Billing API coming soon
+                        </span>
+                      )}
+                    </div>
 
-                    {/* Status */}
-                    {s.tag === "unconfigured" && !isAdding && (
+                    {/* Status — hidden for comingSoon providers */}
+                    {!comingSoon && s.tag === "unconfigured" && !isAdding && (
                       <p className="text-xs text-[#625b71] mt-0.5">No API key configured</p>
                     )}
-                    {s.tag === "loading" && (
+                    {!comingSoon && s.tag === "loading" && (
                       <p className="text-xs text-[#625b71] mt-0.5 animate-pulse">Fetching…</p>
                     )}
-                    {s.tag === "ok" && (
+                    {!comingSoon && s.tag === "ok" && (
                       <div className="mt-2 flex gap-6">
                         <div>
                           <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em]">This month</p>
@@ -211,12 +224,12 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                         </div>
                       </div>
                     )}
-                    {s.tag === "stale" && (
-                      <p className="text-xs text-rose-500 mt-1 leading-relaxed max-w-sm">{s.error}</p>
+                    {!comingSoon && s.tag === "stale" && (
+                      <p className="text-xs text-rose-500 mt-1 leading-relaxed max-w-sm">{staleMessage}</p>
                     )}
 
-                    {/* Add/update key form */}
-                    {isAdding && (
+                    {/* Add/update key form — hidden for comingSoon providers */}
+                    {!comingSoon && isAdding && (
                       <div className="mt-3 space-y-2">
                         {note && (
                           <p className="text-xs text-[#625b71]/70">{note}</p>
@@ -252,38 +265,40 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                     )}
                   </div>
 
-                  {/* Right-side actions */}
-                  <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
-                    {s.tag === "ok" && (
-                      <>
-                        <p className="text-[10px] text-[#625b71]/50">
-                          {s.refreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
+                  {/* Right-side actions — hidden for comingSoon providers */}
+                  {!comingSoon && (
+                    <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+                      {s.tag === "ok" && (
+                        <>
+                          <p className="text-[10px] text-[#625b71]/50">
+                            {s.refreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                          <button
+                            onClick={() => runFetch(id)}
+                            className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
+                          >
+                            Refresh
+                          </button>
+                        </>
+                      )}
+                      {s.tag === "stale" && (
                         <button
                           onClick={() => runFetch(id)}
+                          className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer transition-colors"
+                        >
+                          Retry
+                        </button>
+                      )}
+                      {(s.tag === "unconfigured" || s.tag === "stale") && !isAdding && (
+                        <button
+                          onClick={() => { setAddingKey(id); setAddError(null); setKeyInput(""); }}
                           className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
                         >
-                          Refresh
+                          {s.tag === "unconfigured" ? "Add key" : "Update key"}
                         </button>
-                      </>
-                    )}
-                    {s.tag === "stale" && (
-                      <button
-                        onClick={() => runFetch(id)}
-                        className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer transition-colors"
-                      >
-                        Retry
-                      </button>
-                    )}
-                    {(s.tag === "unconfigured" || s.tag === "stale") && !isAdding && (
-                      <button
-                        onClick={() => { setAddingKey(id); setAddError(null); setKeyInput(""); }}
-                        className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
-                      >
-                        {s.tag === "unconfigured" ? "Add key" : "Update key"}
-                      </button>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );

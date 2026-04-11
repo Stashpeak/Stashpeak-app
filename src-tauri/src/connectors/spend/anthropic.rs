@@ -51,7 +51,11 @@ impl AnthropicConnector {
 
         let status = response.status();
         match status.as_u16() {
-            401 | 403 => return Err(ConnectorError::Unauthorized),
+            401 | 403 => return Err(ConnectorError::Config(
+                "Requires an Admin API key (sk-ant-admin-…), not a regular user key. \
+                 Generate one in Anthropic Console → Settings → API Keys → Create Key → Role: Admin."
+                    .to_string(),
+            )),
             429 => return Err(ConnectorError::RateLimited),
             s if s >= 400 => {
                 let body = response.text().unwrap_or_default();
