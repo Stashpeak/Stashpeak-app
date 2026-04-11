@@ -119,8 +119,13 @@ struct PeriodEntry {
 
 fn extract_cost(entry: &serde_json::Value) -> Option<f64> {
     for field in &["cost", "total_cost", "amount", "amount_usd"] {
-        if let Some(v) = entry.get(field).and_then(|v| v.as_f64()) {
-            return Some(v);
+        if let Some(v) = entry.get(field) {
+            if let Some(f) = v.as_f64() {
+                return Some(f);
+            }
+            if let Some(f) = v.as_str().and_then(|s| s.parse::<f64>().ok()) {
+                return Some(f);
+            }
         }
     }
     let input = entry.get("input_cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -185,6 +190,12 @@ impl SpendConnector for AnthropicConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extracts_amount_as_string() {
+        let entry = serde_json::json!({"amount": "0.00315", "currency": "USD", "token_type": "input"});
+        assert!((extract_cost(&entry).unwrap() - 0.00315).abs() < 1e-9);
+    }
 
     #[test]
     fn extracts_cost_field() {
