@@ -64,19 +64,24 @@ impl AnthropicConnector {
             _ => {}
         }
 
+        let bytes = response
+            .bytes()
+            .map_err(|e| ConnectorError::Network(e.to_string()))?;
+
+        tracing::debug!(
+            provider = "anthropic",
+            body = %String::from_utf8_lossy(&bytes),
+            "raw cost report response"
+        );
+
         let parsed: CostReportResponse =
-            response.json().map_err(|e| ConnectorError::ApiError {
+            serde_json::from_slice(&bytes).map_err(|e| ConnectorError::ApiError {
                 status: status.as_u16(),
                 body: format!("failed to parse cost report: {e}"),
             })?;
 
-        // Costs are decimal strings in cents (e.g. "1234.56" = $12.3456).
-        let total_usd: f64 = parsed
-            .data
-            .iter()
-            .filter_map(|e| e.cost.parse::<f64>().ok())
-            .sum::<f64>()
-            / 100.0;
+        // Costs are USD floats (e.g. 0.00315 = $0.00315).
+        let total_usd: f64 = parsed.data.iter().map(|e| e.cost).sum();
 
         Ok(total_usd)
     }
@@ -91,8 +96,8 @@ struct CostReportResponse {
 
 #[derive(Deserialize)]
 struct CostEntry {
-    /// Cost in cents as a decimal string (e.g. "1234.56").
-    cost: String,
+    /// Cost in USD as a float (e.g. 0.00315 = $0.00315).
+    cost: f64,
 }
 
 // ── SpendConnector impl ──────────────────────────────────────────────────────
@@ -151,16 +156,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_cost_report_and_converts_cents_to_usd() {
-        let json = r#"{"data": [{"cost": "1000.00"}, {"cost": "500.00"}, {"cost": "250.50"}]}"#;
+    fn parses_cost_report_and_sums_usd() {
+        let json = r#"{"data": [{"cost": 10.00}, {"cost": 5.00}, {"cost": 2.505}]}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed
-            .data
-            .iter()
-            .filter_map(|e| e.cost.parse::<f64>().ok())
-            .sum::<f64>()
-            / 100.0;
-        // 1000 + 500 + 250.50 = 1750.50 cents = $17.505
+        let total: f64 = parsed.data.iter().map(|e| e.cost).sum();
         assert!((total - 17.505).abs() < 0.001, "got {total}");
     }
 
@@ -168,25 +167,7 @@ mod tests {
     fn handles_empty_cost_report() {
         let json = r#"{"data": []}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed
-            .data
-            .iter()
-            .filter_map(|e| e.cost.parse::<f64>().ok())
-            .sum::<f64>()
-            / 100.0;
+        let total: f64 = parsed.data.iter().map(|e| e.cost).sum();
         assert_eq!(total, 0.0);
-    }
-
-    #[test]
-    fn skips_unparseable_cost_entries() {
-        let json = r#"{"data": [{"cost": "500.00"}, {"cost": "not-a-number"}]}"#;
-        let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed
-            .data
-            .iter()
-            .filter_map(|e| e.cost.parse::<f64>().ok())
-            .sum::<f64>()
-            / 100.0;
-        assert!((total - 5.0).abs() < 0.001, "got {total}");
     }
 }
