@@ -80,10 +80,14 @@ impl AnthropicConnector {
                 body: format!("failed to parse cost report wrapper: {e}"),
             })?;
 
-        let total_usd: f64 = if parsed.results.is_empty() {
+        // Structure: data[].results[] where each result is a cost entry per model.
+        let all_results: Vec<&serde_json::Value> =
+            parsed.data.iter().flat_map(|p| p.results.iter()).collect();
+
+        let total_usd: f64 = if all_results.is_empty() {
             0.0
         } else {
-            let first = &parsed.results[0];
+            let first = all_results[0];
             if extract_cost(first).is_none() {
                 let keys: Vec<&str> = first
                     .as_object()
@@ -91,10 +95,10 @@ impl AnthropicConnector {
                     .unwrap_or_default();
                 return Err(ConnectorError::ApiError {
                     status: 200,
-                    body: format!("no cost field found. Entry keys: {keys:?}"),
+                    body: format!("no cost field found. Result entry keys: {keys:?}"),
                 });
             }
-            parsed.results.iter().filter_map(extract_cost).sum()
+            all_results.iter().filter_map(|e| extract_cost(e)).sum()
         };
 
         Ok(total_usd)
@@ -105,6 +109,11 @@ impl AnthropicConnector {
 
 #[derive(Deserialize)]
 struct CostReportResponse {
+    data: Vec<PeriodEntry>,
+}
+
+#[derive(Deserialize)]
+struct PeriodEntry {
     results: Vec<serde_json::Value>,
 }
 
@@ -196,18 +205,21 @@ mod tests {
     }
 
     #[test]
-    fn sums_across_entries() {
-        let json = r#"{"results": [{"cost": 10.0}, {"cost": 5.0}, {"cost": 2.505}]}"#;
+    fn sums_across_nested_results() {
+        let json = r#"{"data": [
+            {"starting_at": "2026-04-01", "ending_at": "2026-04-11", "results": [{"cost": 10.0}, {"cost": 5.0}]},
+            {"starting_at": "2026-03-01", "ending_at": "2026-03-31", "results": [{"cost": 2.505}]}
+        ]}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.results.iter().filter_map(extract_cost).sum();
+        let total: f64 = parsed.data.iter().flat_map(|p| p.results.iter()).filter_map(extract_cost).sum();
         assert!((total - 17.505).abs() < 0.001, "got {total}");
     }
 
     #[test]
     fn handles_empty_cost_report() {
-        let json = r#"{"results": []}"#;
+        let json = r#"{"data": []}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.results.iter().filter_map(extract_cost).sum();
+        let total: f64 = parsed.data.iter().flat_map(|p| p.results.iter()).filter_map(extract_cost).sum();
         assert_eq!(total, 0.0);
     }
 }
