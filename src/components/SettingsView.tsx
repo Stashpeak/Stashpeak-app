@@ -4,6 +4,7 @@ import {
   setNotificationDays,
   setNotificationsEnabled,
 } from "../lib/settings";
+import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 const PRESETS = [0, 1, 3, 7];
 const PRESET_LABELS: Record<number, string> = {
@@ -81,7 +82,9 @@ export function SettingsView() {
       <p className="text-sm text-[#625b71] mb-8">App preferences</p>
 
       {loadError && (
-        <p className="text-sm text-red-500 mb-4">{loadError}</p>
+        <SelectableErrorMessage kind="inline" className="mb-4">
+          {loadError}
+        </SelectableErrorMessage>
       )}
 
       {loaded && (

@@ -8,6 +8,7 @@ import {
   type Subscription,
   type SubscriptionInput,
 } from "../lib/subscriptions";
+import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 type FormState = {
   name: string;
@@ -543,9 +544,9 @@ export function SubscriptionsView() {
             </label>
 
             {error ? (
-              <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-500">
+              <SelectableErrorMessage>
                 {error}
-              </div>
+              </SelectableErrorMessage>
             ) : null}
 
             <button
