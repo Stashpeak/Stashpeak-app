@@ -77,11 +77,25 @@ impl AnthropicConnector {
         let parsed: CostReportResponse =
             serde_json::from_slice(&bytes).map_err(|e| ConnectorError::ApiError {
                 status: status.as_u16(),
-                body: format!("failed to parse cost report: {e}"),
+                body: format!("failed to parse cost report wrapper: {e}"),
             })?;
 
-        // Costs are USD floats (e.g. 0.00315 = $0.00315).
-        let total_usd: f64 = parsed.data.iter().map(|e| e.cost).sum();
+        let total_usd: f64 = if parsed.data.is_empty() {
+            0.0
+        } else {
+            let first = &parsed.data[0];
+            if extract_cost(first).is_none() {
+                let keys: Vec<&str> = first
+                    .as_object()
+                    .map(|o| o.keys().map(String::as_str).collect())
+                    .unwrap_or_default();
+                return Err(ConnectorError::ApiError {
+                    status: 200,
+                    body: format!("no cost field found. Entry keys: {keys:?}"),
+                });
+            }
+            parsed.data.iter().filter_map(extract_cost).sum()
+        };
 
         Ok(total_usd)
     }
@@ -91,13 +105,21 @@ impl AnthropicConnector {
 
 #[derive(Deserialize)]
 struct CostReportResponse {
-    data: Vec<CostEntry>,
+    data: Vec<serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-struct CostEntry {
-    /// Cost in USD as a float (e.g. 0.00315 = $0.00315).
-    cost: f64,
+fn extract_cost(entry: &serde_json::Value) -> Option<f64> {
+    for field in &["cost", "total_cost", "amount", "amount_usd"] {
+        if let Some(v) = entry.get(field).and_then(|v| v.as_f64()) {
+            return Some(v);
+        }
+    }
+    let input = entry.get("input_cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let output = entry.get("output_cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    if input > 0.0 || output > 0.0 {
+        return Some(input + output);
+    }
+    None
 }
 
 // ── SpendConnector impl ──────────────────────────────────────────────────────
@@ -156,10 +178,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_cost_report_and_sums_usd() {
-        let json = r#"{"data": [{"cost": 10.00}, {"cost": 5.00}, {"cost": 2.505}]}"#;
+    fn extracts_cost_field() {
+        let entry = serde_json::json!({"cost": 10.5, "model": "claude-3-5-sonnet"});
+        assert!((extract_cost(&entry).unwrap() - 10.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn extracts_input_output_cost_split() {
+        let entry = serde_json::json!({"input_cost": 3.0, "output_cost": 1.5});
+        assert!((extract_cost(&entry).unwrap() - 4.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn returns_none_for_unknown_fields() {
+        let entry = serde_json::json!({"model": "claude-3-5-sonnet", "tokens": 1000});
+        assert!(extract_cost(&entry).is_none());
+    }
+
+    #[test]
+    fn sums_across_entries() {
+        let json = r#"{"data": [{"cost": 10.0}, {"cost": 5.0}, {"cost": 2.505}]}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.data.iter().map(|e| e.cost).sum();
+        let total: f64 = parsed.data.iter().filter_map(extract_cost).sum();
         assert!((total - 17.505).abs() < 0.001, "got {total}");
     }
 
@@ -167,7 +207,7 @@ mod tests {
     fn handles_empty_cost_report() {
         let json = r#"{"data": []}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.data.iter().map(|e| e.cost).sum();
+        let total: f64 = parsed.data.iter().filter_map(extract_cost).sum();
         assert_eq!(total, 0.0);
     }
 }
