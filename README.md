@@ -4,6 +4,8 @@ A local-first desktop dashboard for your AI ecosystem. Replaces browser tabs for
 
 Built with Tauri 2 · React 19 · Rust · SQLite
 
+**Documentation:** [docs.stashpeak.com](https://docs.stashpeak.com)
+
 ---
 
 ## Features
