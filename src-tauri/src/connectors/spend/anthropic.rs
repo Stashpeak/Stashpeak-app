@@ -16,8 +16,8 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 ///
 /// Endpoint: `GET https://api.anthropic.com/v1/organizations/cost_report`
 /// Two requests are made per fetch: one for the current month and one for
-/// the previous month. Costs are returned in cents as decimal strings and
-/// converted to USD.
+/// the previous month. Response uses `results` (not `data`) with per-entry
+/// cost fields extracted via extract_cost().
 pub struct AnthropicConnector {
     client: Client,
 }
@@ -80,10 +80,10 @@ impl AnthropicConnector {
                 body: format!("failed to parse cost report wrapper: {e}"),
             })?;
 
-        let total_usd: f64 = if parsed.data.is_empty() {
+        let total_usd: f64 = if parsed.results.is_empty() {
             0.0
         } else {
-            let first = &parsed.data[0];
+            let first = &parsed.results[0];
             if extract_cost(first).is_none() {
                 let keys: Vec<&str> = first
                     .as_object()
@@ -94,7 +94,7 @@ impl AnthropicConnector {
                     body: format!("no cost field found. Entry keys: {keys:?}"),
                 });
             }
-            parsed.data.iter().filter_map(extract_cost).sum()
+            parsed.results.iter().filter_map(extract_cost).sum()
         };
 
         Ok(total_usd)
@@ -105,7 +105,7 @@ impl AnthropicConnector {
 
 #[derive(Deserialize)]
 struct CostReportResponse {
-    data: Vec<serde_json::Value>,
+    results: Vec<serde_json::Value>,
 }
 
 fn extract_cost(entry: &serde_json::Value) -> Option<f64> {
@@ -197,17 +197,17 @@ mod tests {
 
     #[test]
     fn sums_across_entries() {
-        let json = r#"{"data": [{"cost": 10.0}, {"cost": 5.0}, {"cost": 2.505}]}"#;
+        let json = r#"{"results": [{"cost": 10.0}, {"cost": 5.0}, {"cost": 2.505}]}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.data.iter().filter_map(extract_cost).sum();
+        let total: f64 = parsed.results.iter().filter_map(extract_cost).sum();
         assert!((total - 17.505).abs() < 0.001, "got {total}");
     }
 
     #[test]
     fn handles_empty_cost_report() {
-        let json = r#"{"data": []}"#;
+        let json = r#"{"results": []}"#;
         let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.data.iter().filter_map(extract_cost).sum();
+        let total: f64 = parsed.results.iter().filter_map(extract_cost).sum();
         assert_eq!(total, 0.0);
     }
 }
