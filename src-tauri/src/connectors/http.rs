@@ -1,4 +1,4 @@
-use reqwest::blocking::Client;
+use reqwest::Client;
 use std::time::Duration;
 
 /// Build the shared HTTP client used by all spend connectors.

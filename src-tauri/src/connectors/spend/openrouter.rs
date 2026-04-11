@@ -1,4 +1,5 @@
-use reqwest::blocking::Client;
+use async_trait::async_trait;
+use reqwest::Client;
 use serde::Deserialize;
 
 use crate::connectors::{ConnectorError, SpendConnector, SpendData};
@@ -34,18 +35,21 @@ struct AuthKeyData {
 
 // ── Connector impl ───────────────────────────────────────────────────────────
 
+#[async_trait]
 impl SpendConnector for OpenRouterConnector {
     fn provider_id(&self) -> &'static str {
         "openrouter"
     }
 
-    fn fetch(&self) -> Result<SpendData, ConnectorError> {
-        // Load API key from OS keychain. `get_provider_api_key` calls
-        // `logging::remember_secret`, so any subsequent log line that contains
-        // this value will be redacted by the SecretScrubbingLayer.
-        let api_key = secrets::get_provider_api_key("openrouter")
-            .map_err(|e| ConnectorError::Config(e.to_string()))?
-            .ok_or(ConnectorError::Unauthorized)?;
+    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
+        // Keychain access is a blocking OS call — run it on the thread pool.
+        let api_key = tauri::async_runtime::spawn_blocking(|| {
+            secrets::get_provider_api_key("openrouter")
+                .map_err(|e| ConnectorError::Config(e.to_string()))
+                .and_then(|opt| opt.ok_or(ConnectorError::Unauthorized))
+        })
+        .await
+        .map_err(|e| ConnectorError::Config(format!("keychain task failed: {e}")))??;
 
         tracing::debug!(provider = "openrouter", endpoint = "/api/v1/auth/key", "fetching spend");
 
@@ -54,6 +58,7 @@ impl SpendConnector for OpenRouterConnector {
             .get("https://openrouter.ai/api/v1/auth/key")
             .header("Authorization", format!("Bearer {}", &*api_key))
             .send()
+            .await
             .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
         let status = response.status();
@@ -62,16 +67,20 @@ impl SpendConnector for OpenRouterConnector {
             401 | 403 => return Err(ConnectorError::Unauthorized),
             429 => return Err(ConnectorError::RateLimited),
             s if s >= 400 => {
-                let body = response.text().unwrap_or_default();
+                let body = response.text().await.unwrap_or_default();
                 return Err(ConnectorError::ApiError { status: s, body });
             }
             _ => {}
         }
 
-        let parsed: AuthKeyResponse = response.json().map_err(|e| ConnectorError::ApiError {
-            status: status.as_u16(),
-            body: format!("failed to parse response: {e}"),
-        })?;
+        let parsed: AuthKeyResponse =
+            response
+                .json()
+                .await
+                .map_err(|e| ConnectorError::ApiError {
+                    status: status.as_u16(),
+                    body: format!("failed to parse response: {e}"),
+                })?;
 
         tracing::debug!(
             provider = "openrouter",

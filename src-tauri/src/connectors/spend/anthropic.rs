@@ -1,5 +1,6 @@
+use async_trait::async_trait;
 use chrono::{Datelike, Duration, TimeZone, Utc};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::Deserialize;
 
 use crate::connectors::{ConnectorError, SpendConnector, SpendData};
@@ -27,7 +28,7 @@ impl AnthropicConnector {
         Self { client }
     }
 
-    fn fetch_period_cost(
+    async fn fetch_period_cost(
         &self,
         api_key: &str,
         starting_at: &str,
@@ -72,6 +73,7 @@ impl AnthropicConnector {
                 .header("anthropic-version", ANTHROPIC_VERSION)
                 .query(&query)
                 .send()
+                .await
                 .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
             let status = response.status();
@@ -85,7 +87,7 @@ impl AnthropicConnector {
                 }
                 429 => return Err(ConnectorError::RateLimited),
                 s if s >= 400 => {
-                    let body = response.text().unwrap_or_default();
+                    let body = response.text().await.unwrap_or_default();
                     return Err(ConnectorError::ApiError { status: s, body });
                 }
                 _ => {}
@@ -93,6 +95,7 @@ impl AnthropicConnector {
 
             let bytes = response
                 .bytes()
+                .await
                 .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
             tracing::debug!(
@@ -182,26 +185,31 @@ fn extract_cost_cents(entry: &serde_json::Value) -> Option<f64> {
 
 // ── SpendConnector impl ──────────────────────────────────────────────────────
 
+#[async_trait]
 impl SpendConnector for AnthropicConnector {
     fn provider_id(&self) -> &'static str {
         "anthropic"
     }
 
-    fn fetch(&self) -> Result<SpendData, ConnectorError> {
-        let api_key = secrets::get_provider_api_key("anthropic")
-            .map_err(|e| ConnectorError::Config(e.to_string()))?
-            .ok_or(ConnectorError::Unauthorized)?;
+    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
+        // Keychain access is a blocking OS call — run it on the thread pool.
+        let api_key = tauri::async_runtime::spawn_blocking(|| {
+            secrets::get_provider_api_key("anthropic")
+                .map_err(|e| ConnectorError::Config(e.to_string()))
+                .and_then(|opt| opt.ok_or(ConnectorError::Unauthorized))
+        })
+        .await
+        .map_err(|e| ConnectorError::Config(format!("keychain task failed: {e}")))??;
 
         let now = Utc::now();
 
-        // Current month: first of this month → now
         let current_start = Utc
             .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
             .unwrap();
-        let current_month_usd =
-            self.fetch_period_cost(&*api_key, &current_start.to_rfc3339(), &now.to_rfc3339())?;
+        let current_month_usd = self
+            .fetch_period_cost(&*api_key, &current_start.to_rfc3339(), &now.to_rfc3339())
+            .await?;
 
-        // Previous month: first of last month → last second of last month
         let (prev_year, prev_month) = if now.month() == 1 {
             (now.year() - 1, 12u32)
         } else {
@@ -212,7 +220,8 @@ impl SpendConnector for AnthropicConnector {
             .unwrap();
         let prev_end = current_start - Duration::seconds(1);
         let previous_month_usd = self
-            .fetch_period_cost(&*api_key, &prev_start.to_rfc3339(), &prev_end.to_rfc3339())?;
+            .fetch_period_cost(&*api_key, &prev_start.to_rfc3339(), &prev_end.to_rfc3339())
+            .await?;
 
         tracing::debug!(
             provider = "anthropic",

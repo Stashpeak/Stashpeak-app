@@ -7,8 +7,18 @@ mod secrets;
 mod settings;
 mod subscriptions;
 
+async fn run_blocking<T, F>(task_name: &'static str, work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|err| format!("{task_name} task failed: {err}"))?
+}
+
 #[tauri::command]
-fn db_path() -> String {
+async fn db_path() -> String {
     db::data_dir()
         .join("stashpeak.db")
         .to_string_lossy()
@@ -16,69 +26,99 @@ fn db_path() -> String {
 }
 
 #[tauri::command]
-fn store_provider_api_key(provider: String, value: String) -> Result<(), String> {
-    secrets::store_provider_api_key(&provider, &value).map_err(|err| err.to_string())
+async fn store_provider_api_key(provider: String, value: String) -> Result<(), String> {
+    run_blocking("store_provider_api_key", move || {
+        secrets::store_provider_api_key(&provider, &value).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn get_provider_api_key(provider: String) -> Result<Option<String>, String> {
-    secrets::get_provider_api_key(&provider)
-        .map(|opt| opt.map(|z| (*z).clone()))
-        .map_err(|err| err.to_string())
+async fn get_provider_api_key(provider: String) -> Result<Option<String>, String> {
+    run_blocking("get_provider_api_key", move || {
+        secrets::get_provider_api_key(&provider)
+            .map(|opt| opt.map(|z| (*z).clone()))
+            .map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn delete_provider_api_key(provider: String) -> Result<(), String> {
-    secrets::delete_provider_api_key(&provider).map_err(|err| err.to_string())
+async fn delete_provider_api_key(provider: String) -> Result<(), String> {
+    run_blocking("delete_provider_api_key", move || {
+        secrets::delete_provider_api_key(&provider).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn has_provider_api_key(provider: String) -> Result<bool, String> {
-    secrets::has_provider_api_key(&provider).map_err(|err| err.to_string())
+async fn has_provider_api_key(provider: String) -> Result<bool, String> {
+    run_blocking("has_provider_api_key", move || {
+        secrets::has_provider_api_key(&provider).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn list_subscriptions() -> Result<Vec<subscriptions::Subscription>, String> {
-    subscriptions::list_subscriptions().map_err(|err| err.to_string())
+async fn list_subscriptions() -> Result<Vec<subscriptions::Subscription>, String> {
+    run_blocking("list_subscriptions", move || {
+        subscriptions::list_subscriptions().map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn create_subscription(
+async fn create_subscription(
     input: subscriptions::SubscriptionInput,
 ) -> Result<subscriptions::Subscription, String> {
-    subscriptions::create_subscription(input).map_err(|err| err.to_string())
+    run_blocking("create_subscription", move || {
+        subscriptions::create_subscription(input).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn update_subscription(
+async fn update_subscription(
     id: i64,
     input: subscriptions::SubscriptionInput,
 ) -> Result<subscriptions::Subscription, String> {
-    subscriptions::update_subscription(id, input).map_err(|err| err.to_string())
+    run_blocking("update_subscription", move || {
+        subscriptions::update_subscription(id, input).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn delete_subscription(id: i64) -> Result<(), String> {
-    subscriptions::delete_subscription(id).map_err(|err| err.to_string())
+async fn delete_subscription(id: i64) -> Result<(), String> {
+    run_blocking("delete_subscription", move || {
+        subscriptions::delete_subscription(id).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-fn get_notification_settings() -> Result<settings::NotificationSettings, String> {
-    settings::get_notification_settings()
+async fn get_notification_settings() -> Result<settings::NotificationSettings, String> {
+    run_blocking("get_notification_settings", settings::get_notification_settings).await
 }
 
 #[tauri::command]
-fn set_notification_days(days: u32) -> Result<(), String> {
-    settings::set_notification_days_before(days)
+async fn set_notification_days(days: u32) -> Result<(), String> {
+    run_blocking("set_notification_days", move || {
+        settings::set_notification_days_before(days)
+    })
+    .await
 }
 
 #[tauri::command]
-fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
-    settings::set_notifications_enabled(enabled)
+async fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
+    run_blocking("set_notifications_enabled", move || {
+        settings::set_notifications_enabled(enabled)
+    })
+    .await
 }
 
 #[tauri::command]
-fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
+async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
     use connectors::spend::anthropic::AnthropicConnector;
     use connectors::spend::groq::GroqConnector;
     use connectors::spend::openai::OpenAiConnector;
@@ -96,7 +136,9 @@ fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, Strin
     };
 
     tracing::debug!(provider = connector.provider_id(), "spend fetch requested");
-    connectors::with_retry(&DEFAULT_RETRY, || connector.fetch()).map_err(|e| e.to_string())
+    connectors::with_retry(&DEFAULT_RETRY, || connector.fetch())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

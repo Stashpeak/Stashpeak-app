@@ -1,10 +1,11 @@
 pub mod http;
 pub mod spend;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::thread;
 use std::time::Duration;
+use tokio::time::sleep;
 
 /// Spend data returned by a successful provider fetch.
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +52,7 @@ impl std::fmt::Display for ConnectorError {
 /// and make HTTP requests through the shared client from `crate::connectors::http`.
 /// All outbound calls are logged with `tracing::` macros so the global
 /// `SecretScrubbingLayer` in `crate::logging` automatically redacts any key values.
+#[async_trait]
 pub trait SpendConnector: Send + Sync {
     /// Stable provider identifier (e.g. `"openrouter"`). Must match the keychain key.
     fn provider_id(&self) -> &'static str;
@@ -60,7 +62,7 @@ pub trait SpendConnector: Send + Sync {
     /// Returns `Err(ConnectorError::Unauthorized)` if the key is missing or rejected.
     /// Returns `Err(ConnectorError::Network(_))` on transient failures — these are
     /// eligible for retry via `with_retry`.
-    fn fetch(&self) -> Result<SpendData, ConnectorError>;
+    async fn fetch(&self) -> Result<SpendData, ConnectorError>;
 }
 
 /// Retry policy for connector calls.
@@ -83,12 +85,13 @@ pub const DEFAULT_RETRY: RetryConfig = RetryConfig {
 /// - `Unauthorized`, `ApiError`, and `Config` errors return immediately.
 /// - After all attempts are exhausted the final error is returned; callers
 ///   should treat this as a signal to mark the provider stale in the UI.
-pub fn with_retry<T, F>(config: &RetryConfig, mut f: F) -> Result<T, ConnectorError>
+pub async fn with_retry<T, F, Fut>(config: &RetryConfig, mut f: F) -> Result<T, ConnectorError>
 where
-    F: FnMut() -> Result<T, ConnectorError>,
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, ConnectorError>>,
 {
     for attempt in 0..config.max_attempts {
-        match f() {
+        match f().await {
             Ok(val) => return Ok(val),
             Err(err) => {
                 let retryable =
@@ -115,7 +118,7 @@ where
                     error = %err,
                     "connector fetch failed, retrying"
                 );
-                thread::sleep(Duration::from_millis(delay_ms));
+                sleep(Duration::from_millis(delay_ms)).await;
             }
         }
     }
@@ -135,66 +138,73 @@ mod tests {
         }
     }
 
-    #[test]
-    fn retries_network_errors_up_to_max_attempts() {
+    #[tokio::test]
+    async fn retries_network_errors_up_to_max_attempts() {
         let calls = Arc::new(AtomicU32::new(0));
         let c = calls.clone();
         let result = with_retry(&instant_retry(), || {
             c.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(ConnectorError::Network("timeout".into()))
-        });
+            async { Err::<(), _>(ConnectorError::Network("timeout".into())) }
+        })
+        .await;
         assert!(result.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
 
-    #[test]
-    fn does_not_retry_unauthorized() {
+    #[tokio::test]
+    async fn does_not_retry_unauthorized() {
         let calls = Arc::new(AtomicU32::new(0));
         let c = calls.clone();
         let result = with_retry(&instant_retry(), || {
             c.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(ConnectorError::Unauthorized)
-        });
+            async { Err::<(), _>(ConnectorError::Unauthorized) }
+        })
+        .await;
         assert!(result.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
-    #[test]
-    fn does_not_retry_config_errors() {
+    #[tokio::test]
+    async fn does_not_retry_config_errors() {
         let calls = Arc::new(AtomicU32::new(0));
         let c = calls.clone();
         let result = with_retry(&instant_retry(), || {
             c.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(ConnectorError::Config("key not set".into()))
-        });
+            async { Err::<(), _>(ConnectorError::Config("key not set".into())) }
+        })
+        .await;
         assert!(result.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
-    #[test]
-    fn succeeds_on_second_attempt() {
+    #[tokio::test]
+    async fn succeeds_on_second_attempt() {
         let calls = Arc::new(AtomicU32::new(0));
         let c = calls.clone();
         let result = with_retry(&instant_retry(), || {
             let attempt = c.fetch_add(1, Ordering::SeqCst);
-            if attempt == 0 {
-                Err(ConnectorError::Network("first failure".into()))
-            } else {
-                Ok(42u32)
+            async move {
+                if attempt == 0 {
+                    Err(ConnectorError::Network("first failure".into()))
+                } else {
+                    Ok(42u32)
+                }
             }
-        });
+        })
+        .await;
         assert_eq!(result.unwrap(), 42);
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
-    #[test]
-    fn retries_rate_limited() {
+    #[tokio::test]
+    async fn retries_rate_limited() {
         let calls = Arc::new(AtomicU32::new(0));
         let c = calls.clone();
         let result = with_retry(&instant_retry(), || {
             c.fetch_add(1, Ordering::SeqCst);
-            Err::<(), _>(ConnectorError::RateLimited)
-        });
+            async { Err::<(), _>(ConnectorError::RateLimited) }
+        })
+        .await;
         assert!(result.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 3);
     }

@@ -1,5 +1,6 @@
+use async_trait::async_trait;
 use chrono::{Datelike, Duration, TimeZone, Utc};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::Deserialize;
 
 use crate::connectors::{ConnectorError, SpendConnector, SpendData};
@@ -26,7 +27,7 @@ impl OpenAiConnector {
         Self { client }
     }
 
-    fn fetch_period_cost(
+    async fn fetch_period_cost(
         &self,
         api_key: &str,
         start_time: i64,
@@ -49,34 +50,39 @@ impl OpenAiConnector {
                 ("bucket_width", "1d".to_string()),
             ])
             .send()
+            .await
             .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
         let status = response.status();
 
         // 404 means the org does not have access to the new costs endpoint yet;
-        // fall back to legacy gracefully rather than surfacing an error.
+        // fall back to the legacy endpoint gracefully rather than surfacing an error.
         if status.as_u16() == 404 {
             tracing::warn!(
                 provider = "openai",
-                "primary costs endpoint returned 404 — falling back to legacy /v1/usage"
+                "primary costs endpoint returned 404 -- falling back to legacy /v1/usage"
             );
-            return self.fetch_legacy_period(api_key, start_time);
+            return self.fetch_legacy_period(api_key, start_time).await;
         }
 
         match status.as_u16() {
             401 | 403 => return Err(ConnectorError::Unauthorized),
             429 => return Err(ConnectorError::RateLimited),
             s if s >= 400 => {
-                let body = response.text().unwrap_or_default();
+                let body = response.text().await.unwrap_or_default();
                 return Err(ConnectorError::ApiError { status: s, body });
             }
             _ => {}
         }
 
-        let parsed: CostsResponse = response.json().map_err(|e| ConnectorError::ApiError {
-            status: status.as_u16(),
-            body: format!("failed to parse costs response: {e}"),
-        })?;
+        let parsed: CostsResponse =
+            response
+                .json()
+                .await
+                .map_err(|e| ConnectorError::ApiError {
+                    status: status.as_u16(),
+                    body: format!("failed to parse costs response: {e}"),
+                })?;
 
         let total: f64 = parsed
             .data
@@ -94,7 +100,11 @@ impl OpenAiConnector {
     /// warning and return 0.0 rather than failing — the UI stale indicator
     /// will not trigger, but the spend field will show 0 until the user's
     /// account is migrated to the new endpoint.
-    fn fetch_legacy_period(&self, api_key: &str, start_time: i64) -> Result<f64, ConnectorError> {
+    async fn fetch_legacy_period(
+        &self,
+        api_key: &str,
+        start_time: i64,
+    ) -> Result<f64, ConnectorError> {
         let date = chrono::DateTime::from_timestamp(start_time, 0)
             .map(|dt| dt.format("%Y-%m-%d").to_string())
             .unwrap_or_default();
@@ -107,6 +117,7 @@ impl OpenAiConnector {
             .header("Authorization", format!("Bearer {api_key}"))
             .query(&[("date", &date)])
             .send()
+            .await
             .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
         let status = response.status();
@@ -114,14 +125,13 @@ impl OpenAiConnector {
             401 | 403 => return Err(ConnectorError::Unauthorized),
             429 => return Err(ConnectorError::RateLimited),
             s if s >= 400 => {
-                let body = response.text().unwrap_or_default();
+                let body = response.text().await.unwrap_or_default();
                 return Err(ConnectorError::ApiError { status: s, body });
             }
             _ => {}
         }
 
-        // Consume the body to avoid connection leaks; we don't use the data.
-        let _ = response.text();
+        let _ = response.text().await; // consume body to avoid connection leaks
 
         tracing::warn!(
             provider = "openai",
@@ -155,21 +165,30 @@ struct CostAmount {
 
 // ── SpendConnector impl ──────────────────────────────────────────────────────
 
+#[async_trait]
 impl SpendConnector for OpenAiConnector {
     fn provider_id(&self) -> &'static str {
         "openai"
     }
 
-    fn fetch(&self) -> Result<SpendData, ConnectorError> {
-        let api_key = secrets::get_provider_api_key("openai")
-            .map_err(|e| ConnectorError::Config(e.to_string()))?
-            .ok_or(ConnectorError::Unauthorized)?;
+    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
+        // Keychain access is a blocking OS call — run it on the thread pool.
+        let api_key = tauri::async_runtime::spawn_blocking(|| {
+            secrets::get_provider_api_key("openai")
+                .map_err(|e| ConnectorError::Config(e.to_string()))
+                .and_then(|opt| opt.ok_or(ConnectorError::Unauthorized))
+        })
+        .await
+        .map_err(|e| ConnectorError::Config(format!("keychain task failed: {e}")))??;
 
         let now = Utc::now();
+
+        // Current month: first of this month → now
         let current_start = Utc
             .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
             .unwrap();
 
+        // Previous month: first of last month → last second of last month
         let (prev_year, prev_month) = if now.month() == 1 {
             (now.year() - 1, 12u32)
         } else {
@@ -181,10 +200,12 @@ impl SpendConnector for OpenAiConnector {
         let prev_end = current_start - Duration::seconds(1);
 
         let current_month_usd =
-            self.fetch_period_cost(&*api_key, current_start.timestamp(), now.timestamp())?;
+            self.fetch_period_cost(&*api_key, current_start.timestamp(), now.timestamp())
+                .await?;
 
         let previous_month_usd =
-            self.fetch_period_cost(&*api_key, prev_start.timestamp(), prev_end.timestamp())?;
+            self.fetch_period_cost(&*api_key, prev_start.timestamp(), prev_end.timestamp())
+                .await?;
 
         tracing::debug!(
             provider = "openai",

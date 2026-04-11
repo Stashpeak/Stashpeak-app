@@ -1,4 +1,5 @@
-use reqwest::blocking::Client;
+use async_trait::async_trait;
+use reqwest::Client;
 
 use crate::connectors::{ConnectorError, SpendConnector, SpendData};
 
@@ -24,12 +25,13 @@ impl GroqConnector {
     }
 }
 
+#[async_trait]
 impl SpendConnector for GroqConnector {
     fn provider_id(&self) -> &'static str {
         "groq"
     }
 
-    fn fetch(&self) -> Result<SpendData, ConnectorError> {
+    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
         tracing::info!(
             provider = "groq",
             "fetch called but Groq has no public billing API yet"
