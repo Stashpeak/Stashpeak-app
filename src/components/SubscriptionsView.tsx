@@ -18,6 +18,7 @@ export function SubscriptionsView() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +140,7 @@ export function SubscriptionsView() {
 
       setForm(EMPTY_FORM);
       setEditingId(null);
+      setShowAddForm(false);
       await loadSubscriptions();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save subscription");
@@ -165,13 +167,8 @@ export function SubscriptionsView() {
 
   function handlePresetSelect(preset: Preset) {
     setEditingId(null);
-    setForm({
-      ...EMPTY_FORM,
-      name: preset.name,
-      provider: preset.provider,
-      currency: preset.currency,
-      category: formatCategoryLabel(preset.category),
-    });
+    setForm({ ...EMPTY_FORM, name: preset.name, provider: preset.provider, currency: preset.currency, category: formatCategoryLabel(preset.category) });
+    setShowAddForm(true);
     setError(null);
   }
 
@@ -251,15 +248,60 @@ export function SubscriptionsView() {
       </div>
 
       {/* Body */}
-      <div className="grid flex-1 gap-6 overflow-auto px-8 py-6 xl:grid-cols-[1.4fr_0.9fr]">
+      <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
         <section className="space-y-5">
           <SubscriptionPresets
             onPresetSelect={handlePresetSelect}
           />
+          <SubscriptionForm
+            form={form}
+            categories={categories}
+            names={names}
+            providers={providers}
+            editingId={null}
+            isSaving={isSaving}
+            error={error}
+            collapsed={!showAddForm}
+            onToggleCollapse={() => {
+              setShowAddForm((v) => !v);
+              setForm(EMPTY_FORM);
+              setError(null);
+            }}
+            onChange={updateForm}
+            onSubmit={() => void handleSubmit()}
+            onCancel={() => {
+              setShowAddForm(false);
+              setForm(EMPTY_FORM);
+              setError(null);
+            }}
+          />
           <SubscriptionList
             subscriptions={subscriptions}
             isLoading={isLoading}
+            editingId={editingId}
+            inlineEditForm={
+              editingId !== null ? (
+                <SubscriptionForm
+                  compact
+                  form={form}
+                  categories={categories}
+                  names={names}
+                  providers={providers}
+                  editingId={editingId}
+                  isSaving={isSaving}
+                  error={error}
+                  onChange={updateForm}
+                  onSubmit={() => void handleSubmit()}
+                  onCancel={() => {
+                    setEditingId(null);
+                    setForm(EMPTY_FORM);
+                    setError(null);
+                  }}
+                />
+              ) : null
+            }
             onEdit={(sub) => {
+              setShowAddForm(false);
               setEditingId(sub.id);
               setForm(toFormState(sub));
               setError(null);
@@ -267,23 +309,6 @@ export function SubscriptionsView() {
             onDelete={handleDelete}
           />
         </section>
-
-        <SubscriptionForm
-          form={form}
-          categories={categories}
-          names={names}
-          providers={providers}
-          editingId={editingId}
-          isSaving={isSaving}
-          error={error}
-          onChange={updateForm}
-          onSubmit={() => void handleSubmit()}
-          onCancel={() => {
-            setEditingId(null);
-            setForm(EMPTY_FORM);
-            setError(null);
-          }}
-        />
       </div>
     </div>
   );

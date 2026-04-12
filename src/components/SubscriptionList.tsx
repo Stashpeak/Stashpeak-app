@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Subscription } from "../lib/subscriptions";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
 
@@ -33,6 +34,8 @@ export function monthlyEquivalent(subscription: Subscription): number {
 interface SubscriptionListProps {
   subscriptions: Subscription[];
   isLoading: boolean;
+  editingId: number | null;
+  inlineEditForm: ReactNode;
   onEdit: (sub: Subscription) => void;
   onDelete: (id: number) => void;
 }
@@ -40,6 +43,8 @@ interface SubscriptionListProps {
 export function SubscriptionList({
   subscriptions,
   isLoading,
+  editingId,
+  inlineEditForm,
   onEdit,
   onDelete,
 }: SubscriptionListProps) {
@@ -93,23 +98,26 @@ export function SubscriptionList({
                   ) : null}
                 </div>
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onEdit(subscription)}
-                    className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void onDelete(subscription.id)}
-                    className="rounded-full border border-rose-200 px-3 py-1.5 text-xs text-rose-400 transition hover:bg-rose-50"
-                  >
-                    Delete
-                  </button>
-                </div>
+                {editingId !== subscription.id && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onEdit(subscription)}
+                      className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDelete(subscription.id)}
+                      className="rounded-full border border-rose-200 px-3 py-1.5 text-xs text-rose-400 transition hover:bg-rose-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </div>
+              {editingId === subscription.id && inlineEditForm}
             </article>
           ))}
         </div>

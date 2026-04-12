@@ -32,11 +32,10 @@ export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps
   }, new Map());
 
   function handleChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const preset = PRESETS.find((p) => p.id === event.target.value);
-    if (preset) {
-      onPresetSelect(preset);
-      event.target.value = "";
-    }
+    const { value } = event.target;
+    event.target.value = "";
+    const preset = PRESETS.find((p) => p.id === value);
+    if (preset) onPresetSelect(preset);
   }
 
   return (
