@@ -7,6 +7,7 @@ import { SpendView } from "./components/SpendView";
 import { StashpeakLogo } from "./components/StashpeakLogo";
 import { SubscriptionsView } from "./components/SubscriptionsView";
 import { useTheme } from "./hooks/useTheme";
+import { WindowControls } from "./components/WindowControls";
 import "./App.css";
 
 export type Section = "dashboard" | "subscriptions" | "docker" | "spend" | "map" | "settings";
@@ -126,7 +127,11 @@ export default function App() {
           backdropFilter: "blur(20px)",
         }}
       >
-        <div className="flex items-center border-b px-4 py-4" style={{ borderColor: "var(--border-subtle)" }}>
+        <div 
+          className="flex items-center border-b px-4 py-4" 
+          style={{ borderColor: "var(--border-subtle)" }}
+          data-tauri-drag-region
+        >
           <button
             onClick={() => openUrl("https://stashpeak.com")}
             className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px]"
@@ -195,7 +200,10 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <main className="relative flex flex-1 flex-col overflow-hidden">
+        <div className="absolute inset-x-0 top-0 z-50">
+          <WindowControls />
+        </div>
         <div className="flex min-h-0 flex-1 flex-col">
           {active === "dashboard" ? (
             <DashboardView onNavigate={setActive} />
