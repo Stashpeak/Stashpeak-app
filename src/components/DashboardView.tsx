@@ -168,5 +168,4 @@ export function DashboardView({ onNavigate }: { onNavigate: (s: Section) => void
       </div>
     </div>
   );
-  );
 }
