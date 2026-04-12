@@ -1,3 +1,5 @@
+import { CARD_SURFACE, SELECT_SURFACE } from "./surfaceStyles";
+
 export type Preset = {
   id: string;
   name: string;
@@ -39,7 +41,7 @@ export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps
   }
 
   return (
-    <div className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm">
+    <div className={CARD_SURFACE}>
       <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
         Quick-fill from preset
       </h3>
@@ -50,7 +52,7 @@ export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps
       <select
         defaultValue=""
         onChange={handleChange}
-        className="mt-4 w-full cursor-pointer appearance-none rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+        className={SELECT_SURFACE}
       >
         <option value="" disabled>
           Select a preset…

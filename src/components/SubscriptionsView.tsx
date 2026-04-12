@@ -11,6 +11,7 @@ import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./SubscriptionList";
 import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
+import { ACCENT_PILL_SURFACE, HEADER_STAT_SURFACE, PILL_SURFACE } from "./surfaceStyles";
 
 const SEED_CATEGORIES = ["AI", "Assistant", "Audio", "Coding", "Image", "Research", "Video"];
 
@@ -193,7 +194,7 @@ export function SubscriptionsView() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-zinc-100 bg-zinc-50 px-5 py-3.5 text-right shadow-sm">
+          <div className={HEADER_STAT_SURFACE}>
             <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">Tracked</p>
             <p className="mt-1 text-3xl text-primary" style={{ fontWeight: 300 }}>
               {subscriptions.length}
@@ -211,7 +212,7 @@ export function SubscriptionsView() {
             <>
               {/* Aggregate home-currency chip — only shown when there are multiple currencies */}
               {aggregateTotal !== null && (
-                <div className="rounded-full border border-primary/20 bg-primary/6 px-4 py-2 shadow-sm flex items-center gap-1.5">
+                <div className={`${ACCENT_PILL_SURFACE} flex items-center gap-1.5`}>
                   <span className="text-[10px] uppercase tracking-[0.2em] text-primary/70 mr-1">
                     ~{homeCurrency}
                   </span>
@@ -233,7 +234,7 @@ export function SubscriptionsView() {
               {Array.from(totals.entries()).map(([currency, total]) => (
                 <div
                   key={currency}
-                  className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm"
+                  className={PILL_SURFACE}
                 >
                   <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-2">{currency}</span>
                   <span className="text-sm font-medium text-primary">{formatCurrency(total, currency)}/mo</span>

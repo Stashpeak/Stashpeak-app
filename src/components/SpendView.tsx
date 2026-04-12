@@ -4,6 +4,14 @@ import { deleteProviderApiKey, hasProviderApiKey, storeProviderApiKey } from "..
 import { fetchProviderSpend, getProviderEnabled, type SpendData } from "../lib/connectors";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
+import {
+  CARD_SURFACE,
+  EMPTY_DASHED_SURFACE,
+  HEADER_STAT_SURFACE,
+  PILL_SURFACE,
+  SUBTLE_PANEL_SURFACE,
+  TEXT_INPUT_SURFACE,
+} from "./surfaceStyles";
 
 type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "gcp";
 
@@ -280,7 +288,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
             </p>
           </div>
 
-          <div className="rounded-2xl border border-zinc-100 bg-zinc-50 px-5 py-3.5 text-right shadow-sm">
+          <div className={HEADER_STAT_SURFACE}>
             <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">Providers</p>
             <p className="mt-1 text-3xl text-primary" style={{ fontWeight: 300 }}>
               {visibleProviders.length}
@@ -292,7 +300,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         {(hasAnyApiData || subscriptions.length > 0) && (
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
             {hasAnyApiData && (
-              <div className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm flex items-center gap-1.5">
+              <div className={`${PILL_SURFACE} flex items-center gap-1.5`}>
                 <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-1">
                   API this month
                 </span>
@@ -303,7 +311,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
             )}
             {subscriptions.length > 0 &&
               Object.entries(monthlyByCurrency).map(([currency, total]) => (
-                <div key={currency} className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm">
+                <div key={currency} className={PILL_SURFACE}>
                   <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-2">
                     {currency}/mo
                   </span>
@@ -315,12 +323,12 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-auto px-8 py-6">
-        {loadError && <SelectableErrorMessage className="mb-6">{loadError}</SelectableErrorMessage>}
+      <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
+        {loadError && <SelectableErrorMessage>{loadError}</SelectableErrorMessage>}
 
-        <section className="mb-8">
+        <section className={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-ink">
+            <h2 className="text-base text-primary" style={{ fontWeight: 400 }}>
               API Spend
             </h2>
             {hasConfiguredProviders && (
@@ -343,7 +351,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                   : "";
 
               return (
-                <div key={id} className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
+                <div key={id} className={SUBTLE_PANEL_SURFACE}>
                   <div className="flex items-start gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -369,16 +377,16 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                         </p>
                       )}
                       {!comingSoon && status.tag === "ok" && (
-                        <div className="mt-2 flex gap-6">
-                          <div>
+                        <div className="mt-3 flex flex-wrap gap-2.5">
+                          <div className={PILL_SURFACE}>
                             <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">This month</p>
-                            <p className="text-base text-ink" style={{ fontWeight: 300 }}>
+                            <p className="text-base text-primary" style={{ fontWeight: 300 }}>
                               ${status.data.currentMonthUsd.toFixed(2)}
                             </p>
                           </div>
-                          <div>
+                          <div className={PILL_SURFACE}>
                             <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">Last month</p>
-                            <p className="text-base text-ink" style={{ fontWeight: 300 }}>
+                            <p className="text-base text-primary" style={{ fontWeight: 300 }}>
                               {status.data.previousMonthUsd > 0 ? `$${status.data.previousMonthUsd.toFixed(2)}` : "-"}
                             </p>
                           </div>
@@ -403,21 +411,21 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                                 value={gcpProject}
                                 onChange={(e) => setGcpProject(e.target.value)}
                                 placeholder="Project ID (e.g. my-project-123)"
-                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary"
+                                className={TEXT_INPUT_SURFACE}
                               />
                               <input
                                 type="text"
                                 value={gcpDataset}
                                 onChange={(e) => setGcpDataset(e.target.value)}
                                 placeholder="BigQuery Dataset ID (e.g. bq_billing_export)"
-                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary"
+                                className={TEXT_INPUT_SURFACE}
                               />
                               <input
                                 type="text"
                                 value={gcpTable}
                                 onChange={(e) => setGcpTable(e.target.value)}
                                 placeholder="Table Name (e.g. gcp_billing_export_v1_...)"
-                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary"
+                                className={TEXT_INPUT_SURFACE}
                               />
                               <textarea
                                 value={keyInput}
@@ -425,7 +433,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                                 placeholder="Paste Service Account JSON Key..."
                                 autoFocus
                                 rows={3}
-                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary resize-y"
+                                className={`${TEXT_INPUT_SURFACE} resize-y`}
                               />
                               <div className="flex gap-2">
                                 <button
@@ -458,7 +466,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                                 onKeyDown={(e) => e.key === "Enter" && handleSaveKey(id)}
                                 placeholder="Paste API key..."
                                 autoFocus
-                                className="flex-1 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors"
+                                className={`flex-1 ${TEXT_INPUT_SURFACE}`}
                               />
                               <button
                                 onClick={() => handleSaveKey(id)}
@@ -594,9 +602,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
           </div>
         </section>
 
-        <section>
+        <section className={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-ink">
+            <h2 className="text-base text-primary" style={{ fontWeight: 400 }}>
               Subscriptions
             </h2>
             <button
@@ -608,8 +616,8 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
           </div>
 
           {subscriptions.length === 0 ? (
-            <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
-              <p className="text-sm text-secondary">No subscriptions tracked yet.</p>
+            <div className={EMPTY_DASHED_SURFACE}>
+              <p className="text-sm text-zinc-500">No subscriptions tracked yet.</p>
               <button
                 onClick={() => onNavigate("subscriptions")}
                 className="mt-2 text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors"
@@ -618,17 +626,19 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
               </button>
             </div>
           ) : (
-            <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4 space-y-1.5">
+            <div className="space-y-2.5">
               {Object.entries(monthlyByCurrency).map(([currency, total]) => {
                 const count = subscriptions.filter((subscription) => subscription.currency === currency).length;
                 return (
-                  <div key={currency} className="flex items-baseline justify-between">
-                    <span className="text-sm text-secondary">
-                      {count} subscription{count !== 1 ? "s" : ""} in {currency}
-                    </span>
-                    <span className="text-sm text-ink">
-                      {currency} {total.toFixed(2)}/mo
-                    </span>
+                  <div key={currency} className={SUBTLE_PANEL_SURFACE}>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm text-secondary">
+                        {count} subscription{count !== 1 ? "s" : ""} in {currency}
+                      </span>
+                      <span className="text-sm text-zinc-900">
+                        {currency} {total.toFixed(2)}/mo
+                      </span>
+                    </div>
                   </div>
                 );
               })}

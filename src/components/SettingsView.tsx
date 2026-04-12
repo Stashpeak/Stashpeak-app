@@ -291,8 +291,8 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-auto px-8 py-6">
-        <div className="max-w-lg">
+      <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
+        <div className="w-full">
 
       {loadError && (
         <SelectableErrorMessage kind="inline" className="mb-4">
