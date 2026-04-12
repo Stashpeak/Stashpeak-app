@@ -1,4 +1,5 @@
-import { useState, type ReactElement } from "react";
+import { useState, useEffect, type ReactElement } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { DashboardView } from "./components/DashboardView";
 import { SpendView } from "./components/SpendView";
@@ -100,6 +101,19 @@ function EmptyState({ section }: { section: Exclude<Section, "settings"> }) {
 
 export default function App() {
   const [active, setActive] = useState<Section>("dashboard");
+  const [appVersion, setAppVersion] = useState<string>("");
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0"));
+
+    // Silent startup update check — deferred so it doesn't block initial paint
+    import("./lib/updater").then(({ checkForUpdate }) => {
+      checkForUpdate()
+        .then((result) => { if (result) setUpdateAvailable(true); })
+        .catch(() => { /* no network or offline is fine */ });
+    });
+  }, []);
 
   return (
     <div
@@ -154,18 +168,25 @@ export default function App() {
 
         {/* Footer: version + settings gear */}
         <div className="px-4 py-3 border-t border-zinc-100 flex items-center justify-between">
-          <span className="text-[10px] text-zinc-300 tracking-wider">v0.1.0</span>
-          <button
-            onClick={() => setActive("settings")}
-            title="Settings"
-            className={`p-1 rounded-full transition-colors cursor-pointer ${
-              active === "settings"
-                ? "text-[#6750a4]"
-                : "text-zinc-300 hover:text-[#6750a4]/60"
-            }`}
-          >
-            {GEAR_ICON}
-          </button>
+          <span className="text-[10px] text-zinc-300 tracking-wider">
+            {appVersion ? `v${appVersion}` : ""}
+          </span>
+          <div className="relative">
+            <button
+              onClick={() => setActive("settings")}
+              title={updateAvailable ? "Settings (update available)" : "Settings"}
+              className={`p-1 rounded-full transition-colors cursor-pointer ${
+                active === "settings"
+                  ? "text-[#6750a4]"
+                  : "text-zinc-300 hover:text-[#6750a4]/60"
+              }`}
+            >
+              {GEAR_ICON}
+            </button>
+            {updateAvailable && (
+              <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-[#6750a4] ring-2 ring-white pointer-events-none" />
+            )}
+          </div>
         </div>
       </aside>
 
@@ -179,7 +200,10 @@ export default function App() {
           ) : active === "spend" ? (
             <SpendView onNavigate={setActive} />
           ) : active === "settings" ? (
-            <SettingsView />
+            <SettingsView
+              updateAvailable={updateAvailable}
+              onUpdateConsumed={() => setUpdateAvailable(false)}
+            />
           ) : (
             <EmptyState section={active} />
           )}

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   getNotificationSettings,
   setNotificationDays,
@@ -9,6 +10,7 @@ import {
   upsertExchangeRate,
   type ExchangeRate,
 } from "../lib/settings";
+import { checkForUpdate, downloadAndInstall, type Update } from "../lib/updater";
 import { CURRENCY_OPTIONS } from "../lib/currencies";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
@@ -77,7 +79,12 @@ function RateRow({ fromCurrency, homeCurrency, initialRate, onSaved }: RateRowPr
   );
 }
 
-export function SettingsView() {
+interface SettingsViewProps {
+  updateAvailable: boolean;
+  onUpdateConsumed: () => void;
+}
+
+export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsViewProps) {
   // Notification settings
   const [days, setDays] = useState<number | null>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -93,6 +100,26 @@ export function SettingsView() {
   // We read them in SettingsView via the Tauri backend list_subscriptions query
   const [subCurrencies, setSubCurrencies] = useState<string[]>([]);
   const [currencySaved, setCurrencySaved] = useState(false);
+
+  // About / updater state
+  const [appVersion, setAppVersion] = useState<string>("");
+  type CheckState = "idle" | "checking" | "upToDate" | "available" | "downloading" | "done" | "error";
+  const [checkState, setCheckState] = useState<CheckState>("idle");
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string | null } | null>(null);
+  const updateRef = useRef<Update | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadTotal, setDownloadTotal] = useState<number | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0"));
+  }, []);
+
+  useEffect(() => {
+    if (updateAvailable) {
+      setCheckState("available");
+    }
+  }, [updateAvailable]);
 
   useEffect(() => {
     getNotificationSettings()
@@ -166,6 +193,42 @@ export function SettingsView() {
       setTimeout(() => setCurrencySaved(false), 2000);
     } catch (e) {
       setLoadError(String(e));
+    }
+  }
+
+  async function handleCheckForUpdates() {
+    setCheckState("checking");
+    setUpdateError(null);
+    try {
+      const result = await checkForUpdate();
+      if (result) {
+        updateRef.current = result.update;
+        setUpdateInfo({ version: result.info.version, body: result.info.body });
+        setCheckState("available");
+      } else {
+        setCheckState("upToDate");
+      }
+    } catch (e) {
+      setUpdateError(String(e));
+      setCheckState("error");
+    }
+  }
+
+  async function handleInstall() {
+    if (!updateRef.current) return;
+    setCheckState("downloading");
+    setDownloadProgress(0);
+    setDownloadTotal(null);
+    try {
+      await downloadAndInstall(updateRef.current, (dl, total) => {
+        setDownloadProgress(dl);
+        setDownloadTotal(total);
+      });
+      setCheckState("done");
+      onUpdateConsumed();
+    } catch (e) {
+      setUpdateError(String(e));
+      setCheckState("error");
     }
   }
 
@@ -355,6 +418,89 @@ export function SettingsView() {
             >
               Saved
             </p>
+          </section>
+
+          <div className="border-t border-zinc-100" />
+
+          {/* ── About ──────────────────────────────────────────────── */}
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-sm font-medium text-[#1c1b1f]">About</h2>
+              <p className="text-xs text-[#625b71] mt-0.5">
+                Stashpeak{appVersion ? ` v${appVersion}` : ""}
+              </p>
+            </div>
+
+            {checkState === "idle" && (
+              <button
+                onClick={() => void handleCheckForUpdates()}
+                className="px-4 py-1.5 rounded-full text-sm bg-[#6750a4]/8 text-[#6750a4] hover:bg-[#6750a4]/15 transition-all cursor-pointer"
+                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+              >
+                {updateAvailable ? "Update available — view" : "Check for updates"}
+              </button>
+            )}
+
+            {checkState === "checking" && (
+              <p className="text-xs text-[#625b71]">Checking…</p>
+            )}
+
+            {checkState === "upToDate" && (
+              <p className="text-xs text-[#6750a4]">You're up to date.</p>
+            )}
+
+            {checkState === "available" && (
+              <div className="space-y-2">
+                {updateInfo && (
+                  <p className="text-xs text-[#625b71]">
+                    v{updateInfo.version} is available.
+                    {updateInfo.body && (
+                      <span className="block mt-1 text-[#1c1b1f]/70 whitespace-pre-wrap">{updateInfo.body}</span>
+                    )}
+                  </p>
+                )}
+                <button
+                  onClick={() => void handleInstall()}
+                  className="px-4 py-1.5 rounded-full text-sm bg-[#6750a4] text-white hover:bg-[#6750a4]/90 transition-all cursor-pointer"
+                  style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                >
+                  Download and install
+                </button>
+              </div>
+            )}
+
+            {checkState === "downloading" && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-[#625b71]">Downloading…</p>
+                {downloadTotal !== null && (
+                  <div className="w-full h-1 rounded-full bg-zinc-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#6750a4] transition-all"
+                      style={{ width: `${Math.round((downloadProgress / downloadTotal) * 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {checkState === "done" && (
+              <p className="text-xs text-[#6750a4]">
+                Update installed. The app will restart shortly.
+              </p>
+            )}
+
+            {checkState === "error" && (
+              <div className="space-y-2">
+                <SelectableErrorMessage kind="inline">{updateError}</SelectableErrorMessage>
+                <button
+                  onClick={() => void handleCheckForUpdates()}
+                  className="text-xs text-[#6750a4] underline cursor-pointer"
+                  style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
           </section>
         </div>
       )}
