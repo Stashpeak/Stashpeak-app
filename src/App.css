@@ -38,6 +38,13 @@
     --purple-button-text: #222222;
     --toggle-off-bg: rgba(0, 0, 0, 0.14);
     --toggle-thumb: #ffffff;
+    --glass-stroke-gradient: linear-gradient(
+      166deg,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0) 41%,
+      rgba(255, 255, 255, 0) 57%,
+      rgba(255, 255, 255, 0.1) 100%
+    );
     --bg-gradient: linear-gradient(
       141.402deg,
       rgb(238, 242, 255) 0%,
@@ -70,6 +77,13 @@
     --scrollbar-thumb: rgba(255, 255, 255, 0.15);
     --toggle-off-bg: rgba(255, 255, 255, 0.18);
     --toggle-thumb: rgba(255, 255, 255, 0.95);
+    --glass-stroke-gradient: linear-gradient(
+      166deg,
+      rgba(0, 0, 0, 0.4) 0%,
+      rgba(0, 0, 0, 0) 41%,
+      rgba(0, 0, 0, 0) 57%,
+      rgba(0, 0, 0, 0.1) 100%
+    );
     --bg-gradient: linear-gradient(
       135deg,
       rgb(25, 25, 25) 5.61%,
@@ -122,6 +136,40 @@
 }
 
 @layer utilities {
+  .glass-surface,
+  .glass-surface-elevated,
+  .glass-surface-accent,
+  .glass-input-surface {
+    border: 1px solid transparent;
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    background-repeat: no-repeat;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+  }
+
+  .glass-surface,
+  .glass-input-surface {
+    --glass-surface-fill: var(--glass-bg);
+    background-image:
+      linear-gradient(var(--glass-surface-fill), var(--glass-surface-fill)),
+      var(--glass-stroke-gradient);
+  }
+
+  .glass-surface-elevated {
+    --glass-surface-fill: var(--glass-bg-elevated);
+    background-image:
+      linear-gradient(var(--glass-surface-fill), var(--glass-surface-fill)),
+      var(--glass-stroke-gradient);
+  }
+
+  .glass-surface-accent {
+    --glass-surface-fill: var(--purple-accent);
+    background-image:
+      linear-gradient(var(--glass-surface-fill), var(--glass-surface-fill)),
+      var(--glass-stroke-gradient);
+  }
+
   .text-primary,
   .text-zinc-900,
   .text-ink {
