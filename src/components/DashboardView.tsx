@@ -29,13 +29,12 @@ function Widget({ title, cta, onCta, children }: {
   return (
     <div className="rounded-2xl border border-zinc-100 bg-white p-5">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-medium text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+        <h2 className="text-sm font-medium text-ink">
           {title}
         </h2>
         <button
           onClick={onCta}
-          className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
-          style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+          className="text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors"
         >
           {cta}
         </button>
@@ -65,22 +64,19 @@ export function DashboardView({ onNavigate }: { onNavigate: (s: Section) => void
   const renewals = upcomingRenewals(subscriptions);
 
   return (
-    <div
-      className="flex h-full flex-col bg-white"
-      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-    >
+    <div className="flex h-full flex-col bg-white">
       {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
           At a glance
         </p>
         <h2
-          className="mt-1.5 text-3xl text-[#6750a4]"
+          className="mt-1.5 text-3xl text-primary"
           style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
         >
           Dashboard
         </h2>
-        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[#625b71]">
+        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
           Overview of your AI ecosystem. Monitor your spend, upcoming renewals, and active subscriptions.
         </p>
       </div>
@@ -93,15 +89,15 @@ export function DashboardView({ onNavigate }: { onNavigate: (s: Section) => void
           </SelectableErrorMessage>
         )}
 
-        <div className="max-w-2xl space-y-4">
+        <div className="space-y-4">
           {/* Spend widget */}
           <Widget title="Spend" cta="View API spend →" onCta={() => onNavigate("spend")}>
             {subscriptions.length === 0 ? (
-              <p className="text-sm text-[#625b71]">
+              <p className="text-sm text-secondary">
                 No subscriptions tracked yet.{" "}
                 <button
                   onClick={() => onNavigate("subscriptions")}
-                  className="text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
+                  className="text-primary hover:text-primary/70 cursor-pointer transition-colors"
                 >
                   Add one →
                 </button>
@@ -112,10 +108,10 @@ export function DashboardView({ onNavigate }: { onNavigate: (s: Section) => void
                 <div className="flex flex-wrap gap-4">
                   {Object.entries(monthlyByCurrency).map(([currency, total]) => (
                     <div key={currency}>
-                      <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-0.5" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                      <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em] mb-0.5">
                         {currency}/mo
                       </p>
-                      <p className="text-xl text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}>
+                      <p className="text-xl text-ink" style={{ fontWeight: 300 }}>
                         {total.toFixed(2)}
                       </p>
                     </div>
@@ -125,14 +121,14 @@ export function DashboardView({ onNavigate }: { onNavigate: (s: Section) => void
                 {/* Upcoming renewals */}
                 {renewals.length > 0 && (
                   <div className="pt-3 border-t border-zinc-50">
-                    <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-2" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                    <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em] mb-2">
                       Renewing in 7 days
                     </p>
                     <div className="space-y-1">
                       {renewals.map((s) => (
                         <div key={s.id} className="flex items-center justify-between">
-                          <span className="text-sm text-[#1c1b1f]">{s.name}</span>
-                          <span className="text-xs text-[#625b71]">
+                          <span className="text-sm text-ink">{s.name}</span>
+                          <span className="text-xs text-secondary">
                             {formatDate(s.nextBillingAt!)} · {s.currency} {s.monthlyCost.toFixed(2)}
                           </span>
                         </div>
@@ -147,17 +143,17 @@ export function DashboardView({ onNavigate }: { onNavigate: (s: Section) => void
           {/* Subscriptions widget */}
           <Widget title="Subscriptions" cta="Manage →" onCta={() => onNavigate("subscriptions")}>
             {subscriptions.length === 0 ? (
-              <p className="text-sm text-[#625b71]">No subscriptions added yet.</p>
+              <p className="text-sm text-secondary">No subscriptions added yet.</p>
             ) : (
               <div className="space-y-1">
                 {subscriptions.slice(0, 5).map((s) => (
                   <div key={s.id} className="flex items-center justify-between">
-                    <span className="text-sm text-[#1c1b1f]">{s.name}</span>
-                    <span className="text-xs text-[#625b71]">{s.currency} {s.monthlyCost.toFixed(2)}/mo</span>
+                    <span className="text-sm text-ink">{s.name}</span>
+                    <span className="text-xs text-secondary">{s.currency} {s.monthlyCost.toFixed(2)}/mo</span>
                   </div>
                 ))}
                 {subscriptions.length > 5 && (
-                  <p className="text-xs text-[#625b71]/60 pt-1">
+                  <p className="text-xs text-secondary/60 pt-1">
                     +{subscriptions.length - 5} more
                   </p>
                 )}

@@ -261,31 +261,28 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   const hasConfiguredProviders = visibleProviders.some(({ id }) => providers[id].tag !== "unconfigured");
 
   return (
-    <div
-      className="flex h-full flex-col bg-white"
-      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-    >
+    <div className="flex h-full flex-col bg-white">
       {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
               API Usage
             </p>
             <h2
-              className="mt-1.5 text-3xl text-[#6750a4]"
+              className="mt-1.5 text-3xl text-primary"
               style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
             >
               Spend tracker
             </h2>
-            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[#625b71]">
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
               Monitor your API usage across various providers and track your monthly subscription costs in one place.
             </p>
           </div>
-          
+
           <div className="rounded-2xl border border-zinc-100 bg-zinc-50 px-5 py-3.5 text-right shadow-sm">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">Providers</p>
-            <p className="mt-1 text-3xl text-[#6750a4]" style={{ fontWeight: 300 }}>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">Providers</p>
+            <p className="mt-1 text-3xl text-primary" style={{ fontWeight: 300 }}>
               {visibleProviders.length}
             </p>
           </div>
@@ -296,10 +293,10 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
             {hasAnyApiData && (
               <div className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm flex items-center gap-1.5">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-[#625b71]/60 mr-1">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-1">
                   API this month
                 </span>
-                <span className="text-sm font-medium text-[#1c1b1f]">
+                <span className="text-sm font-medium text-ink">
                   ${apiTotal.toFixed(2)}
                 </span>
               </div>
@@ -307,10 +304,10 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
             {subscriptions.length > 0 &&
               Object.entries(monthlyByCurrency).map(([currency, total]) => (
                 <div key={currency} className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm">
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-[#625b71]/60 mr-2">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-2">
                     {currency}/mo
                   </span>
-                  <span className="text-sm font-medium text-[#1c1b1f]">{total.toFixed(2)}</span>
+                  <span className="text-sm font-medium text-ink">{total.toFixed(2)}</span>
                 </div>
               ))}
           </div>
@@ -319,363 +316,325 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
       {/* Body */}
       <div className="flex-1 overflow-auto px-8 py-6">
-        <div className="max-w-2xl">
-          {loadError && <SelectableErrorMessage className="mb-6">{loadError}</SelectableErrorMessage>}
+        {loadError && <SelectableErrorMessage className="mb-6">{loadError}</SelectableErrorMessage>}
 
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-ink">
+              API Spend
+            </h2>
+            {hasConfiguredProviders && (
+              <button
+                onClick={refreshAll}
+                className="text-xs text-primary hover:text-primary/70 transition-colors cursor-pointer"
+              >
+                Refresh all
+              </button>
+            )}
+          </div>
 
+          <div className="space-y-2">
+            {visibleProviders.map(({ id, name, note, comingSoon }) => {
+              const status = providers[id];
+              const isAdding = addingKey === id;
+              const staleMessage =
+                status.tag === "stale"
+                  ? status.error.replace(/^Error:\s*/i, "").replace(/^Failed to fetch spend for \w+:\s*/i, "")
+                  : "";
 
-      <section className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2
-            className="text-sm font-medium text-[#1c1b1f]"
-            style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-          >
-            API Spend
-          </h2>
-          {hasConfiguredProviders && (
-            <button
-              onClick={refreshAll}
-              className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 transition-colors cursor-pointer"
-              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-            >
-              Refresh all
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          {visibleProviders.map(({ id, name, note, comingSoon }) => {
-            const status = providers[id];
-            const isAdding = addingKey === id;
-            const staleMessage =
-              status.tag === "stale"
-                ? status.error.replace(/^Error:\s*/i, "").replace(/^Failed to fetch spend for \w+:\s*/i, "")
-                : "";
-
-            return (
-              <div key={id} className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p
-                        className="text-sm font-medium text-[#1c1b1f]"
-                        style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                      >
-                        {name}
-                      </p>
-                      {comingSoon && (
-                        <span
-                          className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.18em] border border-zinc-200 rounded-full px-2 py-0.5"
-                          style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                        >
-                          Billing API coming soon
-                        </span>
-                      )}
-                    </div>
-
-                    {!comingSoon && status.tag === "unconfigured" && !isAdding && (
-                      <p className="text-xs text-[#625b71] mt-0.5">No API key configured</p>
-                    )}
-                    {!comingSoon && status.tag === "loading" && (
-                      <p className="text-xs text-[#625b71] mt-0.5 animate-pulse">Fetching...</p>
-                    )}
-                    {id === "gcp" && (
-                      <p
-                        className="text-[10px] text-amber-600 mt-1"
-                        style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                      >
-                        Data delayed up to 48h
-                      </p>
-                    )}
-                    {!comingSoon && status.tag === "ok" && (
-                      <div className="mt-2 flex gap-6">
-                        <div>
-                          <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em]">This month</p>
-                          <p className="text-base text-[#1c1b1f]" style={{ fontWeight: 300 }}>
-                            ${status.data.currentMonthUsd.toFixed(2)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em]">Last month</p>
-                          <p className="text-base text-[#1c1b1f]" style={{ fontWeight: 300 }}>
-                            {status.data.previousMonthUsd > 0 ? `$${status.data.previousMonthUsd.toFixed(2)}` : "-"}
-                          </p>
-                        </div>
+              return (
+                <div key={id} className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-ink">
+                          {name}
+                        </p>
+                        {comingSoon && (
+                          <span className="text-[10px] text-secondary/60 uppercase tracking-[0.18em] border border-zinc-200 rounded-full px-2 py-0.5">
+                            Billing API coming soon
+                          </span>
+                        )}
                       </div>
-                    )}
-                    {!comingSoon && status.tag === "stale" && (
-                      <SelectableErrorMessage
-                        kind="inline"
-                        className="mt-1 max-w-sm text-xs leading-relaxed"
-                      >
-                        {staleMessage}
-                      </SelectableErrorMessage>
-                    )}
 
-                    {!comingSoon && isAdding && (
-                      <div className="mt-3 space-y-2">
-                        {note && <p className="text-xs text-[#625b71]/70">{note}</p>}
-                        {id === "gcp" ? (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              value={gcpProject}
-                              onChange={(e) => setGcpProject(e.target.value)}
-                              placeholder="Project ID (e.g. my-project-123)"
-                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4]"
-                            />
-                            <input
-                              type="text"
-                              value={gcpDataset}
-                              onChange={(e) => setGcpDataset(e.target.value)}
-                              placeholder="BigQuery Dataset ID (e.g. bq_billing_export)"
-                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4]"
-                            />
-                            <input
-                              type="text"
-                              value={gcpTable}
-                              onChange={(e) => setGcpTable(e.target.value)}
-                              placeholder="Table Name (e.g. gcp_billing_export_v1_...)"
-                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4]"
-                            />
-                            <textarea
-                              value={keyInput}
-                              onChange={(e) => setKeyInput(e.target.value)}
-                              placeholder="Paste Service Account JSON Key..."
-                              autoFocus
-                              rows={3}
-                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] resize-y"
-                            />
+                      {!comingSoon && status.tag === "unconfigured" && !isAdding && (
+                        <p className="text-xs text-secondary mt-0.5">No API key configured</p>
+                      )}
+                      {!comingSoon && status.tag === "loading" && (
+                        <p className="text-xs text-secondary mt-0.5 animate-pulse">Fetching...</p>
+                      )}
+                      {id === "gcp" && (
+                        <p className="text-[10px] text-amber-600 mt-1">
+                          Data delayed up to 48h
+                        </p>
+                      )}
+                      {!comingSoon && status.tag === "ok" && (
+                        <div className="mt-2 flex gap-6">
+                          <div>
+                            <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">This month</p>
+                            <p className="text-base text-ink" style={{ fontWeight: 300 }}>
+                              ${status.data.currentMonthUsd.toFixed(2)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">Last month</p>
+                            <p className="text-base text-ink" style={{ fontWeight: 300 }}>
+                              {status.data.previousMonthUsd > 0 ? `$${status.data.previousMonthUsd.toFixed(2)}` : "-"}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {!comingSoon && status.tag === "stale" && (
+                        <SelectableErrorMessage
+                          kind="inline"
+                          className="mt-1 max-w-sm text-xs leading-relaxed"
+                        >
+                          {staleMessage}
+                        </SelectableErrorMessage>
+                      )}
+
+                      {!comingSoon && isAdding && (
+                        <div className="mt-3 space-y-2">
+                          {note && <p className="text-xs text-secondary/70">{note}</p>}
+                          {id === "gcp" ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={gcpProject}
+                                onChange={(e) => setGcpProject(e.target.value)}
+                                placeholder="Project ID (e.g. my-project-123)"
+                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary"
+                              />
+                              <input
+                                type="text"
+                                value={gcpDataset}
+                                onChange={(e) => setGcpDataset(e.target.value)}
+                                placeholder="BigQuery Dataset ID (e.g. bq_billing_export)"
+                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary"
+                              />
+                              <input
+                                type="text"
+                                value={gcpTable}
+                                onChange={(e) => setGcpTable(e.target.value)}
+                                placeholder="Table Name (e.g. gcp_billing_export_v1_...)"
+                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary"
+                              />
+                              <textarea
+                                value={keyInput}
+                                onChange={(e) => setKeyInput(e.target.value)}
+                                placeholder="Paste Service Account JSON Key..."
+                                autoFocus
+                                rows={3}
+                                className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary resize-y"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleSaveKey(id)}
+                                  disabled={
+                                    savingKey ||
+                                    !keyInput.trim() ||
+                                    !gcpProject.trim() ||
+                                    !gcpDataset.trim() ||
+                                    !gcpTable.trim()
+                                  }
+                                  className="px-4 py-1.5 rounded-full bg-primary text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-primary/90 transition-colors"
+                                >
+                                  {savingKey ? "Saving..." : "Save"}
+                                </button>
+                                <button
+                                  onClick={cancelAddKey}
+                                  className="px-3 py-1.5 rounded-full text-sm text-secondary hover:bg-zinc-50 cursor-pointer transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
                             <div className="flex gap-2">
+                              <input
+                                type="password"
+                                value={keyInput}
+                                onChange={(e) => setKeyInput(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && handleSaveKey(id)}
+                                placeholder="Paste API key..."
+                                autoFocus
+                                className="flex-1 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors"
+                              />
                               <button
                                 onClick={() => handleSaveKey(id)}
-                                disabled={
-                                  savingKey ||
-                                  !keyInput.trim() ||
-                                  !gcpProject.trim() ||
-                                  !gcpDataset.trim() ||
-                                  !gcpTable.trim()
-                                }
-                                className="px-4 py-1.5 rounded-full bg-[#6750a4] text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-[#6750a4]/90 transition-colors"
+                                disabled={savingKey || !keyInput.trim()}
+                                className="px-4 py-1.5 rounded-full bg-primary text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-primary/90 transition-colors"
                               >
                                 {savingKey ? "Saving..." : "Save"}
                               </button>
                               <button
                                 onClick={cancelAddKey}
-                                className="px-3 py-1.5 rounded-full text-sm text-[#625b71] hover:bg-zinc-50 cursor-pointer transition-colors"
+                                className="px-3 py-1.5 rounded-full text-sm text-secondary hover:bg-zinc-50 cursor-pointer transition-colors"
                               >
                                 Cancel
                               </button>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="flex gap-2">
-                            <input
-                              type="password"
-                              value={keyInput}
-                              onChange={(e) => setKeyInput(e.target.value)}
-                              onKeyDown={(e) => e.key === "Enter" && handleSaveKey(id)}
-                              placeholder="Paste API key..."
-                              autoFocus
-                              className="flex-1 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] transition-colors"
-                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                            />
+                          )}
+                          {addError && (
+                            <SelectableErrorMessage kind="inline" className="text-xs">
+                              {addError}
+                            </SelectableErrorMessage>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {!comingSoon && (
+                      <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+                        {status.tag === "ok" && (
+                          <>
+                            <p className="text-[10px] text-secondary/50">
+                              {status.backgroundRefreshing ? (
+                                <span className="animate-pulse">Refreshing...</span>
+                              ) : (
+                                formatRefreshedAt(status.refreshedAt)
+                              )}
+                            </p>
                             <button
-                              onClick={() => handleSaveKey(id)}
-                              disabled={savingKey || !keyInput.trim()}
-                              className="px-4 py-1.5 rounded-full bg-[#6750a4] text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-[#6750a4]/90 transition-colors"
-                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                              onClick={() => runFetch(id)}
+                              disabled={status.backgroundRefreshing}
+                              className="text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors disabled:opacity-40"
                             >
-                              {savingKey ? "Saving..." : "Save"}
+                              Refresh
                             </button>
-                            <button
-                              onClick={cancelAddKey}
-                              className="px-3 py-1.5 rounded-full text-sm text-[#625b71] hover:bg-zinc-50 cursor-pointer transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
+                            {confirmRevoke === id ? (
+                              <div className="flex gap-1 items-center">
+                                <button
+                                  onClick={() => handleRevokeKey(id)}
+                                  className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
+                                >
+                                  Revoke
+                                </button>
+                                <span className="text-[10px] text-secondary/40">
+                                  /
+                                </span>
+                                <button
+                                  onClick={() => setConfirmRevoke(null)}
+                                  className="text-xs text-secondary hover:text-secondary/70 cursor-pointer transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  if (addingKey === id) cancelAddKey();
+                                  setConfirmRevoke(id);
+                                }}
+                                className="text-xs text-secondary/50 hover:text-rose-400 cursor-pointer transition-colors"
+                              >
+                                Revoke key
+                              </button>
+                            )}
+                          </>
                         )}
-                        {addError && (
-                          <SelectableErrorMessage kind="inline" className="text-xs">
-                            {addError}
-                          </SelectableErrorMessage>
+                        {status.tag === "stale" && (
+                          <>
+                            <button
+                              onClick={() => runFetch(id)}
+                              className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer transition-colors"
+                            >
+                              Retry
+                            </button>
+                            {confirmRevoke === id ? (
+                              <div className="flex gap-1 items-center">
+                                <button
+                                  onClick={() => handleRevokeKey(id)}
+                                  className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
+                                >
+                                  Revoke
+                                </button>
+                                <span className="text-[10px] text-secondary/40">
+                                  /
+                                </span>
+                                <button
+                                  onClick={() => setConfirmRevoke(null)}
+                                  className="text-xs text-secondary hover:text-secondary/70 cursor-pointer transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  if (addingKey === id) cancelAddKey();
+                                  setConfirmRevoke(id);
+                                }}
+                                className="text-xs text-secondary/50 hover:text-rose-400 cursor-pointer transition-colors"
+                              >
+                                Revoke key
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {(status.tag === "unconfigured" || status.tag === "stale") && !isAdding && (
+                          <button
+                            onClick={() => {
+                              setConfirmRevoke(null);
+                              setAddingKey(id);
+                              setAddError(null);
+                              setKeyInput("");
+                            }}
+                            className="text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors"
+                          >
+                            {status.tag === "unconfigured" ? "Add key" : "Update key"}
+                          </button>
                         )}
                       </div>
                     )}
                   </div>
-
-                  {!comingSoon && (
-                    <div
-                      className="shrink-0 flex flex-col items-end gap-1 pt-0.5"
-                      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                    >
-                      {status.tag === "ok" && (
-                        <>
-                          <p className="text-[10px] text-[#625b71]/50">
-                            {status.backgroundRefreshing ? (
-                              <span className="animate-pulse">Refreshing...</span>
-                            ) : (
-                              formatRefreshedAt(status.refreshedAt)
-                            )}
-                          </p>
-                          <button
-                            onClick={() => runFetch(id)}
-                            disabled={status.backgroundRefreshing}
-                            className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors disabled:opacity-40"
-                          >
-                            Refresh
-                          </button>
-                          {confirmRevoke === id ? (
-                            <div className="flex gap-1 items-center">
-                              <button
-                                onClick={() => handleRevokeKey(id)}
-                                className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
-                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                              >
-                                Revoke
-                              </button>
-                              <span
-                                className="text-[10px] text-[#625b71]/40"
-                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                              >
-                                /
-                              </span>
-                              <button
-                                onClick={() => setConfirmRevoke(null)}
-                                className="text-xs text-[#625b71] hover:text-[#625b71]/70 cursor-pointer transition-colors"
-                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => {
-                                if (addingKey === id) cancelAddKey();
-                                setConfirmRevoke(id);
-                              }}
-                              className="text-xs text-[#625b71]/50 hover:text-rose-400 cursor-pointer transition-colors"
-                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                            >
-                              Revoke key
-                            </button>
-                          )}
-                        </>
-                      )}
-                      {status.tag === "stale" && (
-                        <>
-                          <button
-                            onClick={() => runFetch(id)}
-                            className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer transition-colors"
-                          >
-                            Retry
-                          </button>
-                          {confirmRevoke === id ? (
-                            <div className="flex gap-1 items-center">
-                              <button
-                                onClick={() => handleRevokeKey(id)}
-                                className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
-                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                              >
-                                Revoke
-                              </button>
-                              <span
-                                className="text-[10px] text-[#625b71]/40"
-                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                              >
-                                /
-                              </span>
-                              <button
-                                onClick={() => setConfirmRevoke(null)}
-                                className="text-xs text-[#625b71] hover:text-[#625b71]/70 cursor-pointer transition-colors"
-                                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => {
-                                if (addingKey === id) cancelAddKey();
-                                setConfirmRevoke(id);
-                              }}
-                              className="text-xs text-[#625b71]/50 hover:text-rose-400 cursor-pointer transition-colors"
-                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                            >
-                              Revoke key
-                            </button>
-                          )}
-                        </>
-                      )}
-                      {(status.tag === "unconfigured" || status.tag === "stale") && !isAdding && (
-                        <button
-                          onClick={() => {
-                            setConfirmRevoke(null);
-                            setAddingKey(id);
-                            setAddError(null);
-                            setKeyInput("");
-                          }}
-                          className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
-                        >
-                          {status.tag === "unconfigured" ? "Add key" : "Update key"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2
-            className="text-sm font-medium text-[#1c1b1f]"
-            style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-          >
-            Subscriptions
-          </h2>
-          <button
-            onClick={() => onNavigate("subscriptions")}
-            className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
-            style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-          >
-            Manage {"->"}
-          </button>
-        </div>
-
-        {subscriptions.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
-            <p className="text-sm text-[#625b71]">No subscriptions tracked yet.</p>
-            <button
-              onClick={() => onNavigate("subscriptions")}
-              className="mt-2 text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
-            >
-              Add subscriptions {"->"}
-            </button>
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4 space-y-1.5">
-            {Object.entries(monthlyByCurrency).map(([currency, total]) => {
-              const count = subscriptions.filter((subscription) => subscription.currency === currency).length;
-              return (
-                <div key={currency} className="flex items-baseline justify-between">
-                  <span className="text-sm text-[#625b71]">
-                    {count} subscription{count !== 1 ? "s" : ""} in {currency}
-                  </span>
-                  <span className="text-sm text-[#1c1b1f]">
-                    {currency} {total.toFixed(2)}/mo
-                  </span>
                 </div>
               );
             })}
           </div>
-        )}
-      </section>
-        </div>
+        </section>
+
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-ink">
+              Subscriptions
+            </h2>
+            <button
+              onClick={() => onNavigate("subscriptions")}
+              className="text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors"
+            >
+              Manage {"->"}
+            </button>
+          </div>
+
+          {subscriptions.length === 0 ? (
+            <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
+              <p className="text-sm text-secondary">No subscriptions tracked yet.</p>
+              <button
+                onClick={() => onNavigate("subscriptions")}
+                className="mt-2 text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors"
+              >
+                Add subscriptions {"->"}
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4 space-y-1.5">
+              {Object.entries(monthlyByCurrency).map(([currency, total]) => {
+                const count = subscriptions.filter((subscription) => subscription.currency === currency).length;
+                return (
+                  <div key={currency} className="flex items-baseline justify-between">
+                    <span className="text-sm text-secondary">
+                      {count} subscription{count !== 1 ? "s" : ""} in {currency}
+                    </span>
+                    <span className="text-sm text-ink">
+                      {currency} {total.toFixed(2)}/mo
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
