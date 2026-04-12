@@ -148,7 +148,7 @@ export default function App() {
 
         {/* Nav */}
         <nav className="flex flex-col gap-0.5 p-3 flex-1">
-          {(["dashboard", "subscriptions", "docker", "spend", "map"] as Section[]).map((id) => (
+          {(["dashboard", "spend", "subscriptions", "docker", "map"] as Section[]).map((id) => (
             <button
               key={id}
               onClick={() => setActive(id)}
