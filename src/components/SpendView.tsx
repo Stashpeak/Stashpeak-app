@@ -262,23 +262,60 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
   return (
     <div
+    <div
       className="flex h-full flex-col bg-white"
       style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
     >
       {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">
-          API Usage
-        </p>
-        <h2
-          className="mt-1.5 text-3xl text-[#6750a4]"
-          style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
-        >
-          Spend tracker
-        </h2>
-        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[#625b71]">
-          Monitor your API usage across various providers and track your monthly subscription costs in one place.
-        </p>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">
+              API Usage
+            </p>
+            <h2
+              className="mt-1.5 text-3xl text-[#6750a4]"
+              style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
+            >
+              Spend tracker
+            </h2>
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[#625b71]">
+              Monitor your API usage across various providers and track your monthly subscription costs in one place.
+            </p>
+          </div>
+          
+          <div className="rounded-2xl border border-zinc-100 bg-zinc-50 px-5 py-3.5 text-right shadow-sm">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">Providers</p>
+            <p className="mt-1 text-3xl text-[#6750a4]" style={{ fontWeight: 300 }}>
+              {visibleProviders.length}
+            </p>
+          </div>
+        </div>
+
+        {/* Totals row */}
+        {(hasAnyApiData || subscriptions.length > 0) && (
+          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+            {hasAnyApiData && (
+              <div className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm flex items-center gap-1.5">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-[#625b71]/60 mr-1">
+                  API this month
+                </span>
+                <span className="text-sm font-medium text-[#1c1b1f]">
+                  ${apiTotal.toFixed(2)}
+                </span>
+              </div>
+            )}
+            {subscriptions.length > 0 &&
+              Object.entries(monthlyByCurrency).map(([currency, total]) => (
+                <div key={currency} className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-[#625b71]/60 mr-2">
+                    {currency}/mo
+                  </span>
+                  <span className="text-sm font-medium text-[#1c1b1f]">{total.toFixed(2)}</span>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -286,43 +323,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         <div className="max-w-2xl">
           {loadError && <SelectableErrorMessage className="mb-6">{loadError}</SelectableErrorMessage>}
 
-      {(hasAnyApiData || subscriptions.length > 0) && (
-        <div className="flex flex-wrap gap-3 mb-8">
-          {hasAnyApiData && (
-            <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-3">
-              <p
-                className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-0.5"
-                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-              >
-                API this month
-              </p>
-              <p
-                className="text-2xl text-[#1c1b1f]"
-                style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}
-              >
-                ${apiTotal.toFixed(2)}
-              </p>
-            </div>
-          )}
-          {subscriptions.length > 0 &&
-            Object.entries(monthlyByCurrency).map(([currency, total]) => (
-              <div key={currency} className="rounded-2xl border border-zinc-100 bg-white px-5 py-3">
-                <p
-                  className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-0.5"
-                  style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                >
-                  Subscriptions/mo
-                </p>
-                <p
-                  className="text-2xl text-[#1c1b1f]"
-                  style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}
-                >
-                  {currency} {total.toFixed(2)}
-                </p>
-              </div>
-            ))}
-        </div>
-      )}
+
 
       <section className="mb-8">
         <div className="flex items-center justify-between mb-3">
