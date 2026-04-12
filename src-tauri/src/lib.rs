@@ -61,6 +61,22 @@ async fn has_provider_api_key(provider: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn set_provider_enabled(provider: String, enabled: bool) -> Result<(), String> {
+    run_blocking("set_provider_enabled", move || {
+        providers::set_provider_enabled(&provider, enabled)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn get_provider_enabled(provider: String) -> Result<bool, String> {
+    run_blocking("get_provider_enabled", move || {
+        providers::is_provider_enabled(&provider)
+    })
+    .await
+}
+
+#[tauri::command]
 async fn list_subscriptions() -> Result<Vec<subscriptions::Subscription>, String> {
     run_blocking("list_subscriptions", move || {
         subscriptions::list_subscriptions().map_err(|err| err.to_string())
@@ -147,6 +163,7 @@ async fn upsert_exchange_rate(from: String, to: String, rate: f64) -> Result<(),
 #[tauri::command]
 async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
     use connectors::spend::anthropic::AnthropicConnector;
+    use connectors::spend::gcp::GcpConnector;
     use connectors::spend::groq::GroqConnector;
     use connectors::spend::openai::OpenAiConnector;
     use connectors::spend::openrouter::OpenRouterConnector;
@@ -159,8 +176,14 @@ async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData,
         "openai" => Box::new(OpenAiConnector::new(client)),
         "openrouter" => Box::new(OpenRouterConnector::new(client)),
         "groq" => Box::new(GroqConnector::new(client)),
+        "gcp" => Box::new(GcpConnector::new(client)),
         other => return Err(format!("unknown provider '{other}'")),
     };
+
+    if !providers::is_provider_enabled(&provider)? {
+        tracing::debug!(provider = connector.provider_id(), "provider is disabled, skipping fetch");
+        return Err(format!("Provider {} is disabled", provider));
+    }
 
     tracing::debug!(provider = connector.provider_id(), "spend fetch requested");
     connectors::with_retry(&DEFAULT_RETRY, || connector.fetch())
@@ -190,6 +213,8 @@ pub fn run() {
             get_provider_api_key,
             delete_provider_api_key,
             has_provider_api_key,
+            set_provider_enabled,
+            get_provider_enabled,
             list_subscriptions,
             create_subscription,
             update_subscription,

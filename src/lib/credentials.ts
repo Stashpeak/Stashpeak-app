@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ProviderId = "openai" | "anthropic" | "openrouter" | "groq";
+export type ProviderId = "openai" | "anthropic" | "openrouter" | "groq" | "gcp";
 
 export async function storeProviderApiKey(provider: ProviderId, value: string): Promise<void> {
   try {

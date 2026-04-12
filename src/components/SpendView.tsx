@@ -7,7 +7,7 @@ import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type ProviderId = "anthropic" | "openai" | "openrouter" | "groq";
+type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "gcp";
 
 type ProviderStatus =
   | { tag: "unconfigured" }
@@ -20,6 +20,7 @@ const PROVIDERS: { id: ProviderId; name: string; note?: string; comingSoon?: boo
   { id: "openai",    name: "OpenAI",    note: "Requires API key with usage read scope" },
   { id: "openrouter", name: "OpenRouter" },
   { id: "groq",      name: "Groq",      comingSoon: true },
+  { id: "gcp",       name: "Google Cloud", note: "Billing export to BigQuery required" },
 ];
 
 const EMPTY_STATES: Record<ProviderId, ProviderStatus> = {
@@ -27,6 +28,7 @@ const EMPTY_STATES: Record<ProviderId, ProviderStatus> = {
   openai:     { tag: "unconfigured" },
   openrouter: { tag: "unconfigured" },
   groq:       { tag: "unconfigured" },
+  gcp:        { tag: "unconfigured" },
 };
 
 // ── Spend cache (localStorage) ────────────────────────────────────────────────
@@ -88,6 +90,10 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   const [addingKey, setAddingKey]             = useState<ProviderId | null>(null);
   const [confirmRevoke, setConfirmRevoke]     = useState<ProviderId | null>(null);
   const [keyInput, setKeyInput]               = useState("");
+  // Additional fields for GCP
+  const [gcpProject, setGcpProject]           = useState("");
+  const [gcpDataset, setGcpDataset]           = useState("");
+  const [gcpTable, setGcpTable]               = useState("");
   const [addError, setAddError]               = useState<string | null>(null);
   const [savingKey, setSavingKey]             = useState(false);
 
@@ -152,12 +158,36 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   }
 
   async function handleSaveKey(id: ProviderId) {
-    if (!keyInput.trim()) return;
+    if (id !== "gcp" && !keyInput.trim()) return;
+    if (id === "gcp" && (!keyInput.trim() || !gcpProject.trim() || !gcpDataset.trim() || !gcpTable.trim())) {
+      setAddError("Please fill in all GCP fields");
+      return;
+    }
+
     setSavingKey(true);
     setAddError(null);
     try {
-      await storeProviderApiKey(id, keyInput.trim());
+      let finalKey = keyInput.trim();
+      
+      if (id === "gcp") {
+        try {
+          const serviceAccountKey = JSON.parse(finalKey);
+          finalKey = JSON.stringify({
+            service_account_key: serviceAccountKey,
+            project_id: gcpProject.trim(),
+            dataset_id: gcpDataset.trim(),
+            table_name: gcpTable.trim()
+          });
+        } catch {
+          throw new Error("Invalid Service Account JSON format");
+        }
+      }
+
+      await storeProviderApiKey(id, finalKey);
       setKeyInput("");
+      setGcpProject("");
+      setGcpDataset("");
+      setGcpTable("");
       setAddingKey(null);
       runFetch(id);
     } catch (e) {
@@ -181,6 +211,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   function cancelAddKey() {
     setAddingKey(null);
     setKeyInput("");
+    setGcpProject("");
+    setGcpDataset("");
+    setGcpTable("");
     setAddError(null);
   }
 
@@ -296,6 +329,11 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                     {!comingSoon && s.tag === "loading" && (
                       <p className="text-xs text-[#625b71] mt-0.5 animate-pulse">Fetching…</p>
                     )}
+                    {id === "gcp" && (
+                      <p className="text-[10px] text-amber-600 mt-1" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                        Data delayed up to 48h
+                      </p>
+                    )}
                     {!comingSoon && s.tag === "ok" && (
                       <div className="mt-2 flex gap-6">
                         <div>
@@ -327,32 +365,81 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                         {note && (
                           <p className="text-xs text-[#625b71]/70">{note}</p>
                         )}
-                        <div className="flex gap-2">
-                          <input
-                            type="password"
-                            value={keyInput}
-                            onChange={(e) => setKeyInput(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleSaveKey(id)}
-                            placeholder="Paste API key…"
-                            autoFocus
-                            className="flex-1 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] transition-colors"
-                            style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                          />
-                          <button
-                            onClick={() => handleSaveKey(id)}
-                            disabled={savingKey || !keyInput.trim()}
-                            className="px-4 py-1.5 rounded-full bg-[#6750a4] text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-[#6750a4]/90 transition-colors"
-                            style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                          >
-                            {savingKey ? "Saving…" : "Save"}
-                          </button>
-                          <button
-                            onClick={cancelAddKey}
-                            className="px-3 py-1.5 rounded-full text-sm text-[#625b71] hover:bg-zinc-50 cursor-pointer transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                        {id === "gcp" ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={gcpProject}
+                              onChange={(e) => setGcpProject(e.target.value)}
+                              placeholder="Project ID (e.g. my-project-123)"
+                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4]"
+                            />
+                            <input
+                              type="text"
+                              value={gcpDataset}
+                              onChange={(e) => setGcpDataset(e.target.value)}
+                              placeholder="BigQuery Dataset ID (e.g. bq_billing_export)"
+                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4]"
+                            />
+                            <input
+                              type="text"
+                              value={gcpTable}
+                              onChange={(e) => setGcpTable(e.target.value)}
+                              placeholder="Table Name (e.g. gcp_billing_export_v1_...)"
+                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4]"
+                            />
+                            <textarea
+                              value={keyInput}
+                              onChange={(e) => setKeyInput(e.target.value)}
+                              placeholder="Paste Service Account JSON Key..."
+                              autoFocus
+                              rows={3}
+                              className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] resize-y"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleSaveKey(id)}
+                                disabled={savingKey || !keyInput.trim() || !gcpProject.trim() || !gcpDataset.trim() || !gcpTable.trim()}
+                                className="px-4 py-1.5 rounded-full bg-[#6750a4] text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-[#6750a4]/90 transition-colors"
+                              >
+                                {savingKey ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                onClick={cancelAddKey}
+                                className="px-3 py-1.5 rounded-full text-sm text-[#625b71] hover:bg-zinc-50 cursor-pointer transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              value={keyInput}
+                              onChange={(e) => setKeyInput(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleSaveKey(id)}
+                              placeholder="Paste API key…"
+                              autoFocus
+                              className="flex-1 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] transition-colors"
+                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                            />
+                            <button
+                              onClick={() => handleSaveKey(id)}
+                              disabled={savingKey || !keyInput.trim()}
+                              className="px-4 py-1.5 rounded-full bg-[#6750a4] text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-[#6750a4]/90 transition-colors"
+                              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                            >
+                              {savingKey ? "Saving…" : "Save"}
+                            </button>
+                            <button
+                              onClick={cancelAddKey}
+                              className="px-3 py-1.5 rounded-full text-sm text-[#625b71] hover:bg-zinc-50 cursor-pointer transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                         {addError && (
                           <SelectableErrorMessage kind="inline" className="text-xs">
                             {addError}

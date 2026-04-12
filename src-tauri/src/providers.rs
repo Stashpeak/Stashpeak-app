@@ -1,3 +1,5 @@
+use rusqlite::OptionalExtension;
+
 /// Canonical identifier for a supported AI provider.
 ///
 /// `parse()` is the sole whitelist gate — only strings matched here can
@@ -9,6 +11,7 @@ pub(crate) enum ProviderId {
     Anthropic,
     OpenRouter,
     Groq,
+    Gcp,
 }
 
 impl ProviderId {
@@ -22,6 +25,7 @@ impl ProviderId {
             "anthropic" => Ok(Self::Anthropic),
             "openrouter" => Ok(Self::OpenRouter),
             "groq" => Ok(Self::Groq),
+            "gcp" => Ok(Self::Gcp),
             other => Err(other.to_string()),
         }
     }
@@ -33,6 +37,7 @@ impl ProviderId {
             Self::Anthropic => "anthropic",
             Self::OpenRouter => "openrouter",
             Self::Groq => "groq",
+            Self::Gcp => "gcp",
         }
     }
 
@@ -44,8 +49,35 @@ impl ProviderId {
             Self::Anthropic => "Anthropic",
             Self::OpenRouter => "OpenRouter",
             Self::Groq => "Groq",
+            Self::Gcp => "Google Cloud",
         }
     }
+}
+
+pub fn set_provider_enabled(provider: &str, enabled: bool) -> Result<(), String> {
+    let p = ProviderId::parse(provider)?;
+    let conn = crate::db::connect().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO provider_spend (provider, enabled) VALUES (?1, ?2)
+         ON CONFLICT(provider) DO UPDATE SET enabled = excluded.enabled",
+        rusqlite::params![p.as_str(), if enabled { 1 } else { 0 }],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn is_provider_enabled(provider: &str) -> Result<bool, String> {
+    let p = ProviderId::parse(provider)?;
+    let conn = crate::db::connect().map_err(|e| e.to_string())?;
+    let val: Option<i32> = conn
+        .query_row(
+            "SELECT enabled FROM provider_spend WHERE provider = ?1",
+            rusqlite::params![p.as_str()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(val.unwrap_or(1) != 0) // default to 1 (true)
 }
 
 #[cfg(test)]
@@ -64,6 +96,7 @@ mod tests {
             ProviderId::OpenRouter
         );
         assert_eq!(ProviderId::parse("groq").unwrap(), ProviderId::Groq);
+        assert_eq!(ProviderId::parse("gcp").unwrap(), ProviderId::Gcp);
     }
 
     #[test]
@@ -81,6 +114,7 @@ mod tests {
             ProviderId::Anthropic,
             ProviderId::OpenRouter,
             ProviderId::Groq,
+            ProviderId::Gcp,
         ] {
             assert_eq!(ProviderId::parse(id.as_str()).unwrap(), id);
         }
@@ -93,6 +127,7 @@ mod tests {
             ProviderId::Anthropic,
             ProviderId::OpenRouter,
             ProviderId::Groq,
+            ProviderId::Gcp,
         ] {
             assert!(!id.display_name().is_empty());
         }
