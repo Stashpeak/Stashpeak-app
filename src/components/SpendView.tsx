@@ -12,7 +12,7 @@ type ProviderId = "anthropic" | "openai" | "openrouter" | "groq";
 type ProviderStatus =
   | { tag: "unconfigured" }
   | { tag: "loading" }
-  | { tag: "ok"; data: SpendData; refreshedAt: Date }
+  | { tag: "ok"; data: SpendData; refreshedAt: Date; backgroundRefreshing?: boolean }
   | { tag: "stale"; error: string };
 
 const PROVIDERS: { id: ProviderId; name: string; note?: string; comingSoon?: boolean }[] = [
@@ -29,12 +29,62 @@ const EMPTY_STATES: Record<ProviderId, ProviderStatus> = {
   groq:       { tag: "unconfigured" },
 };
 
+// ── Spend cache (localStorage) ────────────────────────────────────────────────
+
+const CACHE_KEY = "spend_cache_v1";
+const STALE_AFTER_MS = 5 * 60 * 1000; // 5 minutes
+
+interface CacheEntry {
+  data: SpendData;
+  fetchedAt: number; // unix ms
+}
+
+type SpendCache = Partial<Record<ProviderId, CacheEntry>>;
+
+function loadCache(): SpendCache {
+  try {
+    return JSON.parse(localStorage.getItem(CACHE_KEY) ?? "{}") as SpendCache;
+  } catch {
+    return {};
+  }
+}
+
+function persistCache(id: ProviderId, data: SpendData) {
+  const cache = loadCache();
+  cache[id] = { data, fetchedAt: Date.now() };
+  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+}
+
+function evictCache(id: ProviderId) {
+  const cache = loadCache();
+  delete cache[id];
+  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+}
+
+function buildInitialStates(): Record<ProviderId, ProviderStatus> {
+  const cache = loadCache();
+  const result = { ...EMPTY_STATES };
+  for (const [id, entry] of Object.entries(cache) as [ProviderId, CacheEntry][]) {
+    if (entry) {
+      result[id] = { tag: "ok", data: entry.data, refreshedAt: new Date(entry.fetchedAt) };
+    }
+  }
+  return result;
+}
+
+function formatRefreshedAt(date: Date): string {
+  const isToday = date.toDateString() === new Date().toDateString();
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return time;
+  return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) {
   const [subscriptions, setSubscriptions]     = useState<Subscription[]>([]);
   const [loadError, setLoadError]             = useState<string | null>(null);
-  const [providers, setProviders]             = useState<Record<ProviderId, ProviderStatus>>(EMPTY_STATES);
+  const [providers, setProviders]             = useState<Record<ProviderId, ProviderStatus>>(buildInitialStates);
   const [addingKey, setAddingKey]             = useState<ProviderId | null>(null);
   const [confirmRevoke, setConfirmRevoke]     = useState<ProviderId | null>(null);
   const [keyInput, setKeyInput]               = useState("");
@@ -46,11 +96,26 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
       .then(setSubscriptions)
       .catch((e) => setLoadError(String(e)));
 
-    // Check which providers have keys and fetch them concurrently (skip comingSoon)
+    const cache = loadCache();
+    const now = Date.now();
+
     PROVIDERS.forEach(({ id, comingSoon }) => {
       if (comingSoon) return;
       hasProviderApiKey(id)
-        .then((has) => { if (has) runFetch(id); })
+        .then((has) => {
+          if (!has) {
+            // Key was revoked — clear any cached data for this provider
+            setStatus(id, { tag: "unconfigured" });
+            evictCache(id);
+            return;
+          }
+          const entry = cache[id];
+          const isStale = !entry || (now - entry.fetchedAt) > STALE_AFTER_MS;
+          if (isStale) {
+            // Background refresh if we already have cached data to show; full load if not
+            runFetch(id, !entry);
+          }
+        })
         .catch(() => {});
     });
   }, []);
@@ -59,11 +124,21 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     setProviders((prev) => ({ ...prev, [id]: status }));
   }
 
-  async function runFetch(id: ProviderId) {
-    setStatus(id, { tag: "loading" });
+  async function runFetch(id: ProviderId, showLoading = true) {
+    if (showLoading) {
+      setStatus(id, { tag: "loading" });
+    } else {
+      // Mark existing ok data as background-refreshing without hiding it
+      setProviders((prev) => {
+        const s = prev[id];
+        if (s.tag === "ok") return { ...prev, [id]: { ...s, backgroundRefreshing: true } };
+        return prev;
+      });
+    }
     try {
       const data = await fetchProviderSpend(id);
       setStatus(id, { tag: "ok", data, refreshedAt: new Date() });
+      persistCache(id, data);
     } catch (e) {
       setStatus(id, { tag: "stale", error: String(e) });
     }
@@ -95,13 +170,12 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   async function handleRevokeKey(id: ProviderId) {
     try {
       await deleteProviderApiKey(id);
-      setStatus(id, { tag: "unconfigured" });
-      setConfirmRevoke(null);
     } catch {
-      // silently reset - key may already be gone
-      setStatus(id, { tag: "unconfigured" });
-      setConfirmRevoke(null);
+      // silently continue — key may already be gone
     }
+    evictCache(id);
+    setStatus(id, { tag: "unconfigured" });
+    setConfirmRevoke(null);
   }
 
   function cancelAddKey() {
@@ -297,11 +371,16 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                       {s.tag === "ok" && (
                         <>
                           <p className="text-[10px] text-[#625b71]/50">
-                            {s.refreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            {s.backgroundRefreshing ? (
+                              <span className="animate-pulse">Refreshing…</span>
+                            ) : (
+                              formatRefreshedAt(s.refreshedAt)
+                            )}
                           </p>
                           <button
                             onClick={() => runFetch(id)}
-                            className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
+                            disabled={s.backgroundRefreshing}
+                            className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors disabled:opacity-40"
                           >
                             Refresh
                           </button>
