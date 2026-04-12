@@ -10,7 +10,7 @@ import { getHomeCurrency, getExchangeRates, type ExchangeRate } from "../lib/set
 import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./SubscriptionList";
-import { PRESETS, SubscriptionPresets } from "./SubscriptionPresets";
+import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
 
 const SEED_CATEGORIES = ["AI", "Assistant", "Audio", "Coding", "Image", "Research", "Video"];
 
@@ -18,7 +18,6 @@ export function SubscriptionsView() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [selectedPresets, setSelectedPresets] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,36 +163,16 @@ export function SubscriptionsView() {
     }
   }
 
-  async function handleQuickAdd() {
-    if (selectedPresets.length === 0) return;
-
-    try {
-      setIsSaving(true);
-      setError(null);
-
-      for (const presetId of selectedPresets) {
-        const preset = PRESETS.find((item) => item.id === presetId);
-        if (!preset) continue;
-
-        await createSubscription({
-          name: preset.name,
-          provider: preset.provider,
-          monthlyCost: 0,
-          currency: preset.currency,
-          billingPeriod: "monthly",
-          nextBillingAt: null,
-          category: formatCategoryLabel(preset.category),
-          notes: "Quick-added from presets. Fill in your actual billing details.",
-        });
-      }
-
-      setSelectedPresets([]);
-      await loadSubscriptions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add presets");
-    } finally {
-      setIsSaving(false);
-    }
+  function handlePresetSelect(preset: Preset) {
+    setEditingId(null);
+    setForm({
+      ...EMPTY_FORM,
+      name: preset.name,
+      provider: preset.provider,
+      currency: preset.currency,
+      category: formatCategoryLabel(preset.category),
+    });
+    setError(null);
   }
 
   return (
@@ -275,10 +254,7 @@ export function SubscriptionsView() {
       <div className="grid flex-1 gap-6 overflow-auto px-8 py-6 xl:grid-cols-[1.4fr_0.9fr]">
         <section className="space-y-5">
           <SubscriptionPresets
-            selectedPresets={selectedPresets}
-            onSelectionChange={setSelectedPresets}
-            onQuickAdd={() => void handleQuickAdd()}
-            isSaving={isSaving}
+            onPresetSelect={handlePresetSelect}
           />
           <SubscriptionList
             subscriptions={subscriptions}
