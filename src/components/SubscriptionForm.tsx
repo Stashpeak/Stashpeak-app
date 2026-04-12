@@ -1,4 +1,5 @@
 import { type BillingPeriod, type Subscription, type SubscriptionInput } from "../lib/subscriptions";
+import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { CURRENCY_OPTIONS } from "../lib/currencies";
 import { CategorySelector } from "./CategorySelector";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
@@ -21,7 +22,7 @@ export const EMPTY_FORM: FormState = {
   currency: "USD",
   billingPeriod: "monthly",
   nextBillingAt: "",
-  category: "ai",
+  category: "AI",
   notes: "",
 };
 
@@ -33,7 +34,7 @@ export function toFormState(subscription: Subscription): FormState {
     currency: subscription.currency,
     billingPeriod: subscription.billingPeriod,
     nextBillingAt: subscription.nextBillingAt ?? "",
-    category: subscription.category,
+    category: formatCategoryLabel(subscription.category),
     notes: subscription.notes,
   };
 }
@@ -46,7 +47,7 @@ export function toPayload(form: FormState): SubscriptionInput {
     currency: form.currency.trim().toUpperCase(),
     billingPeriod: form.billingPeriod,
     nextBillingAt: form.nextBillingAt.trim() || null,
-    category: form.category.trim(),
+    category: formatCategoryLabel(form.category),
     notes: form.notes,
   };
 }
@@ -188,7 +189,7 @@ export function SubscriptionForm({
             value={form.category}
             categories={categories}
             onChange={(value) => onChange("category", value)}
-            placeholder="assistant"
+            placeholder="Assistant"
           />
         </div>
 

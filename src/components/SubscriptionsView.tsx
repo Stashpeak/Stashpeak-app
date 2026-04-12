@@ -7,11 +7,12 @@ import {
   type Subscription,
 } from "../lib/subscriptions";
 import { getHomeCurrency, getExchangeRates, type ExchangeRate } from "../lib/settings";
+import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./SubscriptionList";
 import { PRESETS, SubscriptionPresets } from "./SubscriptionPresets";
 
-const SEED_CATEGORIES = ["ai", "assistant", "audio", "coding", "image", "research", "video"];
+const SEED_CATEGORIES = ["AI", "Assistant", "Audio", "Coding", "Image", "Research", "Video"];
 
 export function SubscriptionsView() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -94,9 +95,9 @@ export function SubscriptionsView() {
   }, [subscriptions, rateMap, homeCurrency]);
 
   const categories = useMemo(() => {
-    const fromSubs = subscriptions.map((s) => s.category.trim().toLowerCase()).filter(Boolean);
-    const fromPresets = PRESETS.map((p) => p.category);
-    return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubs])].sort();
+    const fromSubs = subscriptions.map((s) => formatCategoryLabel(s.category)).filter(Boolean);
+    const fromPresets = PRESETS.map((p) => formatCategoryLabel(p.category));
+    return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubs])].sort((a, b) => a.localeCompare(b));
   }, [subscriptions]);
 
   const names = useMemo(() => {
@@ -181,7 +182,7 @@ export function SubscriptionsView() {
           currency: preset.currency,
           billingPeriod: "monthly",
           nextBillingAt: null,
-          category: preset.category,
+          category: formatCategoryLabel(preset.category),
           notes: "Quick-added from presets. Fill in your actual billing details.",
         });
       }

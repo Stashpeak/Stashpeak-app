@@ -1,8 +1,0 @@
-feat: unified UI dropdowns for form fields (#23)
-
-- Extended CategorySelector with `readonlyInput` and `allowCreate` props to act as a strict visual dropdown (with chevron).
-- Extracted CURRENCY_OPTIONS to a shared `lib/currencies.ts` module.
-- Changed SubscriptionForm "Name" and "Provider" fields to use CategorySelector (combobox behavior) with suggestions automatically extracted from presets and existing user subscriptions.
-- Changed SubscriptionForm "Currency" and "Billing period" to use strict CategorySelector dropdowns for visual UI consistency across all fields.
-
-Closes #23

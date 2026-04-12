@@ -1,4 +1,5 @@
 import type { Subscription } from "../lib/subscriptions";
+import { formatCategoryLabel } from "../lib/categoryFormatting";
 
 export function formatCurrency(amount: number, currency: string): string {
   try {
@@ -71,8 +72,8 @@ export function SubscriptionList({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-medium text-zinc-900">{subscription.name}</h4>
-                    <span className="rounded-full border border-[#6750a4]/20 px-2 py-0.5 text-[9px] uppercase tracking-[0.25em] text-[#6750a4]/70">
-                      {subscription.category}
+                    <span className="rounded-full border border-[#6750a4]/20 px-2 py-0.5 text-[9px] tracking-[0.12em] text-[#6750a4]/70">
+                      {formatCategoryLabel(subscription.category)}
                     </span>
                   </div>
                   <p className="mt-1.5 text-xs text-[#625b71]">
