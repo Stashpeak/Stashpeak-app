@@ -262,7 +262,6 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
   return (
     <div
-    <div
       className="flex h-full flex-col bg-white"
       style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
     >
