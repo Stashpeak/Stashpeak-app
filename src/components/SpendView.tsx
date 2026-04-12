@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import type { Section } from "../App";
 import { deleteProviderApiKey, hasProviderApiKey, storeProviderApiKey } from "../lib/credentials";
 import { fetchProviderSpend, getProviderEnabled, type SpendData } from "../lib/connectors";
-import { listSubscriptions, type Subscription } from "../lib/subscriptions";
-import { SelectableErrorMessage } from "./SelectableErrorMessage";
 import {
   CARD_SURFACE,
   EMPTY_DASHED_SURFACE,
@@ -11,7 +9,9 @@ import {
   PILL_SURFACE,
   SUBTLE_PANEL_SURFACE,
   TEXT_INPUT_SURFACE,
-} from "./surfaceStyles";
+} from "../lib/surfaceStyles";
+import { listSubscriptions, type Subscription } from "../lib/subscriptions";
+import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "gcp";
 
@@ -269,21 +269,21 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   const hasConfiguredProviders = visibleProviders.some(({ id }) => providers[id].tag !== "unconfigured");
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col">
       {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
               API Usage
             </p>
             <h2
-              className="mt-1.5 text-3xl text-primary"
+              className="mt-1.5 text-3xl text-[var(--text-primary)]"
               style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
             >
               Spend tracker
             </h2>
-            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
               Monitor your API usage across various providers and track your monthly subscription costs in one place.
             </p>
           </div>

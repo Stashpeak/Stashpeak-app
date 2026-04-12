@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Section } from "../App";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
+import { CARD_SURFACE, EMPTY_DASHED_SURFACE, PILL_SURFACE, SUBTLE_PANEL_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
-import { CARD_SURFACE, EMPTY_DASHED_SURFACE, PILL_SURFACE, SUBTLE_PANEL_SURFACE } from "./surfaceStyles";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -36,12 +36,12 @@ function Widget({
   return (
     <div className={CARD_SURFACE}>
       <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 className="text-base text-primary" style={{ fontWeight: 400 }}>
+        <h2 className="text-base text-[var(--text-primary)]" style={{ fontWeight: 400 }}>
           {title}
         </h2>
         <button
           onClick={onCta}
-          className="cursor-pointer text-xs text-primary transition-colors hover:text-primary/70"
+          className="cursor-pointer text-xs text-[var(--purple-label)] transition-colors hover:text-[var(--text-primary)]"
         >
           {cta}
         </button>
@@ -72,18 +72,18 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
   const renewals = upcomingRenewals(subscriptions);
 
   return (
-    <div className="flex h-full flex-col bg-white">
-      <div className="border-b border-zinc-100 px-8 py-6">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
+    <div className="flex h-full flex-col">
+      <div className="border-b px-8 py-6" style={{ borderColor: "var(--border-subtle)" }}>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
           At a glance
         </p>
         <h2
-          className="mt-1.5 text-3xl text-primary"
+          className="mt-1.5 text-3xl text-[var(--text-primary)]"
           style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
         >
           Dashboard
         </h2>
-        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
+        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
           Overview of your AI ecosystem. Monitor your spend, upcoming renewals, and active subscriptions.
         </p>
       </div>
@@ -95,10 +95,10 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
           <Widget title="Spend" cta="View API spend ->" onCta={() => onNavigate("spend")}>
             {subscriptions.length === 0 ? (
               <div className={EMPTY_DASHED_SURFACE}>
-                <p className="text-sm text-zinc-500">No subscriptions tracked yet.</p>
+                <p className="text-sm text-[var(--text-muted)]">No subscriptions tracked yet.</p>
                 <button
                   onClick={() => onNavigate("subscriptions")}
-                  className="mt-2 cursor-pointer text-xs text-primary transition-colors hover:text-primary/70"
+                  className="mt-2 cursor-pointer text-xs text-[var(--purple-label)] transition-colors hover:text-[var(--text-primary)]"
                 >
                   Add one {"->"}
                 </button>
@@ -108,10 +108,10 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
                 <div className="flex flex-wrap gap-2.5">
                   {Object.entries(monthlyByCurrency).map(([currency, total]) => (
                     <div key={currency} className={PILL_SURFACE}>
-                      <p className="mb-0.5 text-[10px] uppercase tracking-[0.2em] text-secondary/60">
+                      <p className="mb-0.5 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
                         {currency}/mo
                       </p>
-                      <p className="text-xl text-primary" style={{ fontWeight: 300 }}>
+                      <p className="text-xl text-[var(--text-primary)]" style={{ fontWeight: 300 }}>
                         {total.toFixed(2)}
                       </p>
                     </div>
@@ -120,17 +120,18 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
 
                 {renewals.length > 0 && (
                   <div className={SUBTLE_PANEL_SURFACE}>
-                    <p className="mb-3 text-[10px] uppercase tracking-[0.2em] text-secondary/60">
+                    <p className="mb-3 text-[10px] uppercase tracking-[0.2em] text-[var(--purple-label)]">
                       Renewing in 7 days
                     </p>
                     <div className="space-y-2">
                       {renewals.map((subscription) => (
                         <div
                           key={subscription.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 bg-white/90 px-3 py-2"
+                          className="flex items-center justify-between gap-3 rounded-xl border bg-[var(--glass-bg)] px-3 py-2 backdrop-blur-[5px]"
+                          style={{ borderColor: "var(--glass-border)" }}
                         >
-                          <span className="text-sm text-zinc-900">{subscription.name}</span>
-                          <span className="text-xs text-secondary">
+                          <span className="text-sm text-[var(--text-primary)]">{subscription.name}</span>
+                          <span className="text-xs text-[var(--text-secondary)]">
                             {formatDate(subscription.nextBillingAt!)} - {subscription.currency}{" "}
                             {subscription.monthlyCost.toFixed(2)}
                           </span>
@@ -146,22 +147,22 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
           <Widget title="Subscriptions" cta="Manage ->" onCta={() => onNavigate("subscriptions")}>
             {subscriptions.length === 0 ? (
               <div className={EMPTY_DASHED_SURFACE}>
-                <p className="text-sm text-zinc-500">No subscriptions added yet.</p>
+                <p className="text-sm text-[var(--text-muted)]">No subscriptions added yet.</p>
               </div>
             ) : (
               <div className="space-y-2.5">
                 {subscriptions.slice(0, 5).map((subscription) => (
                   <div key={subscription.id} className={SUBTLE_PANEL_SURFACE}>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm text-zinc-900">{subscription.name}</span>
-                      <span className="text-xs text-secondary">
+                      <span className="text-sm text-[var(--text-primary)]">{subscription.name}</span>
+                      <span className="text-xs text-[var(--text-secondary)]">
                         {subscription.currency} {subscription.monthlyCost.toFixed(2)}/mo
                       </span>
                     </div>
                   </div>
                 ))}
                 {subscriptions.length > 5 && (
-                  <p className="pt-1 text-xs text-secondary/60">
+                  <p className="pt-1 text-xs text-[var(--text-muted)]">
                     +{subscriptions.length - 5} more
                   </p>
                 )}

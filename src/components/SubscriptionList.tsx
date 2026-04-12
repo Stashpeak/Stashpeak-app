@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
+import { CARD_SURFACE, EMPTY_DASHED_SURFACE, EMPTY_STATE_SURFACE, SUBTLE_PANEL_SURFACE } from "../lib/surfaceStyles";
 import type { Subscription } from "../lib/subscriptions";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
-import { CARD_SURFACE, EMPTY_DASHED_SURFACE, EMPTY_STATE_SURFACE, SUBTLE_PANEL_SURFACE } from "./surfaceStyles";
 
 export function formatCurrency(amount: number, currency: string): string {
   try {
