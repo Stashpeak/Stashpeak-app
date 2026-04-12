@@ -173,32 +173,29 @@ export function SubscriptionsView() {
   }
 
   return (
-    <div
-      className="flex h-full flex-col bg-white"
-      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-    >
+    <div className="flex h-full flex-col bg-white">
       {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
               Recurring spend
             </p>
             <h2
-              className="mt-1.5 text-3xl text-[#6750a4]"
+              className="mt-1.5 text-3xl text-primary"
               style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
             >
               Subscription tracker
             </h2>
-            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[#625b71]">
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
               Track recurring AI subscriptions, quick-add common tools, and keep monthly totals grouped by currency.
               Annual plans are prorated in the totals below.
             </p>
           </div>
 
           <div className="rounded-2xl border border-zinc-100 bg-zinc-50 px-5 py-3.5 text-right shadow-sm">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">Tracked</p>
-            <p className="mt-1 text-3xl text-[#6750a4]" style={{ fontWeight: 300 }}>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">Tracked</p>
+            <p className="mt-1 text-3xl text-primary" style={{ fontWeight: 300 }}>
               {subscriptions.length}
             </p>
           </div>
@@ -214,11 +211,11 @@ export function SubscriptionsView() {
             <>
               {/* Aggregate home-currency chip — only shown when there are multiple currencies */}
               {aggregateTotal !== null && (
-                <div className="rounded-full border border-[#6750a4]/20 bg-[#6750a4]/6 px-4 py-2 shadow-sm flex items-center gap-1.5">
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-[#6750a4]/70 mr-1">
+                <div className="rounded-full border border-primary/20 bg-primary/6 px-4 py-2 shadow-sm flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-primary/70 mr-1">
                     ~{homeCurrency}
                   </span>
-                  <span className="text-sm font-medium text-[#6750a4]">
+                  <span className="text-sm font-medium text-primary">
                     {formatCurrency(aggregateTotal.total, homeCurrency)}/mo
                   </span>
                   {aggregateTotal.hasMissingRate && (
@@ -238,8 +235,8 @@ export function SubscriptionsView() {
                   key={currency}
                   className="rounded-full border border-zinc-200 bg-white px-4 py-2 shadow-sm"
                 >
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-[#625b71]/60 mr-2">{currency}</span>
-                  <span className="text-sm font-medium text-[#6750a4]">{formatCurrency(total, currency)}/mo</span>
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-2">{currency}</span>
+                  <span className="text-sm font-medium text-primary">{formatCurrency(total, currency)}/mo</span>
                 </div>
               ))}
             </>

@@ -77,22 +77,16 @@ function EmptyState({ section }: { section: Exclude<Section, "settings"> }) {
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-8 gap-4">
-      <div className="w-12 h-12 rounded-2xl bg-[#6750a4]/8 flex items-center justify-center text-[#6750a4]">
+      <div className="w-12 h-12 rounded-2xl bg-primary/8 flex items-center justify-center text-primary">
         {ICONS[section]}
       </div>
       <div className="space-y-1.5">
-        <h2
-          className="text-xl text-[#6750a4]"
-          style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}
-        >
+        <h2 className="text-xl text-primary" style={{ fontWeight: 300 }}>
           {SECTION_LABELS[section]}
         </h2>
-        <p className="text-sm text-[#625b71] max-w-xs leading-relaxed">{descriptions[section]}</p>
+        <p className="text-sm text-secondary max-w-xs leading-relaxed">{descriptions[section]}</p>
       </div>
-      <span
-        className="text-[10px] text-[#625b71]/50 uppercase tracking-[0.25em]"
-        style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-      >
+      <span className="text-[10px] text-secondary/50 uppercase tracking-[0.25em]">
         Coming soon
       </span>
     </div>
@@ -116,10 +110,7 @@ export default function App() {
   }, []);
 
   return (
-    <div
-      className="flex h-screen bg-white select-none overflow-hidden"
-      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-    >
+    <div className="flex h-screen bg-white select-none overflow-hidden">
       {/* Sidebar */}
       <aside className="w-52 flex flex-col border-r border-zinc-100 shrink-0">
         {/* Logo pill — matches LP navbar pill style, links to stashpeak.com */}
@@ -140,7 +131,7 @@ export default function App() {
             }}
           >
             <StashpeakLogo width={28} height={27} />
-            <span style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 400, fontSize: "14px", color: "white", whiteSpace: "nowrap" }}>
+            <span style={{ fontWeight: 400, fontSize: "14px", color: "white", whiteSpace: "nowrap" }}>
               Stashpeak
             </span>
           </button>
@@ -154,11 +145,11 @@ export default function App() {
               onClick={() => setActive(id)}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-full text-sm transition-all text-left w-full cursor-pointer ${
                 active === id
-                  ? "bg-[#6750a4]/10 text-[#6750a4]"
-                  : "text-[#625b71] hover:bg-zinc-50 hover:text-[#6750a4]/80"
+                  ? "bg-primary/10 text-primary"
+                  : "text-secondary hover:bg-zinc-50 hover:text-primary/80"
               }`}
             >
-              <span className={`shrink-0 transition-colors ${active === id ? "text-[#6750a4]" : "text-[#625b71]/60"}`}>
+              <span className={`shrink-0 transition-colors ${active === id ? "text-primary" : "text-secondary/60"}`}>
                 {ICONS[id]}
               </span>
               {SECTION_LABELS[id]}
@@ -177,14 +168,14 @@ export default function App() {
               title={updateAvailable ? "Settings (update available)" : "Settings"}
               className={`p-1 rounded-full transition-colors cursor-pointer ${
                 active === "settings"
-                  ? "text-[#6750a4]"
-                  : "text-zinc-300 hover:text-[#6750a4]/60"
+                  ? "text-primary"
+                  : "text-zinc-300 hover:text-primary/60"
               }`}
             >
               {GEAR_ICON}
             </button>
             {updateAvailable && (
-              <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-[#6750a4] ring-2 ring-white pointer-events-none" />
+              <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-primary ring-2 ring-white pointer-events-none" />
             )}
           </div>
         </div>

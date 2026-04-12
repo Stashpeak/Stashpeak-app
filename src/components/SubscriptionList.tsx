@@ -50,13 +50,13 @@ export function SubscriptionList({
 }: SubscriptionListProps) {
   return (
     <div className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm">
-      <h3 className="text-base text-[#6750a4]" style={{ fontWeight: 400 }}>
+      <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
         Saved subscriptions
       </h3>
-      <p className="mt-1 text-sm text-[#625b71]">Everything here is persisted in local SQLite storage.</p>
+      <p className="mt-1 text-sm text-secondary">Everything here is persisted in local SQLite storage.</p>
 
       {isLoading ? (
-        <div className="mt-5 rounded-2xl border border-zinc-100 px-4 py-8 text-center text-sm text-[#625b71]/50">
+        <div className="mt-5 rounded-2xl border border-zinc-100 px-4 py-8 text-center text-sm text-secondary/50">
           Loading subscriptions…
         </div>
       ) : subscriptions.length === 0 ? (
@@ -77,22 +77,22 @@ export function SubscriptionList({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-medium text-zinc-900">{subscription.name}</h4>
-                    <span className="rounded-full border border-[#6750a4]/20 px-2 py-0.5 text-[9px] tracking-[0.12em] text-[#6750a4]/70">
+                    <span className="rounded-full border border-primary/20 px-2 py-0.5 text-[9px] tracking-[0.12em] text-primary/70">
                       {formatCategoryLabel(subscription.category)}
                     </span>
                   </div>
-                  <p className="mt-1.5 text-xs text-[#625b71]">
+                  <p className="mt-1.5 text-xs text-secondary">
                     {subscription.provider} ·{" "}
                     <span className="text-zinc-700">
                       {formatCurrency(subscription.monthlyCost, subscription.currency)} per{" "}
                       {subscription.billingPeriod === "yearly" ? "year" : "month"}
                     </span>
                   </p>
-                  <p className="mt-0.5 text-xs text-[#625b71]/60">
+                  <p className="mt-0.5 text-xs text-secondary/60">
                     Next billing: {formatDate(subscription.nextBillingAt)}
                   </p>
                   {subscription.notes ? (
-                    <p className="mt-2.5 text-xs leading-relaxed text-[#625b71]/70 italic">
+                    <p className="mt-2.5 text-xs leading-relaxed text-secondary/70 italic">
                       {subscription.notes}
                     </p>
                   ) : null}

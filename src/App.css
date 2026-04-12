@@ -1,1 +1,14 @@
 @import "tailwindcss";
+
+@theme {
+  --color-primary: #6750a4;
+  --color-primary-dark: #5a4490;
+  --color-secondary: #625b71;
+  --color-ink: #1c1b1f;
+}
+
+@layer base {
+  body {
+    font-family: 'Kumbh Sans', sans-serif;
+  }
+}

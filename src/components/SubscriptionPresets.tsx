@@ -40,18 +40,17 @@ export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps
 
   return (
     <div className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm">
-      <h3 className="text-base text-[#6750a4]" style={{ fontWeight: 400 }}>
+      <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
         Quick-fill from preset
       </h3>
-      <p className="mt-1 text-sm text-[#625b71]">
+      <p className="mt-1 text-sm text-secondary">
         Pick a service to pre-fill the form. Review and add your actual billing amount before saving.
       </p>
 
       <select
         defaultValue=""
         onChange={handleChange}
-        className="mt-4 w-full cursor-pointer appearance-none rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-[#6750a4] focus:ring-2 focus:ring-[#6750a4]/10"
-        style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+        className="mt-4 w-full cursor-pointer appearance-none rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
       >
         <option value="" disabled>
           Select a preset…

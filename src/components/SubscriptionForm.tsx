@@ -53,9 +53,9 @@ export function toPayload(form: FormState): SubscriptionInput {
 }
 
 const inputClass =
-  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-[#6750a4] focus:ring-2 focus:ring-[#6750a4]/10 placeholder:text-zinc-300";
+  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 placeholder:text-zinc-300";
 
-const labelClass = "text-xs text-[#625b71] tracking-wide";
+const labelClass = "text-xs text-secondary tracking-wide";
 
 interface SubscriptionFormProps {
   form: FormState;
@@ -197,8 +197,8 @@ export function SubscriptionForm({
         <button
           type="submit"
           disabled={isSaving}
-          className="w-full rounded-full bg-[#6750a4] px-4 py-3 text-sm text-white transition hover:bg-[#5a4490] disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ fontFamily: "'Roboto', sans-serif", fontWeight: 500 }}
+          className="w-full rounded-full bg-primary px-4 py-3 text-sm text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ fontWeight: 500 }}
         >
           {isSaving ? "Saving…" : editingId === null ? "Create subscription" : "Save changes"}
         </button>
@@ -223,11 +223,11 @@ export function SubscriptionForm({
     <aside className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm self-start">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-base text-[#6750a4]" style={{ fontWeight: 400 }}>
+          <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
             {editingId === null ? "Add subscription" : "Edit subscription"}
           </h3>
           {!collapsed && (
-            <p className="mt-1 text-sm text-[#625b71]">
+            <p className="mt-1 text-sm text-secondary">
               Store the original amount and billing cadence. Totals are grouped per currency.
             </p>
           )}
