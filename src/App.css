@@ -40,10 +40,10 @@
     --toggle-thumb: #ffffff;
     --glass-stroke-gradient: linear-gradient(
       166deg,
-      rgba(255, 255, 255, 0.4) 0%,
-      rgba(255, 255, 255, 0) 41%,
-      rgba(255, 255, 255, 0) 57%,
-      rgba(255, 255, 255, 0.1) 100%
+      rgba(0, 0, 0, 0.4) 0%,
+      rgba(0, 0, 0, 0) 41%,
+      rgba(0, 0, 0, 0) 57%,
+      rgba(0, 0, 0, 0.1) 100%
     );
     --bg-gradient: linear-gradient(
       141.402deg,
@@ -79,10 +79,10 @@
     --toggle-thumb: rgba(255, 255, 255, 0.95);
     --glass-stroke-gradient: linear-gradient(
       166deg,
-      rgba(0, 0, 0, 0.4) 0%,
-      rgba(0, 0, 0, 0) 41%,
-      rgba(0, 0, 0, 0) 57%,
-      rgba(0, 0, 0, 0.1) 100%
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0) 41%,
+      rgba(255, 255, 255, 0) 57%,
+      rgba(255, 255, 255, 0.1) 100%
     );
     --bg-gradient: linear-gradient(
       135deg,
@@ -140,10 +140,9 @@
   .glass-surface-elevated,
   .glass-surface-accent,
   .glass-input-surface {
+    position: relative;
+    isolation: isolate;
     border: 1px solid transparent;
-    background-origin: border-box;
-    background-clip: padding-box, border-box;
-    background-repeat: no-repeat;
     backdrop-filter: blur(5px);
     -webkit-backdrop-filter: blur(5px);
   }
@@ -151,23 +150,38 @@
   .glass-surface,
   .glass-input-surface {
     --glass-surface-fill: var(--glass-bg);
-    background-image:
-      linear-gradient(var(--glass-surface-fill), var(--glass-surface-fill)),
-      var(--glass-stroke-gradient);
+    background: var(--glass-surface-fill);
   }
 
   .glass-surface-elevated {
     --glass-surface-fill: var(--glass-bg-elevated);
-    background-image:
-      linear-gradient(var(--glass-surface-fill), var(--glass-surface-fill)),
-      var(--glass-stroke-gradient);
+    background: var(--glass-surface-fill);
   }
 
   .glass-surface-accent {
     --glass-surface-fill: var(--purple-accent);
-    background-image:
-      linear-gradient(var(--glass-surface-fill), var(--glass-surface-fill)),
-      var(--glass-stroke-gradient);
+    background: var(--glass-surface-fill);
+  }
+
+  .glass-surface::before,
+  .glass-surface-elevated::before,
+  .glass-surface-accent::before,
+  .glass-input-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--glass-stroke-gradient);
+    pointer-events: none;
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
   }
 
   .text-primary,
