@@ -192,7 +192,7 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden bg-zinc-50/50">
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1">
           {active === "dashboard" ? (
             <DashboardView onNavigate={setActive} />
           ) : active === "subscriptions" ? (

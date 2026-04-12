@@ -274,14 +274,29 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
   );
 
   return (
-    <div className="p-8 max-w-lg" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
-      <h1
-        className="text-xl text-[#6750a4] mb-1"
-        style={{ fontWeight: 300 }}
-      >
-        Settings
-      </h1>
-      <p className="text-sm text-[#625b71] mb-8">App preferences</p>
+    <div
+      className="flex h-full flex-col bg-white"
+      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+    >
+      {/* Page header */}
+      <div className="border-b border-zinc-100 px-8 py-6">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-[#625b71]/60">
+          Preferences
+        </p>
+        <h2
+          className="mt-1.5 text-3xl text-[#6750a4]"
+          style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
+        >
+          Settings
+        </h2>
+        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[#625b71]">
+          Configure your regional preferences, notification settings, and API connectors.
+        </p>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-auto px-8 py-6">
+        <div className="max-w-lg">
 
       {loadError && (
         <SelectableErrorMessage kind="inline" className="mb-4">
@@ -572,6 +587,8 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
           </section>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }
