@@ -10,6 +10,7 @@ import {
   upsertExchangeRate,
   type ExchangeRate,
 } from "../lib/settings";
+import { getProviderEnabled, setProviderEnabled } from "../lib/connectors";
 import { checkForUpdate, downloadAndInstall, type Update } from "../lib/updater";
 import { CURRENCY_OPTIONS } from "../lib/currencies";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
@@ -21,6 +22,14 @@ const PRESET_LABELS: Record<number, string> = {
   3: "3 days",
   7: "7 days",
 };
+
+const SPEND_PROVIDERS = [
+  { id: "anthropic", name: "Anthropic" },
+  { id: "openai", name: "OpenAI" },
+  { id: "openrouter", name: "OpenRouter" },
+  { id: "groq", name: "Groq" },
+  { id: "gcp", name: "Google Cloud" },
+];
 
 interface RateRowProps {
   fromCurrency: string;
@@ -93,6 +102,9 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
   const [notifSaved, setNotifSaved] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Provider settings
+  const [providerStates, setProviderStates] = useState<Record<string, boolean>>({});
+
   // Currency settings
   const [homeCurrency, setHomeCurrencyState] = useState<string | null>(null);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRate[]>([]);
@@ -139,6 +151,14 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
     getHomeCurrency()
       .then(setHomeCurrencyState)
       .catch((e) => setLoadError(String(e)));
+
+    Promise.all(SPEND_PROVIDERS.map(p => getProviderEnabled(p.id).then(enabled => ({ id: p.id, enabled }))))
+      .then(results => {
+        const state: Record<string, boolean> = {};
+        for (const res of results) state[res.id] = res.enabled;
+        setProviderStates(state);
+      })
+      .catch(e => setLoadError(String(e)));
 
     loadExchangeRates();
 
@@ -191,6 +211,15 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
       await setHomeCurrency(currency);
       setCurrencySaved(true);
       setTimeout(() => setCurrencySaved(false), 2000);
+    } catch (e) {
+      setLoadError(String(e));
+    }
+  }
+
+  async function handleProviderToggle(id: string, enabled: boolean) {
+    try {
+      await setProviderEnabled(id, enabled);
+      setProviderStates(prev => ({ ...prev, [id]: enabled }));
     } catch (e) {
       setLoadError(String(e));
     }
@@ -418,6 +447,45 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
             >
               Saved
             </p>
+          </section>
+
+          <div className="border-t border-zinc-100" />
+
+          {/* ── API Connectors ─────────────────────────────────────── */}
+          <section className="space-y-6">
+            <div>
+              <h2
+                className="text-sm font-medium text-[#1c1b1f]"
+                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+              >
+                API Connectors
+              </h2>
+              <p className="text-xs text-[#625b71] mt-0.5">
+                Enable or disable specific connectors from fetching data
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {SPEND_PROVIDERS.map(p => (
+                <div key={p.id} className="flex items-center justify-between">
+                  <span className="text-sm text-[#1c1b1f]">{p.name}</span>
+                  <button
+                    role="switch"
+                    aria-checked={providerStates[p.id] ?? true}
+                    onClick={() => void handleProviderToggle(p.id, !(providerStates[p.id] ?? true))}
+                    className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
+                      (providerStates[p.id] ?? true) ? "bg-[#6750a4]" : "bg-zinc-200"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${
+                        (providerStates[p.id] ?? true) ? "left-5" : "left-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
           </section>
 
           <div className="border-t border-zinc-100" />

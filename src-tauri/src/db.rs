@@ -39,5 +39,6 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/001_initial.sql")),
         M::up(include_str!("migrations/002_settings.sql")),
         M::up(include_str!("migrations/003_currency_settings.sql")),
+        M::up(include_str!("migrations/004_provider_enabled.sql")),
     ])
 }
