@@ -1,4 +1,5 @@
 use rusqlite::OptionalExtension;
+
 use serde::Serialize;
 
 use crate::db;
@@ -92,6 +93,38 @@ pub fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
         "INSERT INTO settings (key, value) VALUES ('notifications_enabled', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         rusqlite::params![if enabled { "true" } else { "false" }],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Returns the user's chosen home currency (e.g. "USD", "CZK").
+/// Defaults to "USD" if not set.
+pub fn get_home_currency() -> Result<String, String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    let val: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'home_currency'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(val.unwrap_or_else(|| "USD".to_string()))
+}
+
+/// Persists the user's chosen home currency. The value is uppercased and
+/// trimmed before storing (e.g. " czk " → "CZK").
+pub fn set_home_currency(currency: String) -> Result<(), String> {
+    let currency = currency.trim().to_uppercase();
+    if currency.is_empty() {
+        return Err("currency must not be empty".to_string());
+    }
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('home_currency', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![currency],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

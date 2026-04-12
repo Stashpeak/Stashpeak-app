@@ -1,4 +1,5 @@
 mod connectors;
+mod currency;
 mod db;
 mod logging;
 mod notifications;
@@ -118,6 +119,32 @@ async fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_home_currency() -> Result<String, String> {
+    run_blocking("get_home_currency", settings::get_home_currency).await
+}
+
+#[tauri::command]
+async fn set_home_currency(currency: String) -> Result<(), String> {
+    run_blocking("set_home_currency", move || {
+        settings::set_home_currency(currency)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn get_exchange_rates() -> Result<Vec<currency::ExchangeRate>, String> {
+    run_blocking("get_exchange_rates", currency::get_exchange_rates).await
+}
+
+#[tauri::command]
+async fn upsert_exchange_rate(from: String, to: String, rate: f64) -> Result<(), String> {
+    run_blocking("upsert_exchange_rate", move || {
+        currency::upsert_exchange_rate(from, to, rate)
+    })
+    .await
+}
+
+#[tauri::command]
 async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
     use connectors::spend::anthropic::AnthropicConnector;
     use connectors::spend::groq::GroqConnector;
@@ -170,6 +197,10 @@ pub fn run() {
             set_notification_days,
             set_notifications_enabled,
             fetch_provider_spend,
+            get_home_currency,
+            set_home_currency,
+            get_exchange_rates,
+            upsert_exchange_rate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
