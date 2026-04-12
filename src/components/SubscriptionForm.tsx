@@ -1,4 +1,5 @@
 import { type BillingPeriod, type Subscription, type SubscriptionInput } from "../lib/subscriptions";
+import { CURRENCY_OPTIONS } from "../lib/currencies";
 import { CategorySelector } from "./CategorySelector";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
@@ -58,6 +59,8 @@ const labelClass = "text-xs text-[#625b71] tracking-wide";
 interface SubscriptionFormProps {
   form: FormState;
   categories: string[];
+  names: string[];
+  providers: string[];
   editingId: number | null;
   isSaving: boolean;
   error: string | null;
@@ -69,6 +72,8 @@ interface SubscriptionFormProps {
 export function SubscriptionForm({
   form,
   categories,
+  names,
+  providers,
   editingId,
   isSaving,
   error,
@@ -105,27 +110,29 @@ export function SubscriptionForm({
           onSubmit();
         }}
       >
+        {/* Name + Provider — combobox with suggestions from presets & existing subs */}
         <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1.5">
+          <div className="space-y-1.5">
             <span className={labelClass}>Name</span>
-            <input
+            <CategorySelector
               value={form.name}
-              onChange={(e) => onChange("name", e.target.value)}
+              categories={names}
+              onChange={(value) => onChange("name", value)}
               placeholder="ChatGPT Plus"
-              className={inputClass}
             />
-          </label>
-          <label className="space-y-1.5">
+          </div>
+          <div className="space-y-1.5">
             <span className={labelClass}>Provider</span>
-            <input
+            <CategorySelector
               value={form.provider}
-              onChange={(e) => onChange("provider", e.target.value)}
+              categories={providers}
+              onChange={(value) => onChange("provider", value)}
               placeholder="OpenAI"
-              className={inputClass}
             />
-          </label>
+          </div>
         </div>
 
+        {/* Cost + Currency */}
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1.5">
             <span className={labelClass}>Cost</span>
@@ -141,27 +148,27 @@ export function SubscriptionForm({
           </label>
           <label className="space-y-1.5">
             <span className={labelClass}>Currency</span>
-            <input
+            <CategorySelector
               value={form.currency}
-              onChange={(e) => onChange("currency", e.target.value.toUpperCase())}
-              maxLength={8}
-              placeholder="USD"
-              className={inputClass}
+              categories={CURRENCY_OPTIONS.map(o => o.code)}
+              onChange={(value) => onChange("currency", value.toUpperCase())}
+              allowCreate={false}
+              readonlyInput={true}
             />
           </label>
         </div>
 
+        {/* Billing period + Next billing date */}
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1.5">
             <span className={labelClass}>Billing period</span>
-            <select
+            <CategorySelector
               value={form.billingPeriod}
-              onChange={(e) => onChange("billingPeriod", e.target.value)}
-              className={inputClass}
-            >
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Annual</option>
-            </select>
+              categories={["monthly", "yearly"]}
+              onChange={(value) => onChange("billingPeriod", value)}
+              allowCreate={false}
+              readonlyInput={true}
+            />
           </label>
           <label className="space-y-1.5">
             <span className={labelClass}>Next billing date</span>
@@ -174,6 +181,7 @@ export function SubscriptionForm({
           </label>
         </div>
 
+        {/* Category */}
         <div className="space-y-1.5">
           <span className={labelClass}>Category</span>
           <CategorySelector
@@ -184,6 +192,7 @@ export function SubscriptionForm({
           />
         </div>
 
+        {/* Notes */}
         <label className="space-y-1.5">
           <span className={labelClass}>Notes</span>
           <textarea

@@ -99,6 +99,18 @@ export function SubscriptionsView() {
     return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubs])].sort();
   }, [subscriptions]);
 
+  const names = useMemo(() => {
+    const fromSubs = subscriptions.map((s) => s.name.trim()).filter(Boolean);
+    const fromPresets = PRESETS.map((p) => p.name);
+    return [...new Set([...fromPresets, ...fromSubs])].sort();
+  }, [subscriptions]);
+
+  const providers = useMemo(() => {
+    const fromSubs = subscriptions.map((s) => s.provider.trim()).filter(Boolean);
+    const fromPresets = PRESETS.map((p) => p.provider);
+    return [...new Set([...fromPresets, ...fromSubs])].sort();
+  }, [subscriptions]);
+
   function updateForm(key: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [key]: value } as FormState));
   }
@@ -282,6 +294,8 @@ export function SubscriptionsView() {
         <SubscriptionForm
           form={form}
           categories={categories}
+          names={names}
+          providers={providers}
           editingId={editingId}
           isSaving={isSaving}
           error={error}

@@ -9,6 +9,7 @@ import {
   upsertExchangeRate,
   type ExchangeRate,
 } from "../lib/settings";
+import { CURRENCY_OPTIONS } from "../lib/currencies";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 const NOTIFICATION_PRESETS = [0, 1, 3, 7];
@@ -18,25 +19,6 @@ const PRESET_LABELS: Record<number, string> = {
   3: "3 days",
   7: "7 days",
 };
-
-// Common currencies available in the home currency dropdown
-const CURRENCY_OPTIONS = [
-  { code: "USD", label: "USD — US Dollar" },
-  { code: "EUR", label: "EUR — Euro" },
-  { code: "GBP", label: "GBP — British Pound" },
-  { code: "CZK", label: "CZK — Czech Koruna" },
-  { code: "JPY", label: "JPY — Japanese Yen" },
-  { code: "CAD", label: "CAD — Canadian Dollar" },
-  { code: "AUD", label: "AUD — Australian Dollar" },
-  { code: "CHF", label: "CHF — Swiss Franc" },
-  { code: "SEK", label: "SEK — Swedish Krona" },
-  { code: "NOK", label: "NOK — Norwegian Krone" },
-  { code: "DKK", label: "DKK — Danish Krone" },
-  { code: "PLN", label: "PLN — Polish Złoty" },
-  { code: "HUF", label: "HUF — Hungarian Forint" },
-  { code: "RON", label: "RON — Romanian Leu" },
-  { code: "BGN", label: "BGN — Bulgarian Lev" },
-];
 
 interface RateRowProps {
   fromCurrency: string;
