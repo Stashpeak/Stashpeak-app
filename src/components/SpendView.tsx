@@ -1,11 +1,9 @@
-import { useState, useEffect } from "react";
-import { listSubscriptions, type Subscription } from "../lib/subscriptions";
-import { fetchProviderSpend, type SpendData } from "../lib/connectors";
-import { deleteProviderApiKey, hasProviderApiKey, storeProviderApiKey } from "../lib/credentials";
+import { useEffect, useState } from "react";
 import type { Section } from "../App";
+import { deleteProviderApiKey, hasProviderApiKey, storeProviderApiKey } from "../lib/credentials";
+import { fetchProviderSpend, getProviderEnabled, type SpendData } from "../lib/connectors";
+import { listSubscriptions, type Subscription } from "../lib/subscriptions";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
-
-// ── Types ────────────────────────────────────────────────────────────────────
 
 type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "gcp";
 
@@ -16,29 +14,27 @@ type ProviderStatus =
   | { tag: "stale"; error: string };
 
 const PROVIDERS: { id: ProviderId; name: string; note?: string; comingSoon?: boolean }[] = [
-  { id: "anthropic", name: "Anthropic", note: "Requires Admin API key (sk-ant-admin-…)" },
-  { id: "openai",    name: "OpenAI",    note: "Requires API key with usage read scope" },
+  { id: "anthropic", name: "Anthropic", note: "Requires Admin API key (sk-ant-admin-...)" },
+  { id: "openai", name: "OpenAI", note: "Requires API key with usage read scope" },
   { id: "openrouter", name: "OpenRouter" },
-  { id: "groq",      name: "Groq",      comingSoon: true },
-  { id: "gcp",       name: "Google Cloud", note: "Billing export to BigQuery required" },
+  { id: "groq", name: "Groq", comingSoon: true },
+  { id: "gcp", name: "Google Cloud", note: "Billing export to BigQuery required" },
 ];
 
 const EMPTY_STATES: Record<ProviderId, ProviderStatus> = {
-  anthropic:  { tag: "unconfigured" },
-  openai:     { tag: "unconfigured" },
+  anthropic: { tag: "unconfigured" },
+  openai: { tag: "unconfigured" },
   openrouter: { tag: "unconfigured" },
-  groq:       { tag: "unconfigured" },
-  gcp:        { tag: "unconfigured" },
+  groq: { tag: "unconfigured" },
+  gcp: { tag: "unconfigured" },
 };
 
-// ── Spend cache (localStorage) ────────────────────────────────────────────────
-
 const CACHE_KEY = "spend_cache_v1";
-const STALE_AFTER_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_AFTER_MS = 5 * 60 * 1000;
 
 interface CacheEntry {
   data: SpendData;
-  fetchedAt: number; // unix ms
+  fetchedAt: number;
 }
 
 type SpendCache = Partial<Record<ProviderId, CacheEntry>>;
@@ -78,53 +74,22 @@ function formatRefreshedAt(date: Date): string {
   const isToday = date.toDateString() === new Date().toDateString();
   const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (isToday) return time;
-  return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
-
 export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) {
-  const [subscriptions, setSubscriptions]     = useState<Subscription[]>([]);
-  const [loadError, setLoadError]             = useState<string | null>(null);
-  const [providers, setProviders]             = useState<Record<ProviderId, ProviderStatus>>(buildInitialStates);
-  const [addingKey, setAddingKey]             = useState<ProviderId | null>(null);
-  const [confirmRevoke, setConfirmRevoke]     = useState<ProviderId | null>(null);
-  const [keyInput, setKeyInput]               = useState("");
-  // Additional fields for GCP
-  const [gcpProject, setGcpProject]           = useState("");
-  const [gcpDataset, setGcpDataset]           = useState("");
-  const [gcpTable, setGcpTable]               = useState("");
-  const [addError, setAddError]               = useState<string | null>(null);
-  const [savingKey, setSavingKey]             = useState(false);
-
-  useEffect(() => {
-    listSubscriptions()
-      .then(setSubscriptions)
-      .catch((e) => setLoadError(String(e)));
-
-    const cache = loadCache();
-    const now = Date.now();
-
-    PROVIDERS.forEach(({ id, comingSoon }) => {
-      if (comingSoon) return;
-      hasProviderApiKey(id)
-        .then((has) => {
-          if (!has) {
-            // Key was revoked — clear any cached data for this provider
-            setStatus(id, { tag: "unconfigured" });
-            evictCache(id);
-            return;
-          }
-          const entry = cache[id];
-          const isStale = !entry || (now - entry.fetchedAt) > STALE_AFTER_MS;
-          if (isStale) {
-            // Background refresh if we already have cached data to show; full load if not
-            runFetch(id, !entry);
-          }
-        })
-        .catch(() => {});
-    });
-  }, []);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<Record<ProviderId, ProviderStatus>>(buildInitialStates);
+  const [enabledProviders, setEnabledProviders] = useState<Record<ProviderId, boolean> | null>(null);
+  const [addingKey, setAddingKey] = useState<ProviderId | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState<ProviderId | null>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [gcpProject, setGcpProject] = useState("");
+  const [gcpDataset, setGcpDataset] = useState("");
+  const [gcpTable, setGcpTable] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState(false);
 
   function setStatus(id: ProviderId, status: ProviderStatus) {
     setProviders((prev) => ({ ...prev, [id]: status }));
@@ -134,13 +99,13 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     if (showLoading) {
       setStatus(id, { tag: "loading" });
     } else {
-      // Mark existing ok data as background-refreshing without hiding it
       setProviders((prev) => {
-        const s = prev[id];
-        if (s.tag === "ok") return { ...prev, [id]: { ...s, backgroundRefreshing: true } };
+        const status = prev[id];
+        if (status.tag === "ok") return { ...prev, [id]: { ...status, backgroundRefreshing: true } };
         return prev;
       });
     }
+
     try {
       const data = await fetchProviderSpend(id);
       setStatus(id, { tag: "ok", data, refreshedAt: new Date() });
@@ -150,10 +115,68 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     }
   }
 
+  useEffect(() => {
+    let cancelled = false;
+
+    listSubscriptions()
+      .then((data) => {
+        if (!cancelled) setSubscriptions(data);
+      })
+      .catch((e) => {
+        if (!cancelled) setLoadError(String(e));
+      });
+
+    const cache = loadCache();
+    const now = Date.now();
+
+    Promise.all(PROVIDERS.map(({ id }) => getProviderEnabled(id).then((enabled) => ({ id, enabled }))))
+      .then((results) => {
+        if (cancelled) return;
+
+        const nextEnabled = {} as Record<ProviderId, boolean>;
+        for (const { id, enabled } of results) {
+          nextEnabled[id] = enabled;
+          if (!enabled) {
+            setStatus(id, { tag: "unconfigured" });
+            evictCache(id);
+          }
+        }
+        setEnabledProviders(nextEnabled);
+
+        PROVIDERS.forEach(({ id, comingSoon }) => {
+          if (comingSoon || !nextEnabled[id]) return;
+
+          hasProviderApiKey(id)
+            .then((has) => {
+              if (cancelled) return;
+              if (!has) {
+                setStatus(id, { tag: "unconfigured" });
+                evictCache(id);
+                return;
+              }
+
+              const entry = cache[id];
+              const isStale = !entry || now - entry.fetchedAt > STALE_AFTER_MS;
+              if (isStale) {
+                runFetch(id, !entry);
+              }
+            })
+            .catch(() => {});
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) setLoadError(String(e));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function refreshAll() {
-    PROVIDERS.forEach(({ id }) => {
-      const s = providers[id];
-      if (s.tag === "ok" || s.tag === "stale") runFetch(id);
+    visibleProviders.forEach(({ id }) => {
+      const status = providers[id];
+      if (status.tag === "ok" || status.tag === "stale") runFetch(id);
     });
   }
 
@@ -168,7 +191,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     setAddError(null);
     try {
       let finalKey = keyInput.trim();
-      
+
       if (id === "gcp") {
         try {
           const serviceAccountKey = JSON.parse(finalKey);
@@ -176,7 +199,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
             service_account_key: serviceAccountKey,
             project_id: gcpProject.trim(),
             dataset_id: gcpDataset.trim(),
-            table_name: gcpTable.trim()
+            table_name: gcpTable.trim(),
           });
         } catch {
           throw new Error("Invalid Service Account JSON format");
@@ -201,7 +224,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     try {
       await deleteProviderApiKey(id);
     } catch {
-      // silently continue — key may already be gone
+      // Key may already be gone.
     }
     evictCache(id);
     setStatus(id, { tag: "unconfigured" });
@@ -217,28 +240,28 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     setAddError(null);
   }
 
-  // ── Derived values ─────────────────────────────────────────────────────────
+  const visibleProviders =
+    enabledProviders === null ? [] : PROVIDERS.filter(({ id }) => enabledProviders[id]);
 
-  const apiTotal = PROVIDERS.reduce((sum, { id }) => {
-    const s = providers[id];
-    return s.tag === "ok" ? sum + s.data.currentMonthUsd : sum;
+  const apiTotal = visibleProviders.reduce((sum, { id }) => {
+    const status = providers[id];
+    return status.tag === "ok" ? sum + status.data.currentMonthUsd : sum;
   }, 0);
 
-  const hasAnyApiData = PROVIDERS.some(({ id }) => providers[id].tag === "ok");
+  const hasAnyApiData = visibleProviders.some(({ id }) => providers[id].tag === "ok");
 
   const monthlyByCurrency = subscriptions.reduce(
-    (acc, s) => { acc[s.currency] = (acc[s.currency] ?? 0) + s.monthlyCost; return acc; },
-    {} as Record<string, number>
+    (acc, subscription) => {
+      acc[subscription.currency] = (acc[subscription.currency] ?? 0) + subscription.monthlyCost;
+      return acc;
+    },
+    {} as Record<string, number>,
   );
 
-  const hasConfiguredProviders = PROVIDERS.some(({ id }) => providers[id].tag !== "unconfigured");
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const hasConfiguredProviders = visibleProviders.some(({ id }) => providers[id].tag !== "unconfigured");
 
   return (
     <div className="p-8 max-w-2xl">
-
-      {/* Header */}
       <h1
         className="text-xl text-[#6750a4] mb-1"
         style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}
@@ -247,42 +270,52 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
       </h1>
       <p className="text-sm text-[#625b71] mb-6">API usage and subscription costs</p>
 
-      {loadError && (
-        <SelectableErrorMessage className="mb-6">
-          {loadError}
-        </SelectableErrorMessage>
-      )}
+      {loadError && <SelectableErrorMessage className="mb-6">{loadError}</SelectableErrorMessage>}
 
-      {/* Headline totals */}
       {(hasAnyApiData || subscriptions.length > 0) && (
         <div className="flex flex-wrap gap-3 mb-8">
           {hasAnyApiData && (
             <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-3">
-              <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-0.5" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+              <p
+                className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-0.5"
+                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+              >
                 API this month
               </p>
-              <p className="text-2xl text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}>
+              <p
+                className="text-2xl text-[#1c1b1f]"
+                style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}
+              >
                 ${apiTotal.toFixed(2)}
               </p>
             </div>
           )}
-          {subscriptions.length > 0 && Object.entries(monthlyByCurrency).map(([currency, total]) => (
-            <div key={currency} className="rounded-2xl border border-zinc-100 bg-white px-5 py-3">
-              <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-0.5" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
-                Subscriptions/mo
-              </p>
-              <p className="text-2xl text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}>
-                {currency} {total.toFixed(2)}
-              </p>
-            </div>
-          ))}
+          {subscriptions.length > 0 &&
+            Object.entries(monthlyByCurrency).map(([currency, total]) => (
+              <div key={currency} className="rounded-2xl border border-zinc-100 bg-white px-5 py-3">
+                <p
+                  className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em] mb-0.5"
+                  style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                >
+                  Subscriptions/mo
+                </p>
+                <p
+                  className="text-2xl text-[#1c1b1f]"
+                  style={{ fontFamily: "'Kumbh Sans', sans-serif", fontWeight: 300 }}
+                >
+                  {currency} {total.toFixed(2)}
+                </p>
+              </div>
+            ))}
         </div>
       )}
 
-      {/* ── Section 1: API Spend ─────────────────────────────────────────── */}
       <section className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+          <h2
+            className="text-sm font-medium text-[#1c1b1f]"
+            style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+          >
             API Spend
           </h2>
           {hasConfiguredProviders && (
@@ -297,60 +330,66 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         </div>
 
         <div className="space-y-2">
-          {PROVIDERS.map(({ id, name, note, comingSoon }) => {
-            const s = providers[id];
+          {visibleProviders.map(({ id, name, note, comingSoon }) => {
+            const status = providers[id];
             const isAdding = addingKey === id;
-
-            // Strip verbose Rust error prefix from stale messages
-            const staleMessage = s.tag === "stale"
-              ? s.error.replace(/^Error:\s*/i, "").replace(/^Failed to fetch spend for \w+:\s*/i, "")
-              : "";
+            const staleMessage =
+              status.tag === "stale"
+                ? status.error.replace(/^Error:\s*/i, "").replace(/^Failed to fetch spend for \w+:\s*/i, "")
+                : "";
 
             return (
               <div key={id} className="rounded-2xl border border-zinc-100 bg-white px-5 py-4">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
-
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                      <p
+                        className="text-sm font-medium text-[#1c1b1f]"
+                        style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                      >
                         {name}
                       </p>
                       {comingSoon && (
-                        <span className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.18em] border border-zinc-200 rounded-full px-2 py-0.5" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                        <span
+                          className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.18em] border border-zinc-200 rounded-full px-2 py-0.5"
+                          style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                        >
                           Billing API coming soon
                         </span>
                       )}
                     </div>
 
-                    {/* Status — hidden for comingSoon providers */}
-                    {!comingSoon && s.tag === "unconfigured" && !isAdding && (
+                    {!comingSoon && status.tag === "unconfigured" && !isAdding && (
                       <p className="text-xs text-[#625b71] mt-0.5">No API key configured</p>
                     )}
-                    {!comingSoon && s.tag === "loading" && (
-                      <p className="text-xs text-[#625b71] mt-0.5 animate-pulse">Fetching…</p>
+                    {!comingSoon && status.tag === "loading" && (
+                      <p className="text-xs text-[#625b71] mt-0.5 animate-pulse">Fetching...</p>
                     )}
                     {id === "gcp" && (
-                      <p className="text-[10px] text-amber-600 mt-1" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+                      <p
+                        className="text-[10px] text-amber-600 mt-1"
+                        style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                      >
                         Data delayed up to 48h
                       </p>
                     )}
-                    {!comingSoon && s.tag === "ok" && (
+                    {!comingSoon && status.tag === "ok" && (
                       <div className="mt-2 flex gap-6">
                         <div>
                           <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em]">This month</p>
                           <p className="text-base text-[#1c1b1f]" style={{ fontWeight: 300 }}>
-                            ${s.data.currentMonthUsd.toFixed(2)}
+                            ${status.data.currentMonthUsd.toFixed(2)}
                           </p>
                         </div>
                         <div>
                           <p className="text-[10px] text-[#625b71]/60 uppercase tracking-[0.2em]">Last month</p>
                           <p className="text-base text-[#1c1b1f]" style={{ fontWeight: 300 }}>
-                            {s.data.previousMonthUsd > 0 ? `$${s.data.previousMonthUsd.toFixed(2)}` : "—"}
+                            {status.data.previousMonthUsd > 0 ? `$${status.data.previousMonthUsd.toFixed(2)}` : "-"}
                           </p>
                         </div>
                       </div>
                     )}
-                    {!comingSoon && s.tag === "stale" && (
+                    {!comingSoon && status.tag === "stale" && (
                       <SelectableErrorMessage
                         kind="inline"
                         className="mt-1 max-w-sm text-xs leading-relaxed"
@@ -359,12 +398,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                       </SelectableErrorMessage>
                     )}
 
-                    {/* Add/update key form — hidden for comingSoon providers */}
                     {!comingSoon && isAdding && (
                       <div className="mt-3 space-y-2">
-                        {note && (
-                          <p className="text-xs text-[#625b71]/70">{note}</p>
-                        )}
+                        {note && <p className="text-xs text-[#625b71]/70">{note}</p>}
                         {id === "gcp" ? (
                           <div className="space-y-2">
                             <input
@@ -399,10 +435,16 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleSaveKey(id)}
-                                disabled={savingKey || !keyInput.trim() || !gcpProject.trim() || !gcpDataset.trim() || !gcpTable.trim()}
+                                disabled={
+                                  savingKey ||
+                                  !keyInput.trim() ||
+                                  !gcpProject.trim() ||
+                                  !gcpDataset.trim() ||
+                                  !gcpTable.trim()
+                                }
                                 className="px-4 py-1.5 rounded-full bg-[#6750a4] text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-[#6750a4]/90 transition-colors"
                               >
-                                {savingKey ? "Saving…" : "Save"}
+                                {savingKey ? "Saving..." : "Save"}
                               </button>
                               <button
                                 onClick={cancelAddKey}
@@ -419,7 +461,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                               value={keyInput}
                               onChange={(e) => setKeyInput(e.target.value)}
                               onKeyDown={(e) => e.key === "Enter" && handleSaveKey(id)}
-                              placeholder="Paste API key…"
+                              placeholder="Paste API key..."
                               autoFocus
                               className="flex-1 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] transition-colors"
                               style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
@@ -430,7 +472,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                               className="px-4 py-1.5 rounded-full bg-[#6750a4] text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-[#6750a4]/90 transition-colors"
                               style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
                             >
-                              {savingKey ? "Saving…" : "Save"}
+                              {savingKey ? "Saving..." : "Save"}
                             </button>
                             <button
                               onClick={cancelAddKey}
@@ -449,24 +491,23 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                     )}
                   </div>
 
-                  {/* Right-side actions — hidden for comingSoon providers */}
                   {!comingSoon && (
                     <div
                       className="shrink-0 flex flex-col items-end gap-1 pt-0.5"
                       style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
                     >
-                      {s.tag === "ok" && (
+                      {status.tag === "ok" && (
                         <>
                           <p className="text-[10px] text-[#625b71]/50">
-                            {s.backgroundRefreshing ? (
-                              <span className="animate-pulse">Refreshing…</span>
+                            {status.backgroundRefreshing ? (
+                              <span className="animate-pulse">Refreshing...</span>
                             ) : (
-                              formatRefreshedAt(s.refreshedAt)
+                              formatRefreshedAt(status.refreshedAt)
                             )}
                           </p>
                           <button
                             onClick={() => runFetch(id)}
-                            disabled={s.backgroundRefreshing}
+                            disabled={status.backgroundRefreshing}
                             className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors disabled:opacity-40"
                           >
                             Refresh
@@ -508,7 +549,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                           )}
                         </>
                       )}
-                      {s.tag === "stale" && (
+                      {status.tag === "stale" && (
                         <>
                           <button
                             onClick={() => runFetch(id)}
@@ -553,7 +594,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                           )}
                         </>
                       )}
-                      {(s.tag === "unconfigured" || s.tag === "stale") && !isAdding && (
+                      {(status.tag === "unconfigured" || status.tag === "stale") && !isAdding && (
                         <button
                           onClick={() => {
                             setConfirmRevoke(null);
@@ -563,7 +604,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                           }}
                           className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
                         >
-                          {s.tag === "unconfigured" ? "Add key" : "Update key"}
+                          {status.tag === "unconfigured" ? "Add key" : "Update key"}
                         </button>
                       )}
                     </div>
@@ -575,10 +616,12 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         </div>
       </section>
 
-      {/* ── Section 2: Subscriptions summary ──────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-[#1c1b1f]" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
+          <h2
+            className="text-sm font-medium text-[#1c1b1f]"
+            style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+          >
             Subscriptions
           </h2>
           <button
@@ -586,7 +629,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
             className="text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
             style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
           >
-            Manage →
+            Manage {"->"}
           </button>
         </div>
 
@@ -597,13 +640,13 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
               onClick={() => onNavigate("subscriptions")}
               className="mt-2 text-xs text-[#6750a4] hover:text-[#6750a4]/70 cursor-pointer transition-colors"
             >
-              Add subscriptions →
+              Add subscriptions {"->"}
             </button>
           </div>
         ) : (
           <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4 space-y-1.5">
             {Object.entries(monthlyByCurrency).map(([currency, total]) => {
-              const count = subscriptions.filter((s) => s.currency === currency).length;
+              const count = subscriptions.filter((subscription) => subscription.currency === currency).length;
               return (
                 <div key={currency} className="flex items-baseline justify-between">
                   <span className="text-sm text-[#625b71]">
