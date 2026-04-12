@@ -119,7 +119,7 @@ export default function App() {
       style={{ background: "var(--bg-gradient)", color: "var(--text-primary)" }}
     >
       <aside
-        className="flex w-56 shrink-0 flex-col border-r"
+        className="flex w-64 shrink-0 flex-col border-r"
         style={{
           background: "var(--sidebar-bg)",
           borderColor: "var(--border-sidebar)",
@@ -129,20 +129,18 @@ export default function App() {
         <div className="flex items-center border-b px-4 py-4" style={{ borderColor: "var(--border-subtle)" }}>
           <button
             onClick={() => openUrl("https://stashpeak.com")}
-            className="cursor-pointer"
+            className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px]"
             style={{
               display: "flex",
               alignItems: "center",
               gap: "10px",
               padding: "7px 14px 7px 7px",
               borderRadius: "80px",
-              background: "var(--logo-pill-bg)",
               backdropFilter: "blur(10px)",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 rgba(255,255,255,0.2), inset 1px 0 0 rgba(255,255,255,0.5), inset -1px 0 0 rgba(255,255,255,0.2)",
               border: "none",
             }}
           >
-            <StashpeakLogo width={28} height={27} />
+            <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
             <span style={{ fontWeight: 400, fontSize: "14px", color: "var(--logo-text)", whiteSpace: "nowrap" }}>
               Stashpeak
             </span>
@@ -156,7 +154,7 @@ export default function App() {
               onClick={() => setActive(id)}
               className={`flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-left text-sm transition-all cursor-pointer ${
                 active === id
-                  ? "border border-[var(--glass-border)] bg-[var(--glass-bg-elevated)] text-[var(--text-primary)] backdrop-blur-[5px]"
+                  ? "glass-surface [--glass-surface-fill:var(--nav-active-fill)] text-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)]"
               }`}
             >

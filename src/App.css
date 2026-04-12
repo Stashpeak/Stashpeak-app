@@ -16,7 +16,6 @@
     --danger-text: rgba(225, 29, 72, 0.9);
     --focus-ring: rgba(173, 70, 255, 0.18);
     --scrollbar-thumb: rgba(0, 0, 0, 0.12);
-    --logo-pill-bg: rgba(43, 0, 81, 0.35);
     --logo-text: #ffffff;
     font-family: "Kumbh Sans", sans-serif;
   }
@@ -34,8 +33,11 @@
     --border-standard: rgba(0, 0, 0, 0.15);
     --border-sidebar: rgba(229, 231, 235, 0.3);
     --sidebar-bg: rgba(255, 255, 255, 0.2);
+    --logo-pill-fill: rgba(0, 0, 0, 0.01);
+    --nav-active-fill: rgba(0, 0, 0, 0.01);
     --purple-label: rgba(173, 70, 255, 0.8);
     --purple-button-text: #222222;
+    --logo-text: #101828;
     --toggle-off-bg: rgba(0, 0, 0, 0.14);
     --toggle-thumb: #ffffff;
     --glass-stroke-gradient: linear-gradient(
@@ -66,8 +68,11 @@
     --border-standard: rgba(255, 255, 255, 0.4);
     --border-sidebar: rgba(255, 255, 255, 0.1);
     --sidebar-bg: rgba(0, 0, 0, 0.2);
+    --logo-pill-fill: rgba(255, 255, 255, 0.01);
+    --nav-active-fill: rgba(255, 255, 255, 0.01);
     --purple-label: rgba(218, 178, 255, 0.8);
     --purple-button-text: #e9d4ff;
+    --logo-text: #ffffff;
     --purple-solid-hover: #c06cff;
     --purple-accent-strong: rgba(173, 70, 255, 0.34);
     --danger-surface: rgba(244, 63, 94, 0.14);
