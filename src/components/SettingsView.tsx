@@ -62,8 +62,8 @@ function RateRow({ fromCurrency, homeCurrency, initialRate, onSaved }: RateRowPr
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-sm text-[#625b71] w-24 shrink-0">
-        1 <span className="font-medium text-[#1c1b1f]">{fromCurrency}</span> =
+      <span className="text-sm text-secondary w-24 shrink-0">
+        1 <span className="font-medium text-ink">{fromCurrency}</span> =
       </span>
       <input
         type="number"
@@ -74,12 +74,11 @@ function RateRow({ fromCurrency, homeCurrency, initialRate, onSaved }: RateRowPr
         onBlur={() => void commit()}
         onKeyDown={(e) => e.key === "Enter" && void commit()}
         placeholder="e.g. 25.5"
-        className="w-28 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] transition-colors"
-        style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+        className="w-28 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors"
       />
-      <span className="text-sm text-[#625b71]">{homeCurrency}</span>
+      <span className="text-sm text-secondary">{homeCurrency}</span>
       {saved && (
-        <span className="text-xs text-[#6750a4] transition-opacity">Saved</span>
+        <span className="text-xs text-primary transition-opacity">Saved</span>
       )}
       {error && (
         <SelectableErrorMessage kind="inline">{error}</SelectableErrorMessage>
@@ -274,14 +273,26 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
   );
 
   return (
-    <div className="p-8 max-w-lg" style={{ fontFamily: "'Kumbh Sans', sans-serif" }}>
-      <h1
-        className="text-xl text-[#6750a4] mb-1"
-        style={{ fontWeight: 300 }}
-      >
-        Settings
-      </h1>
-      <p className="text-sm text-[#625b71] mb-8">App preferences</p>
+    <div className="flex h-full flex-col bg-white">
+      {/* Page header */}
+      <div className="border-b border-zinc-100 px-8 py-6">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
+          Preferences
+        </p>
+        <h2
+          className="mt-1.5 text-3xl text-primary"
+          style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
+        >
+          Settings
+        </h2>
+        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
+          Configure your regional preferences, notification settings, and API connectors.
+        </p>
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
+        <div className="w-full">
 
       {loadError && (
         <SelectableErrorMessage kind="inline" className="mb-4">
@@ -294,13 +305,10 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
           {/* ── Home currency ─────────────────────────────────────── */}
           <section className="space-y-4">
             <div>
-              <h2
-                className="text-sm font-medium text-[#1c1b1f]"
-                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-              >
+              <h2 className="text-sm font-medium text-ink">
                 Home currency
               </h2>
-              <p className="text-xs text-[#625b71] mt-0.5">
+              <p className="text-xs text-secondary mt-0.5">
                 Subscription totals are converted into this currency in the header.
               </p>
             </div>
@@ -310,8 +318,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                 id="home-currency-select"
                 value={homeCurrency}
                 onChange={(e) => void handleHomeCurrencyChange(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] transition-colors cursor-pointer bg-white"
-                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                className="px-3 py-2 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors cursor-pointer bg-white"
               >
                 {CURRENCY_OPTIONS.map((opt) => (
                   <option key={opt.code} value={opt.code}>
@@ -320,14 +327,14 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                 ))}
               </select>
               {currencySaved && (
-                <span className="text-xs text-[#6750a4]">Saved</span>
+                <span className="text-xs text-primary">Saved</span>
               )}
             </div>
 
             {/* Exchange rates — only shown if there are subscription currencies that differ */}
             {ratesNeeded.length > 0 && (
               <div className="space-y-3 pt-1">
-                <p className="text-xs text-[#625b71] leading-relaxed">
+                <p className="text-xs text-secondary leading-relaxed">
                   Enter exchange rates for your subscription currencies. Used to calculate the aggregate total.
                 </p>
                 {ratesNeeded.map((from) => (
@@ -343,7 +350,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
             )}
 
             {ratesNeeded.length === 0 && subCurrencies.length > 0 && (
-              <p className="text-xs text-[#625b71]/60">
+              <p className="text-xs text-secondary/60">
                 All your subscriptions are already in {homeCurrency} — no conversion needed.
               </p>
             )}
@@ -355,13 +362,10 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2
-                  className="text-sm font-medium text-[#1c1b1f]"
-                  style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-                >
+                <h2 className="text-sm font-medium text-ink">
                   Billing renewal reminders
                 </h2>
-                <p className="text-xs text-[#625b71] mt-0.5">
+                <p className="text-xs text-secondary mt-0.5">
                   Notify when a subscription is about to renew
                 </p>
               </div>
@@ -370,7 +374,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                 aria-checked={enabled}
                 onClick={() => void saveEnabled(!enabled)}
                 className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
-                  enabled ? "bg-[#6750a4]" : "bg-zinc-200"
+                  enabled ? "bg-primary" : "bg-zinc-200"
                 }`}
               >
                 <span
@@ -383,7 +387,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
 
             {enabled && (
               <div>
-                <p className="text-xs text-[#625b71] mb-3 leading-relaxed">
+                <p className="text-xs text-secondary mb-3 leading-relaxed">
                   How many days before renewal to notify. Fires once per billing
                   cycle when you open Stashpeak.
                 </p>
@@ -395,10 +399,9 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                       onClick={() => handlePreset(p)}
                       className={`px-4 py-1.5 rounded-full text-sm transition-all cursor-pointer ${
                         !isCustom && days === p
-                          ? "bg-[#6750a4] text-white"
-                          : "bg-[#6750a4]/8 text-[#6750a4] hover:bg-[#6750a4]/15"
+                          ? "bg-primary text-white"
+                          : "bg-primary/8 text-primary hover:bg-primary/15"
                       }`}
-                      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
                     >
                       {PRESET_LABELS[p]}
                     </button>
@@ -411,10 +414,9 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                     }}
                     className={`px-4 py-1.5 rounded-full text-sm transition-all cursor-pointer ${
                       isCustom
-                        ? "bg-[#6750a4] text-white"
-                        : "bg-[#6750a4]/8 text-[#6750a4] hover:bg-[#6750a4]/15"
+                        ? "bg-primary text-white"
+                        : "bg-primary/8 text-primary hover:bg-primary/15"
                     }`}
-                    style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
                   >
                     Custom
                   </button>
@@ -431,20 +433,16 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                       onBlur={handleCustomCommit}
                       onKeyDown={(e) => e.key === "Enter" && handleCustomCommit()}
                       placeholder="e.g. 14"
-                      className="w-24 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-[#1c1b1f] outline-none focus:border-[#6750a4] transition-colors"
-                      style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                      className="w-24 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors"
                       autoFocus
                     />
-                    <span className="text-sm text-[#625b71]">days before renewal</span>
+                    <span className="text-sm text-secondary">days before renewal</span>
                   </div>
                 )}
               </div>
             )}
 
-            <p
-              className={`text-xs text-[#6750a4] transition-opacity ${notifSaved ? "opacity-100" : "opacity-0"}`}
-              style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-            >
+            <p className={`text-xs text-primary transition-opacity ${notifSaved ? "opacity-100" : "opacity-0"}`}>
               Saved
             </p>
           </section>
@@ -454,13 +452,10 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
           {/* ── API Connectors ─────────────────────────────────────── */}
           <section className="space-y-6">
             <div>
-              <h2
-                className="text-sm font-medium text-[#1c1b1f]"
-                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
-              >
+              <h2 className="text-sm font-medium text-ink">
                 API Connectors
               </h2>
-              <p className="text-xs text-[#625b71] mt-0.5">
+              <p className="text-xs text-secondary mt-0.5">
                 Enable or disable specific connectors from fetching data
               </p>
             </div>
@@ -468,13 +463,13 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
             <div className="space-y-4">
               {SPEND_PROVIDERS.map(p => (
                 <div key={p.id} className="flex items-center justify-between">
-                  <span className="text-sm text-[#1c1b1f]">{p.name}</span>
+                  <span className="text-sm text-ink">{p.name}</span>
                   <button
                     role="switch"
                     aria-checked={providerStates[p.id] ?? true}
                     onClick={() => void handleProviderToggle(p.id, !(providerStates[p.id] ?? true))}
                     className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
-                      (providerStates[p.id] ?? true) ? "bg-[#6750a4]" : "bg-zinc-200"
+                      (providerStates[p.id] ?? true) ? "bg-primary" : "bg-zinc-200"
                     }`}
                   >
                     <span
@@ -493,8 +488,8 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
           {/* ── About ──────────────────────────────────────────────── */}
           <section className="space-y-4">
             <div>
-              <h2 className="text-sm font-medium text-[#1c1b1f]">About</h2>
-              <p className="text-xs text-[#625b71] mt-0.5">
+              <h2 className="text-sm font-medium text-ink">About</h2>
+              <p className="text-xs text-secondary mt-0.5">
                 Stashpeak{appVersion ? ` v${appVersion}` : ""}
               </p>
             </div>
@@ -502,35 +497,33 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
             {checkState === "idle" && (
               <button
                 onClick={() => void handleCheckForUpdates()}
-                className="px-4 py-1.5 rounded-full text-sm bg-[#6750a4]/8 text-[#6750a4] hover:bg-[#6750a4]/15 transition-all cursor-pointer"
-                style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                className="px-4 py-1.5 rounded-full text-sm bg-primary/8 text-primary hover:bg-primary/15 transition-all cursor-pointer"
               >
                 {updateAvailable ? "Update available — view" : "Check for updates"}
               </button>
             )}
 
             {checkState === "checking" && (
-              <p className="text-xs text-[#625b71]">Checking…</p>
+              <p className="text-xs text-secondary">Checking…</p>
             )}
 
             {checkState === "upToDate" && (
-              <p className="text-xs text-[#6750a4]">You're up to date.</p>
+              <p className="text-xs text-primary">You're up to date.</p>
             )}
 
             {checkState === "available" && (
               <div className="space-y-2">
                 {updateInfo && (
-                  <p className="text-xs text-[#625b71]">
+                  <p className="text-xs text-secondary">
                     v{updateInfo.version} is available.
                     {updateInfo.body && (
-                      <span className="block mt-1 text-[#1c1b1f]/70 whitespace-pre-wrap">{updateInfo.body}</span>
+                      <span className="block mt-1 text-ink/70 whitespace-pre-wrap">{updateInfo.body}</span>
                     )}
                   </p>
                 )}
                 <button
                   onClick={() => void handleInstall()}
-                  className="px-4 py-1.5 rounded-full text-sm bg-[#6750a4] text-white hover:bg-[#6750a4]/90 transition-all cursor-pointer"
-                  style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                  className="px-4 py-1.5 rounded-full text-sm bg-primary text-white hover:bg-primary/90 transition-all cursor-pointer"
                 >
                   Download and install
                 </button>
@@ -539,11 +532,11 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
 
             {checkState === "downloading" && (
               <div className="space-y-1.5">
-                <p className="text-xs text-[#625b71]">Downloading…</p>
+                <p className="text-xs text-secondary">Downloading…</p>
                 {downloadTotal !== null && (
                   <div className="w-full h-1 rounded-full bg-zinc-100 overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-[#6750a4] transition-all"
+                      className="h-full rounded-full bg-primary transition-all"
                       style={{ width: `${Math.round((downloadProgress / downloadTotal) * 100)}%` }}
                     />
                   </div>
@@ -552,7 +545,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
             )}
 
             {checkState === "done" && (
-              <p className="text-xs text-[#6750a4]">
+              <p className="text-xs text-primary">
                 Update installed. The app will restart shortly.
               </p>
             )}
@@ -562,8 +555,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                 <SelectableErrorMessage kind="inline">{updateError}</SelectableErrorMessage>
                 <button
                   onClick={() => void handleCheckForUpdates()}
-                  className="text-xs text-[#6750a4] underline cursor-pointer"
-                  style={{ fontFamily: "'Kumbh Sans', sans-serif" }}
+                  className="text-xs text-primary underline cursor-pointer"
                 >
                   Try again
                 </button>
@@ -572,6 +564,8 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
           </section>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

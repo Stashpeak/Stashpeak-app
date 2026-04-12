@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const inputClass =
-  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-[#6750a4] focus:ring-2 focus:ring-[#6750a4]/10 placeholder:text-zinc-300";
+  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 placeholder:text-zinc-300";
 
 type CategorySelectorProps = {
   value: string;
@@ -185,7 +185,7 @@ export function CategorySelector({
 
           {showCreateOption ? (
             <li
-              className={`cursor-pointer px-4 py-2.5 text-sm italic text-[#6750a4] hover:bg-zinc-50 ${
+              className={`cursor-pointer px-4 py-2.5 text-sm italic text-primary hover:bg-zinc-50 ${
                 activeIndex === visibleItems.length - 1 ? "bg-zinc-100" : ""
               }`}
               onMouseDown={(event) => {
