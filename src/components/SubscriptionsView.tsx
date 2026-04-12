@@ -11,7 +11,7 @@ import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./SubscriptionList";
 import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
-import { ACCENT_PILL_SURFACE, HEADER_STAT_SURFACE, PILL_SURFACE } from "./surfaceStyles";
+import { ACCENT_PILL_SURFACE, HEADER_STAT_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 
 const SEED_CATEGORIES = ["AI", "Assistant", "Audio", "Coding", "Image", "Research", "Video"];
 
@@ -174,21 +174,21 @@ export function SubscriptionsView() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col">
       {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
               Recurring spend
             </p>
             <h2
-              className="mt-1.5 text-3xl text-primary"
+              className="mt-1.5 text-3xl text-[var(--text-primary)]"
               style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
             >
               Subscription tracker
             </h2>
-            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
               Track recurring AI subscriptions, quick-add common tools, and keep monthly totals grouped by currency.
               Annual plans are prorated in the totals below.
             </p>

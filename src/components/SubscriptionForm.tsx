@@ -1,3 +1,4 @@
+import { CARD_SURFACE, SECONDARY_BUTTON_SURFACE, TEXT_INPUT_SURFACE } from "../lib/surfaceStyles";
 import { type BillingPeriod, type Subscription, type SubscriptionInput } from "../lib/subscriptions";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { CURRENCY_OPTIONS } from "../lib/currencies";
@@ -52,8 +53,7 @@ export function toPayload(form: FormState): SubscriptionInput {
   };
 }
 
-const inputClass =
-  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 placeholder:text-zinc-300";
+const inputClass = `${TEXT_INPUT_SURFACE} px-4 py-3`;
 
 const labelClass = "text-xs text-secondary tracking-wide";
 
@@ -206,7 +206,7 @@ export function SubscriptionForm({
           <button
             type="button"
             onClick={onCancel}
-            className="shrink-0 rounded-full border border-zinc-200 px-4 py-3 text-sm text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
+            className={`shrink-0 px-4 py-3 text-sm ${SECONDARY_BUTTON_SURFACE}`}
           >
             Cancel
           </button>
@@ -220,7 +220,7 @@ export function SubscriptionForm({
   }
 
   return (
-    <aside className="rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm self-start">
+    <aside className={`${CARD_SURFACE} self-start`}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
@@ -237,7 +237,7 @@ export function SubscriptionForm({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
+              className={SECONDARY_BUTTON_SURFACE}
             >
               Cancel
             </button>
@@ -246,7 +246,7 @@ export function SubscriptionForm({
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
+              className={SECONDARY_BUTTON_SURFACE}
             >
               {collapsed ? "+" : "−"}
             </button>

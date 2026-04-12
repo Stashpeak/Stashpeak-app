@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const inputClass =
-  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10 placeholder:text-zinc-300";
+  "glass-input-surface w-full rounded-2xl px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-primary/10 placeholder:text-zinc-300";
 
 type CategorySelectorProps = {
   value: string;
@@ -167,7 +167,7 @@ export function CategorySelector({
       </div>
 
       {isOpen && visibleItems.length > 0 ? (
-        <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-md">
+        <ul className="glass-surface-elevated absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-2xl shadow-md">
           {filteredCategories.map((category, index) => (
             <li
               key={category}

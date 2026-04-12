@@ -1,4 +1,4 @@
-import { CARD_SURFACE, SELECT_SURFACE } from "./surfaceStyles";
+import { CARD_SURFACE, SELECT_SURFACE } from "../lib/surfaceStyles";
 
 export type Preset = {
   id: string;

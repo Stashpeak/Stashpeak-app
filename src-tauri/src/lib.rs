@@ -204,6 +204,20 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        let _ = window.set_decorations(false);
+                    }
+                }
+            }
             notifications::check_and_notify(app.handle());
             Ok(())
         })

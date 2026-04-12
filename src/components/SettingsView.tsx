@@ -13,6 +13,8 @@ import {
 import { getProviderEnabled, setProviderEnabled } from "../lib/connectors";
 import { checkForUpdate, downloadAndInstall, type Update } from "../lib/updater";
 import { CURRENCY_OPTIONS } from "../lib/currencies";
+import type { ResolvedTheme, Theme } from "../hooks/useTheme";
+import { ACCENT_BUTTON_SURFACE, SECONDARY_BUTTON_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 const NOTIFICATION_PRESETS = [0, 1, 3, 7];
@@ -29,6 +31,12 @@ const SPEND_PROVIDERS = [
   { id: "openrouter", name: "OpenRouter" },
   { id: "groq", name: "Groq" },
   { id: "gcp", name: "Google Cloud" },
+];
+
+const THEME_OPTIONS: { value: Theme; label: string; description: string }[] = [
+  { value: "system", label: "System", description: "Follow your OS preference and update automatically." },
+  { value: "light", label: "Light", description: "Use the pastel glass theme." },
+  { value: "dark", label: "Dark", description: "Use the darker glass theme." },
 ];
 
 interface RateRowProps {
@@ -74,7 +82,7 @@ function RateRow({ fromCurrency, homeCurrency, initialRate, onSaved }: RateRowPr
         onBlur={() => void commit()}
         onKeyDown={(e) => e.key === "Enter" && void commit()}
         placeholder="e.g. 25.5"
-        className="w-28 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors"
+        className="w-28 rounded-[14px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--purple-primary)] focus:ring-2 focus:ring-[var(--focus-ring)]"
       />
       <span className="text-sm text-secondary">{homeCurrency}</span>
       {saved && (
@@ -88,11 +96,20 @@ function RateRow({ fromCurrency, homeCurrency, initialRate, onSaved }: RateRowPr
 }
 
 interface SettingsViewProps {
+  theme: Theme;
+  resolvedTheme: ResolvedTheme;
+  onThemeChange: (theme: Theme) => void;
   updateAvailable: boolean;
   onUpdateConsumed: () => void;
 }
 
-export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsViewProps) {
+export function SettingsView({
+  theme,
+  resolvedTheme,
+  onThemeChange,
+  updateAvailable,
+  onUpdateConsumed,
+}: SettingsViewProps) {
   // Notification settings
   const [days, setDays] = useState<number | null>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -273,19 +290,19 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
   );
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col">
       {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
           Preferences
         </p>
         <h2
-          className="mt-1.5 text-3xl text-primary"
+          className="mt-1.5 text-3xl text-[var(--text-primary)]"
           style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
         >
           Settings
         </h2>
-        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-secondary">
+        <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
           Configure your regional preferences, notification settings, and API connectors.
         </p>
       </div>
@@ -302,6 +319,44 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
 
       {loaded && (
         <div className="space-y-10">
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-sm font-medium text-ink">
+                Appearance
+              </h2>
+              <p className="text-xs text-secondary mt-0.5">
+                System is the default. Manual overrides are saved on this device.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {THEME_OPTIONS.map((option) => {
+                const isActive = theme === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    onClick={() => onThemeChange(option.value)}
+                    className={isActive
+                      ? "rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg-elevated)] px-4 py-2 text-sm text-[var(--text-primary)] backdrop-blur-[5px] transition-all"
+                      : SECONDARY_BUTTON_SURFACE}
+                    title={option.description}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-xs text-secondary/60">
+              Currently rendering the {resolvedTheme} theme.
+            </p>
+          </section>
+
+          <div className="border-t border-zinc-100" />
+
           {/* ── Home currency ─────────────────────────────────────── */}
           <section className="space-y-4">
             <div>
@@ -378,7 +433,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                 }`}
               >
                 <span
-                  className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${
+                  className={`absolute top-1 w-4 h-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
                     enabled ? "left-5" : "left-1"
                   }`}
                 />
@@ -433,7 +488,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                       onBlur={handleCustomCommit}
                       onKeyDown={(e) => e.key === "Enter" && handleCustomCommit()}
                       placeholder="e.g. 14"
-                      className="w-24 px-3 py-1.5 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors"
+                      className="w-24 rounded-[14px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--purple-primary)] focus:ring-2 focus:ring-[var(--focus-ring)]"
                       autoFocus
                     />
                     <span className="text-sm text-secondary">days before renewal</span>
@@ -473,7 +528,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
                     }`}
                   >
                     <span
-                      className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${
+                      className={`absolute top-1 w-4 h-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
                         (providerStates[p.id] ?? true) ? "left-5" : "left-1"
                       }`}
                     />
@@ -497,7 +552,7 @@ export function SettingsView({ updateAvailable, onUpdateConsumed }: SettingsView
             {checkState === "idle" && (
               <button
                 onClick={() => void handleCheckForUpdates()}
-                className="px-4 py-1.5 rounded-full text-sm bg-primary/8 text-primary hover:bg-primary/15 transition-all cursor-pointer"
+                className={`${ACCENT_BUTTON_SURFACE} cursor-pointer`}
               >
                 {updateAvailable ? "Update available — view" : "Check for updates"}
               </button>
