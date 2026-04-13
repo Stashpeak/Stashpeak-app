@@ -207,6 +207,8 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 use tauri::Manager;
+                use tauri::tray::TrayIconBuilder;
+
                 if let Some(window) = app.get_webview_window("main") {
                     #[cfg(target_os = "macos")]
                     {
@@ -217,6 +219,19 @@ pub fn run() {
                         let _ = window.set_decorations(false);
                     }
                 }
+
+                TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    })
+                    .build(app)?;
             }
             notifications::check_and_notify(app.handle());
             Ok(())
