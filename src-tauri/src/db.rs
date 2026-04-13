@@ -8,7 +8,11 @@ use std::path::PathBuf;
 /// - Linux:   ~/.local/share/stashpeak
 pub fn data_dir() -> PathBuf {
     let base = dirs::data_dir().expect("could not locate platform data directory");
-    base.join("Stashpeak")
+    base.join(if cfg!(debug_assertions) {
+        "Stashpeak-dev"
+    } else {
+        "Stashpeak"
+    })
 }
 
 /// Opens (or creates) the SQLite database, runs all pending migrations,

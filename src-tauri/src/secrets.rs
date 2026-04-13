@@ -5,12 +5,16 @@ use zeroize::Zeroizing;
 
 use crate::providers::ProviderId;
 
-const KEYCHAIN_SERVICE: &str = "com.stashpeak.credentials";
+const KEYCHAIN_SERVICE: &str = if cfg!(debug_assertions) {
+    "app-dev"
+} else {
+    "app"
+};
 
 /// Keychain account name for a provider — this format is a storage
 /// implementation detail and lives here, not in providers.rs.
 fn account_name(id: ProviderId) -> String {
-    format!("provider:{}", id.as_str())
+    format!("Stashpeak/{}", id.as_str())
 }
 
 #[derive(Debug)]
@@ -245,13 +249,10 @@ mod tests {
 
     #[test]
     fn formats_provider_account_names() {
-        assert_eq!(account_name(ProviderId::OpenAi), "provider:openai");
-        assert_eq!(account_name(ProviderId::Anthropic), "provider:anthropic");
-        assert_eq!(
-            account_name(ProviderId::OpenRouter),
-            "provider:openrouter"
-        );
-        assert_eq!(account_name(ProviderId::Groq), "provider:groq");
+        assert_eq!(account_name(ProviderId::OpenAi), "Stashpeak/openai");
+        assert_eq!(account_name(ProviderId::Anthropic), "Stashpeak/anthropic");
+        assert_eq!(account_name(ProviderId::OpenRouter), "Stashpeak/openrouter");
+        assert_eq!(account_name(ProviderId::Groq), "Stashpeak/groq");
     }
 
     #[test]
