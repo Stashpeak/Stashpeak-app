@@ -41,7 +41,7 @@ impl GcpConnector {
         let header = Header::new(Algorithm::RS256);
         let key = EncodingKey::from_rsa_pem(private_key.as_bytes())
             .map_err(|e| ConnectorError::Config(format!("Failed to parse private key: {e}")))?;
-            
+
         let jwt = encode(&header, &claims, &key)
             .map_err(|e| ConnectorError::Config(format!("Failed to encode JWT: {e}")))?;
 
@@ -87,10 +87,13 @@ impl GcpConnector {
         year: i32,
         month: u32,
     ) -> Result<f64, ConnectorError> {
-        let invoice_month = format!("{:04}{:02}", year, month);
-        
+        validate_bq_identifier("project_id", project_id)?;
+        validate_bq_identifier("dataset_id", dataset_id)?;
+        validate_bq_identifier("table_name", table_name)?;
+        let invoice_month = validate_invoice_month(year, month)?;
+
         // Filter globally for Google Cloud AI usage if possible, or just take total project spend
-        // Here we just take the total cost for the invoice month. 
+        // Here we just take the total cost for the invoice month.
         // We filter for Gemini/Vertex explicitly to accurately represent the AI connector.
         let query = format!(
             "SELECT sum(cost) as total_cost FROM `{}.{}.{}` WHERE invoice.month = '{}' AND (service.description LIKE '%Vertex AI%' OR service.description LIKE '%Gemini%')",
@@ -115,12 +118,12 @@ impl GcpConnector {
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
-            
+
             // Check if the table was not found
             if body.contains("Not found: Table") {
                 return Err(ConnectorError::Config("BigQuery export not yet populated — allow up to 48h after initial setup".into()));
             }
-            
+
             if status.as_u16() == 401 || status.as_u16() == 403 {
                 return Err(ConnectorError::Unauthorized);
             }
@@ -157,6 +160,41 @@ impl GcpConnector {
 
         Ok(0.0) // No rows or null sum means 0 spend
     }
+}
+
+fn validate_bq_identifier(field_name: &str, value: &str) -> Result<(), ConnectorError> {
+    if value.is_empty() || value.len() > 1024 {
+        return Err(ConnectorError::Config(format!(
+            "Invalid GCP {field_name}: must be 1-1024 characters"
+        )));
+    }
+
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(ConnectorError::Config(format!(
+            "Invalid GCP {field_name}: only letters, numbers, underscores, and hyphens are allowed"
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_invoice_month(year: i32, month: u32) -> Result<String, ConnectorError> {
+    if !(0..=9999).contains(&year) {
+        return Err(ConnectorError::Config(
+            "Invalid invoice month: year must be between 0000 and 9999".into(),
+        ));
+    }
+
+    if !(1..=12).contains(&month) {
+        return Err(ConnectorError::Config(
+            "Invalid invoice month: month must be between 01 and 12".into(),
+        ));
+    }
+
+    Ok(format!("{year:04}{month:02}"))
 }
 
 #[derive(Deserialize)]
@@ -237,5 +275,52 @@ impl SpendConnector for GcpConnector {
             previous_month_usd,
             last_activity_at: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_valid_bigquery_identifiers() {
+        assert!(validate_bq_identifier("project_id", "my-gcp-project_123").is_ok());
+        assert!(validate_bq_identifier("dataset_id", "billing_export").is_ok());
+        assert!(validate_bq_identifier("table_name", "gcp_billing_export_v1").is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_bigquery_identifiers() {
+        let err = validate_bq_identifier("project_id", "").unwrap_err();
+        assert!(matches!(err, ConnectorError::Config(_)));
+        assert_eq!(
+            err.to_string(),
+            "configuration error: Invalid GCP project_id: must be 1-1024 characters"
+        );
+    }
+
+    #[test]
+    fn rejects_bigquery_identifiers_with_invalid_characters() {
+        let err = validate_bq_identifier("table_name", "billing`; DROP TABLE foo;--").unwrap_err();
+        assert!(matches!(err, ConnectorError::Config(_)));
+        assert_eq!(
+            err.to_string(),
+            "configuration error: Invalid GCP table_name: only letters, numbers, underscores, and hyphens are allowed"
+        );
+    }
+
+    #[test]
+    fn builds_valid_invoice_months() {
+        assert_eq!(validate_invoice_month(2026, 4).unwrap(), "202604");
+    }
+
+    #[test]
+    fn rejects_invalid_invoice_months() {
+        let err = validate_invoice_month(2026, 13).unwrap_err();
+        assert!(matches!(err, ConnectorError::Config(_)));
+        assert_eq!(
+            err.to_string(),
+            "configuration error: Invalid invoice month: month must be between 01 and 12"
+        );
     }
 }
