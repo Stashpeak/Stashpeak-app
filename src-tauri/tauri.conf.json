@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' https://*.anthropic.com https://api.openai.com https://openrouter.ai https://api.groq.com https://googleapis.com https://oauth2.googleapis.com https://bigquery.googleapis.com; script-src 'self'; style-src 'self' 'unsafe-inline'"
     }
   },
   "plugins": {
