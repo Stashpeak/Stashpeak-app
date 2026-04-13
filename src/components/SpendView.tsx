@@ -5,23 +5,16 @@ import { fetchProviderSpend, getProviderEnabled, type SpendData } from "../lib/c
 import {
   CARD_SURFACE,
   EMPTY_DASHED_SURFACE,
-  HEADER_STAT_SURFACE,
   PILL_SURFACE,
   SUBTLE_PANEL_SURFACE,
-  TEXT_INPUT_SURFACE,
 } from "../lib/surfaceStyles";
+import { STALE_AFTER_MS, buildInitialStates, evictCache, loadCache, persistCache } from "../lib/spendCache";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
+import { ProviderCard, type ProviderDefinition, type ProviderId, type ProviderStatus } from "./ProviderCard";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
+import { StatHero } from "./StatHero";
 
-type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "gcp";
-
-type ProviderStatus =
-  | { tag: "unconfigured" }
-  | { tag: "loading" }
-  | { tag: "ok"; data: SpendData; refreshedAt: Date; backgroundRefreshing?: boolean }
-  | { tag: "stale"; error: string };
-
-const PROVIDERS: { id: ProviderId; name: string; note?: string; comingSoon?: boolean }[] = [
+const PROVIDERS: ProviderDefinition[] = [
   { id: "anthropic", name: "Anthropic", note: "Requires Admin API key (sk-ant-admin-...)" },
   { id: "openai", name: "OpenAI", note: "Requires API key with usage read scope" },
   { id: "openrouter", name: "OpenRouter" },
@@ -37,47 +30,6 @@ const EMPTY_STATES: Record<ProviderId, ProviderStatus> = {
   gcp: { tag: "unconfigured" },
 };
 
-const CACHE_KEY = "spend_cache_v1";
-const STALE_AFTER_MS = 5 * 60 * 1000;
-
-interface CacheEntry {
-  data: SpendData;
-  fetchedAt: number;
-}
-
-type SpendCache = Partial<Record<ProviderId, CacheEntry>>;
-
-function loadCache(): SpendCache {
-  try {
-    return JSON.parse(localStorage.getItem(CACHE_KEY) ?? "{}") as SpendCache;
-  } catch {
-    return {};
-  }
-}
-
-function persistCache(id: ProviderId, data: SpendData) {
-  const cache = loadCache();
-  cache[id] = { data, fetchedAt: Date.now() };
-  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-}
-
-function evictCache(id: ProviderId) {
-  const cache = loadCache();
-  delete cache[id];
-  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-}
-
-function buildInitialStates(): Record<ProviderId, ProviderStatus> {
-  const cache = loadCache();
-  const result = { ...EMPTY_STATES };
-  for (const [id, entry] of Object.entries(cache) as [ProviderId, CacheEntry][]) {
-    if (entry) {
-      result[id] = { tag: "ok", data: entry.data, refreshedAt: new Date(entry.fetchedAt) };
-    }
-  }
-  return result;
-}
-
 function formatRefreshedAt(date: Date): string {
   const isToday = date.toDateString() === new Date().toDateString();
   const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -88,7 +40,13 @@ function formatRefreshedAt(date: Date): string {
 export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [providers, setProviders] = useState<Record<ProviderId, ProviderStatus>>(buildInitialStates);
+  const [providers, setProviders] = useState<Record<ProviderId, ProviderStatus>>(() =>
+    buildInitialStates<ProviderId, SpendData, ProviderStatus>(EMPTY_STATES, (data, fetchedAt) => ({
+      tag: "ok",
+      data,
+      refreshedAt: new Date(fetchedAt),
+    })),
+  );
   const [enabledProviders, setEnabledProviders] = useState<Record<ProviderId, boolean> | null>(null);
   const [addingKey, setAddingKey] = useState<ProviderId | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<ProviderId | null>(null);
@@ -134,7 +92,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         if (!cancelled) setLoadError(String(e));
       });
 
-    const cache = loadCache();
+    const cache = loadCache<ProviderId, SpendData>();
     const now = Date.now();
 
     Promise.all(PROVIDERS.map(({ id }) => getProviderEnabled(id).then((enabled) => ({ id, enabled }))))
@@ -287,12 +245,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
             </p>
           </div>
 
-          <div className={HEADER_STAT_SURFACE}>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">Providers</p>
-            <p className="mt-1 text-3xl text-primary font-light">
-              {visibleProviders.length}
-            </p>
-          </div>
+          <StatHero label="Providers" value={String(visibleProviders.length)} />
         </div>
 
         {/* Totals row */}
@@ -343,259 +296,43 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
           <div className="space-y-2">
             {visibleProviders.map(({ id, name, note, comingSoon }) => {
               const status = providers[id];
-              const isAdding = addingKey === id;
-              const staleMessage =
-                status.tag === "stale"
-                  ? status.error.replace(/^Error:\s*/i, "").replace(/^Failed to fetch spend for \w+:\s*/i, "")
-                  : "";
-
               return (
-                <div key={id} className={SUBTLE_PANEL_SURFACE}>
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-ink">
-                          {name}
-                        </p>
-                        {comingSoon && (
-                          <span className="text-[10px] text-secondary/60 uppercase tracking-[0.18em] border border-zinc-200 rounded-full px-2 py-0.5">
-                            Billing API coming soon
-                          </span>
-                        )}
-                      </div>
-
-                      {!comingSoon && status.tag === "unconfigured" && !isAdding && (
-                        <p className="text-xs text-secondary mt-0.5">No API key configured</p>
-                      )}
-                      {!comingSoon && status.tag === "loading" && (
-                        <p className="text-xs text-secondary mt-0.5 animate-pulse">Fetching...</p>
-                      )}
-                      {id === "gcp" && (
-                        <p className="text-[10px] text-amber-600 mt-1">
-                          Data delayed up to 48h
-                        </p>
-                      )}
-                      {!comingSoon && status.tag === "ok" && (
-                        <div className="mt-3 flex flex-wrap gap-2.5">
-                          <div className={PILL_SURFACE}>
-                            <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">This month</p>
-                            <p className="text-base text-primary font-light">
-                              ${status.data.currentMonthUsd.toFixed(2)}
-                            </p>
-                          </div>
-                          <div className={PILL_SURFACE}>
-                            <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">Last month</p>
-                            <p className="text-base text-primary font-light">
-                              {status.data.previousMonthUsd > 0 ? `$${status.data.previousMonthUsd.toFixed(2)}` : "-"}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      {!comingSoon && status.tag === "stale" && (
-                        <SelectableErrorMessage
-                          kind="inline"
-                          className="mt-1 max-w-sm text-xs leading-relaxed"
-                        >
-                          {staleMessage}
-                        </SelectableErrorMessage>
-                      )}
-
-                      {!comingSoon && isAdding && (
-                        <div className="mt-3 space-y-2">
-                          {note && <p className="text-xs text-secondary/70">{note}</p>}
-                          {id === "gcp" ? (
-                            <div className="space-y-2">
-                              <input
-                                type="text"
-                                value={gcpProject}
-                                onChange={(e) => setGcpProject(e.target.value)}
-                                placeholder="Project ID (e.g. my-project-123)"
-                                className={TEXT_INPUT_SURFACE}
-                              />
-                              <input
-                                type="text"
-                                value={gcpDataset}
-                                onChange={(e) => setGcpDataset(e.target.value)}
-                                placeholder="BigQuery Dataset ID (e.g. bq_billing_export)"
-                                className={TEXT_INPUT_SURFACE}
-                              />
-                              <input
-                                type="text"
-                                value={gcpTable}
-                                onChange={(e) => setGcpTable(e.target.value)}
-                                placeholder="Table Name (e.g. gcp_billing_export_v1_...)"
-                                className={TEXT_INPUT_SURFACE}
-                              />
-                              <textarea
-                                value={keyInput}
-                                onChange={(e) => setKeyInput(e.target.value)}
-                                placeholder="Paste Service Account JSON Key..."
-                                autoFocus
-                                rows={3}
-                                className={`${TEXT_INPUT_SURFACE} resize-y`}
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleSaveKey(id)}
-                                  disabled={
-                                    savingKey ||
-                                    !keyInput.trim() ||
-                                    !gcpProject.trim() ||
-                                    !gcpDataset.trim() ||
-                                    !gcpTable.trim()
-                                  }
-                                  className="px-4 py-1.5 rounded-full bg-primary text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-primary/90 transition-colors"
-                                >
-                                  {savingKey ? "Saving..." : "Save"}
-                                </button>
-                                <button
-                                  onClick={cancelAddKey}
-                                  className="px-3 py-1.5 rounded-full text-sm text-secondary hover:bg-zinc-50 cursor-pointer transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex gap-2">
-                              <input
-                                type="password"
-                                value={keyInput}
-                                onChange={(e) => setKeyInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && handleSaveKey(id)}
-                                placeholder="Paste API key..."
-                                autoFocus
-                                className={`flex-1 ${TEXT_INPUT_SURFACE}`}
-                              />
-                              <button
-                                onClick={() => handleSaveKey(id)}
-                                disabled={savingKey || !keyInput.trim()}
-                                className="px-4 py-1.5 rounded-full bg-primary text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-primary/90 transition-colors"
-                              >
-                                {savingKey ? "Saving..." : "Save"}
-                              </button>
-                              <button
-                                onClick={cancelAddKey}
-                                className="px-3 py-1.5 rounded-full text-sm text-secondary hover:bg-zinc-50 cursor-pointer transition-colors"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          )}
-                          {addError && (
-                            <SelectableErrorMessage kind="inline" className="text-xs">
-                              {addError}
-                            </SelectableErrorMessage>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {!comingSoon && (
-                      <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
-                        {status.tag === "ok" && (
-                          <>
-                            <p className="text-[10px] text-secondary/50">
-                              {status.backgroundRefreshing ? (
-                                <span className="animate-pulse">Refreshing...</span>
-                              ) : (
-                                formatRefreshedAt(status.refreshedAt)
-                              )}
-                            </p>
-                            <button
-                              onClick={() => runFetch(id)}
-                              disabled={status.backgroundRefreshing}
-                              className="text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors disabled:opacity-40"
-                            >
-                              Refresh
-                            </button>
-                            {confirmRevoke === id ? (
-                              <div className="flex gap-1 items-center">
-                                <button
-                                  onClick={() => handleRevokeKey(id)}
-                                  className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
-                                >
-                                  Revoke
-                                </button>
-                                <span className="text-[10px] text-secondary/40">
-                                  /
-                                </span>
-                                <button
-                                  onClick={() => setConfirmRevoke(null)}
-                                  className="text-xs text-secondary hover:text-secondary/70 cursor-pointer transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  if (addingKey === id) cancelAddKey();
-                                  setConfirmRevoke(id);
-                                }}
-                                className="text-xs text-secondary/50 hover:text-rose-400 cursor-pointer transition-colors"
-                              >
-                                Revoke key
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {status.tag === "stale" && (
-                          <>
-                            <button
-                              onClick={() => runFetch(id)}
-                              className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer transition-colors"
-                            >
-                              Retry
-                            </button>
-                            {confirmRevoke === id ? (
-                              <div className="flex gap-1 items-center">
-                                <button
-                                  onClick={() => handleRevokeKey(id)}
-                                  className="text-xs text-rose-500 hover:text-rose-400 cursor-pointer transition-colors"
-                                >
-                                  Revoke
-                                </button>
-                                <span className="text-[10px] text-secondary/40">
-                                  /
-                                </span>
-                                <button
-                                  onClick={() => setConfirmRevoke(null)}
-                                  className="text-xs text-secondary hover:text-secondary/70 cursor-pointer transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  if (addingKey === id) cancelAddKey();
-                                  setConfirmRevoke(id);
-                                }}
-                                className="text-xs text-secondary/50 hover:text-rose-400 cursor-pointer transition-colors"
-                              >
-                                Revoke key
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {(status.tag === "unconfigured" || status.tag === "stale") && !isAdding && (
-                          <button
-                            onClick={() => {
-                              setConfirmRevoke(null);
-                              setAddingKey(id);
-                              setAddError(null);
-                              setKeyInput("");
-                            }}
-                            className="text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors"
-                          >
-                            {status.tag === "unconfigured" ? "Add key" : "Update key"}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <ProviderCard
+                  key={id}
+                  provider={{ id, name, note, comingSoon }}
+                  status={status}
+                  isAdding={addingKey === id}
+                  isConfirmingRevoke={confirmRevoke === id}
+                  keyInput={keyInput}
+                  gcpProject={gcpProject}
+                  gcpDataset={gcpDataset}
+                  gcpTable={gcpTable}
+                  addError={addError}
+                  savingKey={savingKey}
+                  onKeyInputChange={setKeyInput}
+                  onGcpProjectChange={setGcpProject}
+                  onGcpDatasetChange={setGcpDataset}
+                  onGcpTableChange={setGcpTable}
+                  onSaveKey={handleSaveKey}
+                  onCancelAddKey={cancelAddKey}
+                  onRefresh={(providerId) => runFetch(providerId)}
+                  onRevokeKey={(providerId) => void handleRevokeKey(providerId)}
+                  onToggleConfirmRevoke={(providerId) => {
+                    if (confirmRevoke === providerId) {
+                      setConfirmRevoke(null);
+                      return;
+                    }
+                    if (addingKey === providerId) cancelAddKey();
+                    setConfirmRevoke(providerId);
+                  }}
+                  onStartAddKey={(providerId) => {
+                    setConfirmRevoke(null);
+                    setAddingKey(providerId);
+                    setAddError(null);
+                    setKeyInput("");
+                  }}
+                  formatRefreshedAt={formatRefreshedAt}
+                />
               );
             })}
           </div>

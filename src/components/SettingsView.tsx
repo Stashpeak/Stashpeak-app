@@ -7,7 +7,6 @@ import {
   getHomeCurrency,
   setHomeCurrency,
   getExchangeRates,
-  upsertExchangeRate,
   type ExchangeRate,
 } from "../lib/settings";
 import { getProviderEnabled, setProviderEnabled } from "../lib/connectors";
@@ -15,15 +14,9 @@ import { checkForUpdate, downloadAndInstall, type Update } from "../lib/updater"
 import { CURRENCY_OPTIONS } from "../lib/currencies";
 import type { ResolvedTheme, Theme } from "../hooks/useTheme";
 import { ACCENT_BUTTON_SURFACE, SECONDARY_BUTTON_SURFACE } from "../lib/surfaceStyles";
+import { NotificationSettings, NOTIFICATION_PRESETS } from "./NotificationSettings";
+import { RateRow } from "./RateRow";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
-
-const NOTIFICATION_PRESETS = [0, 1, 3, 7];
-const PRESET_LABELS: Record<number, string> = {
-  0: "Same day",
-  1: "1 day",
-  3: "3 days",
-  7: "7 days",
-};
 
 const SPEND_PROVIDERS = [
   { id: "anthropic", name: "Anthropic" },
@@ -38,62 +31,6 @@ const THEME_OPTIONS: { value: Theme; label: string; description: string }[] = [
   { value: "light", label: "Light", description: "Use the pastel glass theme." },
   { value: "dark", label: "Dark", description: "Use the darker glass theme." },
 ];
-
-interface RateRowProps {
-  fromCurrency: string;
-  homeCurrency: string;
-  initialRate: number | null;
-  onSaved: () => void;
-}
-
-function RateRow({ fromCurrency, homeCurrency, initialRate, onSaved }: RateRowProps) {
-  const [input, setInput] = useState(initialRate !== null ? String(initialRate) : "");
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function commit() {
-    const parsed = parseFloat(input);
-    if (isNaN(parsed) || parsed <= 0) {
-      setError("Enter a positive number");
-      return;
-    }
-    setError(null);
-    try {
-      await upsertExchangeRate(fromCurrency, homeCurrency, parsed);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      onSaved();
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-sm text-secondary w-24 shrink-0">
-        1 <span className="font-medium text-ink">{fromCurrency}</span> =
-      </span>
-      <input
-        type="number"
-        min={0}
-        step="any"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => e.key === "Enter" && void commit()}
-        placeholder="e.g. 25.5"
-        className="w-28 rounded-[14px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--purple-primary)] focus:ring-2 focus:ring-[var(--focus-ring)]"
-      />
-      <span className="text-sm text-secondary">{homeCurrency}</span>
-      {saved && (
-        <span className="text-xs text-primary transition-opacity">Saved</span>
-      )}
-      {error && (
-        <SelectableErrorMessage kind="inline">{error}</SelectableErrorMessage>
-      )}
-    </div>
-  );
-}
 
 interface SettingsViewProps {
   theme: Theme;
@@ -413,93 +350,21 @@ export function SettingsView({
           <div className="border-t border-zinc-100" />
 
           {/* ── Billing renewal reminders ──────────────────────────── */}
-          <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-medium text-ink">
-                  Billing renewal reminders
-                </h2>
-                <p className="text-xs text-secondary mt-0.5">
-                  Notify when a subscription is about to renew
-                </p>
-              </div>
-              <button
-                role="switch"
-                aria-checked={enabled}
-                onClick={() => void saveEnabled(!enabled)}
-                className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
-                  enabled ? "bg-primary" : "bg-zinc-200"
-                }`}
-              >
-                <span
-                  className={`absolute top-1 w-4 h-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
-                    enabled ? "left-5" : "left-1"
-                  }`}
-                />
-              </button>
-            </div>
-
-            {enabled && (
-              <div>
-                <p className="text-xs text-secondary mb-3 leading-relaxed">
-                  How many days before renewal to notify. Fires once per billing
-                  cycle when you open Stashpeak.
-                </p>
-
-                <div className="flex gap-2 flex-wrap">
-                  {NOTIFICATION_PRESETS.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => handlePreset(p)}
-                      className={`px-4 py-1.5 rounded-full text-sm transition-all cursor-pointer ${
-                        !isCustom && days === p
-                          ? "bg-primary text-white"
-                          : "bg-primary/8 text-primary hover:bg-primary/15"
-                      }`}
-                    >
-                      {PRESET_LABELS[p]}
-                    </button>
-                  ))}
-
-                  <button
-                    onClick={() => {
-                      setIsCustom(true);
-                      setCustomInput(days !== null && NOTIFICATION_PRESETS.includes(days) ? "" : String(days));
-                    }}
-                    className={`px-4 py-1.5 rounded-full text-sm transition-all cursor-pointer ${
-                      isCustom
-                        ? "bg-primary text-white"
-                        : "bg-primary/8 text-primary hover:bg-primary/15"
-                    }`}
-                  >
-                    Custom
-                  </button>
-                </div>
-
-                {isCustom && (
-                  <div className="flex items-center gap-2 mt-3">
-                    <input
-                      type="number"
-                      min={0}
-                      max={365}
-                      value={customInput}
-                      onChange={(e) => setCustomInput(e.target.value)}
-                      onBlur={handleCustomCommit}
-                      onKeyDown={(e) => e.key === "Enter" && handleCustomCommit()}
-                      placeholder="e.g. 14"
-                      className="w-24 rounded-[14px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--purple-primary)] focus:ring-2 focus:ring-[var(--focus-ring)]"
-                      autoFocus
-                    />
-                    <span className="text-sm text-secondary">days before renewal</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <p className={`text-xs text-primary transition-opacity ${notifSaved ? "opacity-100" : "opacity-0"}`}>
-              Saved
-            </p>
-          </section>
+          <NotificationSettings
+            enabled={enabled}
+            days={days}
+            isCustom={isCustom}
+            customInput={customInput}
+            notifSaved={notifSaved}
+            onToggleEnabled={() => void saveEnabled(!enabled)}
+            onPreset={handlePreset}
+            onSelectCustom={() => {
+              setIsCustom(true);
+              setCustomInput(days !== null && NOTIFICATION_PRESETS.includes(days) ? "" : String(days));
+            }}
+            onCustomInputChange={setCustomInput}
+            onCustomCommit={handleCustomCommit}
+          />
 
           <div className="border-t border-zinc-100" />
 

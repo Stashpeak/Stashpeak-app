@@ -127,7 +127,7 @@ export default function App() {
         >
           <button
             onClick={() => openUrl("https://stashpeak.com")}
-            className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 p-[7px_14px_7px_7px] backdrop-blur-[10px] border-none"
+            className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 py-[7px] pl-[7px] pr-[14px] backdrop-blur-[10px] border-none"
           >
             <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
             <span className="font-normal text-[14px] text-[var(--logo-text)] whitespace-nowrap">

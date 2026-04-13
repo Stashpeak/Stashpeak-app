@@ -11,7 +11,8 @@ import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./SubscriptionList";
 import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
-import { ACCENT_PILL_SURFACE, HEADER_STAT_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
+import { ACCENT_PILL_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
+import { StatHero } from "./StatHero";
 
 const SEED_CATEGORIES = ["AI", "Assistant", "Audio", "Coding", "Image", "Research", "Video"];
 
@@ -193,12 +194,7 @@ export function SubscriptionsView() {
             </p>
           </div>
 
-          <div className={HEADER_STAT_SURFACE}>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">Tracked</p>
-            <p className="mt-1 text-3xl text-primary font-light">
-              {subscriptions.length}
-            </p>
-          </div>
+          <StatHero label="Tracked" value={String(subscriptions.length)} />
         </div>
 
         {/* Totals row */}
