@@ -278,8 +278,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
               API Usage
             </p>
             <h2
-              className="mt-1.5 text-3xl text-[var(--text-primary)]"
-              style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
+              className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight"
             >
               Spend tracker
             </h2>
@@ -290,7 +289,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
           <div className={HEADER_STAT_SURFACE}>
             <p className="text-[10px] uppercase tracking-[0.3em] text-secondary/60">Providers</p>
-            <p className="mt-1 text-3xl text-primary" style={{ fontWeight: 300 }}>
+            <p className="mt-1 text-3xl text-primary font-light">
               {visibleProviders.length}
             </p>
           </div>
@@ -328,7 +327,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
         <section className={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base text-primary" style={{ fontWeight: 400 }}>
+            <h2 className="text-base text-primary font-normal">
               API Spend
             </h2>
             {hasConfiguredProviders && (
@@ -380,13 +379,13 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                         <div className="mt-3 flex flex-wrap gap-2.5">
                           <div className={PILL_SURFACE}>
                             <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">This month</p>
-                            <p className="text-base text-primary" style={{ fontWeight: 300 }}>
+                            <p className="text-base text-primary font-light">
                               ${status.data.currentMonthUsd.toFixed(2)}
                             </p>
                           </div>
                           <div className={PILL_SURFACE}>
                             <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">Last month</p>
-                            <p className="text-base text-primary" style={{ fontWeight: 300 }}>
+                            <p className="text-base text-primary font-light">
                               {status.data.previousMonthUsd > 0 ? `$${status.data.previousMonthUsd.toFixed(2)}` : "-"}
                             </p>
                           </div>
@@ -604,7 +603,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
         <section className={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base text-primary" style={{ fontWeight: 400 }}>
+            <h2 className="text-base text-primary font-normal">
               Subscriptions
             </h2>
             <button

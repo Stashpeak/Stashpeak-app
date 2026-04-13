@@ -80,7 +80,7 @@ export function CategorySelector({
   // We'll trust the parent to pass the correct display value.
 
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
+    <div ref={containerRef} className="relative">
       <div className="relative">
         <input
           value={value}

@@ -36,7 +36,7 @@ function Widget({
   return (
     <div className={CARD_SURFACE}>
       <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 className="text-base text-[var(--text-primary)]" style={{ fontWeight: 400 }}>
+        <h2 className="text-base text-[var(--text-primary)] font-normal">
           {title}
         </h2>
         <button
@@ -73,13 +73,12 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b px-8 py-6" style={{ borderColor: "var(--border-subtle)" }}>
+      <div className="border-b px-8 py-6 border-[var(--border-subtle)]">
         <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
           At a glance
         </p>
         <h2
-          className="mt-1.5 text-3xl text-[var(--text-primary)]"
-          style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
+          className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight"
         >
           Dashboard
         </h2>
@@ -111,7 +110,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
                       <p className="mb-0.5 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
                         {currency}/mo
                       </p>
-                      <p className="text-xl text-[var(--text-primary)]" style={{ fontWeight: 300 }}>
+                      <p className="text-xl text-[var(--text-primary)] font-light">
                         {total.toFixed(2)}
                       </p>
                     </div>
@@ -127,8 +126,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
                       {renewals.map((subscription) => (
                         <div
                           key={subscription.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border bg-[var(--glass-bg)] px-3 py-2 backdrop-blur-[5px]"
-                          style={{ borderColor: "var(--glass-border)" }}
+                          className="flex items-center justify-between gap-3 rounded-xl border bg-[var(--glass-bg)] px-3 py-2 backdrop-blur-[5px] border-[var(--glass-border)]"
                         >
                           <span className="text-sm text-[var(--text-primary)]">{subscription.name}</span>
                           <span className="text-xs text-[var(--text-secondary)]">

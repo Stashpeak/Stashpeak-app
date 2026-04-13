@@ -82,7 +82,7 @@ function EmptyState({ section }: { section: Exclude<Section, "settings"> }) {
         {ICONS[section]}
       </div>
       <div className="space-y-1.5">
-        <h2 className="text-xl text-[var(--text-primary)]" style={{ fontWeight: 300 }}>
+        <h2 className="text-xl text-[var(--text-primary)] font-light">
           {SECTION_LABELS[section]}
         </h2>
         <p className="max-w-xs text-sm leading-relaxed text-[var(--text-secondary)]">{descriptions[section]}</p>
@@ -116,37 +116,21 @@ export default function App() {
 
   return (
     <div
-      className="flex h-screen overflow-hidden select-none"
-      style={{ background: "var(--bg-gradient)", color: "var(--text-primary)" }}
+      className="flex h-screen overflow-hidden select-none bg-[var(--bg-gradient)] text-[var(--text-primary)]"
     >
       <aside
-        className="flex w-64 shrink-0 flex-col border-r"
-        style={{
-          background: "var(--sidebar-bg)",
-          borderColor: "var(--border-sidebar)",
-          backdropFilter: "blur(20px)",
-        }}
+        className="flex w-64 shrink-0 flex-col border-r bg-[var(--sidebar-bg)] border-[var(--border-sidebar)] backdrop-blur-[20px]"
       >
         <div 
-          className="flex items-center border-b px-4 py-4" 
-          style={{ borderColor: "var(--border-subtle)" }}
+          className="flex items-center border-b px-4 py-4 border-[var(--border-subtle)]" 
           data-tauri-drag-region
         >
           <button
             onClick={() => openUrl("https://stashpeak.com")}
-            className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px]"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              padding: "7px 14px 7px 7px",
-              borderRadius: "80px",
-              backdropFilter: "blur(10px)",
-              border: "none",
-            }}
+            className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 p-[7px_14px_7px_7px] backdrop-blur-[10px] border-none"
           >
             <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
-            <span style={{ fontWeight: 400, fontSize: "14px", color: "var(--logo-text)", whiteSpace: "nowrap" }}>
+            <span className="font-normal text-[14px] text-[var(--logo-text)] whitespace-nowrap">
               Stashpeak
             </span>
           </button>
@@ -171,7 +155,7 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="flex items-center justify-between border-t px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
+        <div className="flex items-center justify-between border-t px-4 py-3 border-[var(--border-subtle)]">
           <span className="text-[10px] tracking-wider text-[var(--text-subtle)]">
             {appVersion ? `v${appVersion}` : ""}
           </span>

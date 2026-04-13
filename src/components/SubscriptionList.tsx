@@ -51,7 +51,7 @@ export function SubscriptionList({
 }: SubscriptionListProps) {
   return (
     <div className={CARD_SURFACE}>
-      <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
+      <h3 className="text-base text-primary font-normal">
         Saved subscriptions
       </h3>
       <p className="mt-1 text-sm text-secondary">Everything here is persisted in local SQLite storage.</p>

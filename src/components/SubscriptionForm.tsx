@@ -186,8 +186,7 @@ export function SubscriptionForm({
           onChange={(e) => onChange("notes", e.target.value)}
           rows={3}
           placeholder="Seat count, billing quirks, or reminder notes…"
-          className={inputClass}
-          style={{ resize: "none" }}
+          className={`${inputClass} resize-none`}
         />
       </label>
 
@@ -197,8 +196,7 @@ export function SubscriptionForm({
         <button
           type="submit"
           disabled={isSaving}
-          className="w-full rounded-full bg-primary px-4 py-3 text-sm text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ fontWeight: 500 }}
+          className="w-full rounded-full bg-primary px-4 py-3 text-sm font-medium text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isSaving ? "Saving…" : editingId === null ? "Create subscription" : "Save changes"}
         </button>
@@ -223,7 +221,7 @@ export function SubscriptionForm({
     <aside className={`${CARD_SURFACE} self-start`}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
+          <h3 className="text-base text-primary font-normal">
             {editingId === null ? "Add subscription" : "Edit subscription"}
           </h3>
           {!collapsed && (

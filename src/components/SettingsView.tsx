@@ -297,8 +297,7 @@ export function SettingsView({
           Preferences
         </p>
         <h2
-          className="mt-1.5 text-3xl text-[var(--text-primary)]"
-          style={{ fontWeight: 300, letterSpacing: "-0.5px" }}
+          className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight"
         >
           Settings
         </h2>

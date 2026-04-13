@@ -42,7 +42,7 @@ export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps
 
   return (
     <div className={CARD_SURFACE}>
-      <h3 className="text-base text-primary" style={{ fontWeight: 400 }}>
+      <h3 className="text-base text-primary font-normal">
         Quick-fill from preset
       </h3>
       <p className="mt-1 text-sm text-secondary">
