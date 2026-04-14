@@ -17,6 +17,7 @@ export type SubscriptionGraphNode = Node<SubscriptionNodeData, "subscription">;
 export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
   const surfaceStyle = {
     ["--glass-surface-fill" as "--glass-surface-fill"]: data.tone.surfaceFill,
+    boxShadow: "var(--map-node-shadow)",
   } as CSSProperties;
 
   const badgeStyle = {
@@ -32,7 +33,7 @@ export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
 
   return (
     <div
-      className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4 shadow-[0_18px_42px_rgba(15,23,42,0.08)]"
+      className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4"
       style={surfaceStyle}
     >
       <div className="flex items-start justify-between gap-3">

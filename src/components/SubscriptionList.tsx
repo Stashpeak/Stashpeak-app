@@ -1,21 +1,10 @@
 import type { ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { CARD_SURFACE, EMPTY_DASHED_SURFACE, EMPTY_STATE_SURFACE, SUBTLE_PANEL_SURFACE } from "../lib/surfaceStyles";
+import { formatCurrency } from "../lib/subscriptionMetrics";
 import type { Subscription } from "../lib/subscriptions";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { findPresetForSubscription } from "./SubscriptionPresets";
-
-export function formatCurrency(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency,
-      maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-    }).format(amount);
-  } catch {
-    return `${currency} ${amount.toFixed(2)}`;
-  }
-}
 
 function formatDate(value: string | null): string {
   if (!value) return "Not set";
@@ -26,12 +15,6 @@ function formatDate(value: string | null): string {
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-export function monthlyEquivalent(subscription: Subscription): number {
-  return subscription.billingPeriod === "yearly"
-    ? subscription.monthlyCost / 12
-    : subscription.monthlyCost;
 }
 
 interface SubscriptionListProps {

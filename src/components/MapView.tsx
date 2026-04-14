@@ -12,7 +12,6 @@ import {
   type Edge,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { useSpendData } from "../hooks/useSpendData";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
 import {
@@ -21,6 +20,7 @@ import {
   type ProviderId,
   type ProviderStatus,
 } from "../lib/spendProviders";
+import { formatCurrency, monthlyEquivalent } from "../lib/subscriptionMetrics";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
 import { EMPTY_DASHED_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
@@ -32,130 +32,35 @@ import type { MapNodeTone } from "./map/types";
 type MapNode = ProviderGraphNode | SubscriptionGraphNode;
 type MapEdge = Edge<{ relation: "uses" }, "smoothstep">;
 
+function createTone(accent: string): MapNodeTone {
+  return {
+    surfaceFill: `color-mix(in srgb, ${accent} 16%, transparent)`,
+    badgeFill: `color-mix(in srgb, ${accent} 22%, transparent)`,
+    badgeBorder: `color-mix(in srgb, ${accent} 38%, transparent)`,
+    badgeText: `color-mix(in srgb, var(--text-primary) 76%, ${accent} 24%)`,
+    metricFill: `color-mix(in srgb, var(--bg-surface) 72%, ${accent} 14%)`,
+    metricBorder: `color-mix(in srgb, ${accent} 18%, var(--glass-border) 82%)`,
+    minimapColor: accent,
+    edgeColor: `color-mix(in srgb, ${accent} 58%, var(--text-primary) 42%)`,
+  };
+}
+
 const PROVIDER_TONES: Record<ProviderId, MapNodeTone> = {
-  anthropic: {
-    surfaceFill: "rgba(245, 158, 11, 0.12)",
-    badgeFill: "rgba(245, 158, 11, 0.18)",
-    badgeBorder: "rgba(217, 119, 6, 0.28)",
-    badgeText: "rgba(146, 64, 14, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(217, 119, 6, 0.16)",
-    minimapColor: "#f59e0b",
-    edgeColor: "rgba(217, 119, 6, 0.55)",
-  },
-  openai: {
-    surfaceFill: "rgba(16, 185, 129, 0.12)",
-    badgeFill: "rgba(16, 185, 129, 0.18)",
-    badgeBorder: "rgba(5, 150, 105, 0.28)",
-    badgeText: "rgba(6, 95, 70, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(5, 150, 105, 0.16)",
-    minimapColor: "#10b981",
-    edgeColor: "rgba(5, 150, 105, 0.55)",
-  },
-  openrouter: {
-    surfaceFill: "rgba(99, 102, 241, 0.12)",
-    badgeFill: "rgba(99, 102, 241, 0.18)",
-    badgeBorder: "rgba(79, 70, 229, 0.28)",
-    badgeText: "rgba(67, 56, 202, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(79, 70, 229, 0.16)",
-    minimapColor: "#6366f1",
-    edgeColor: "rgba(79, 70, 229, 0.55)",
-  },
-  groq: {
-    surfaceFill: "rgba(236, 72, 153, 0.12)",
-    badgeFill: "rgba(236, 72, 153, 0.18)",
-    badgeBorder: "rgba(219, 39, 119, 0.28)",
-    badgeText: "rgba(157, 23, 77, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(219, 39, 119, 0.16)",
-    minimapColor: "#ec4899",
-    edgeColor: "rgba(219, 39, 119, 0.55)",
-  },
-  gcp: {
-    surfaceFill: "rgba(59, 130, 246, 0.12)",
-    badgeFill: "rgba(59, 130, 246, 0.18)",
-    badgeBorder: "rgba(37, 99, 235, 0.28)",
-    badgeText: "rgba(30, 64, 175, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(37, 99, 235, 0.16)",
-    minimapColor: "#3b82f6",
-    edgeColor: "rgba(37, 99, 235, 0.55)",
-  },
+  anthropic: createTone("#f59e0b"),
+  openai: createTone("#10b981"),
+  openrouter: createTone("#6366f1"),
+  groq: createTone("#ec4899"),
+  gcp: createTone("#3b82f6"),
 };
 
 const CATEGORY_TONES: Record<string, MapNodeTone> = {
-  assistant: {
-    surfaceFill: "rgba(173, 70, 255, 0.12)",
-    badgeFill: "rgba(173, 70, 255, 0.18)",
-    badgeBorder: "rgba(147, 51, 234, 0.28)",
-    badgeText: "rgba(107, 33, 168, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(147, 51, 234, 0.16)",
-    minimapColor: "#ad46ff",
-    edgeColor: "rgba(147, 51, 234, 0.52)",
-  },
-  coding: {
-    surfaceFill: "rgba(6, 182, 212, 0.12)",
-    badgeFill: "rgba(6, 182, 212, 0.18)",
-    badgeBorder: "rgba(8, 145, 178, 0.28)",
-    badgeText: "rgba(14, 116, 144, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(8, 145, 178, 0.16)",
-    minimapColor: "#06b6d4",
-    edgeColor: "rgba(8, 145, 178, 0.52)",
-  },
-  image: {
-    surfaceFill: "rgba(249, 115, 22, 0.12)",
-    badgeFill: "rgba(249, 115, 22, 0.18)",
-    badgeBorder: "rgba(234, 88, 12, 0.28)",
-    badgeText: "rgba(154, 52, 18, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(234, 88, 12, 0.16)",
-    minimapColor: "#f97316",
-    edgeColor: "rgba(234, 88, 12, 0.52)",
-  },
-  research: {
-    surfaceFill: "rgba(99, 102, 241, 0.12)",
-    badgeFill: "rgba(99, 102, 241, 0.18)",
-    badgeBorder: "rgba(79, 70, 229, 0.28)",
-    badgeText: "rgba(67, 56, 202, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(79, 70, 229, 0.16)",
-    minimapColor: "#6366f1",
-    edgeColor: "rgba(79, 70, 229, 0.52)",
-  },
-  audio: {
-    surfaceFill: "rgba(234, 88, 12, 0.12)",
-    badgeFill: "rgba(234, 88, 12, 0.18)",
-    badgeBorder: "rgba(194, 65, 12, 0.28)",
-    badgeText: "rgba(124, 45, 18, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(194, 65, 12, 0.16)",
-    minimapColor: "#ea580c",
-    edgeColor: "rgba(194, 65, 12, 0.52)",
-  },
-  video: {
-    surfaceFill: "rgba(244, 63, 94, 0.12)",
-    badgeFill: "rgba(244, 63, 94, 0.18)",
-    badgeBorder: "rgba(225, 29, 72, 0.28)",
-    badgeText: "rgba(159, 18, 57, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(225, 29, 72, 0.16)",
-    minimapColor: "#f43f5e",
-    edgeColor: "rgba(225, 29, 72, 0.52)",
-  },
-  neutral: {
-    surfaceFill: "rgba(148, 163, 184, 0.12)",
-    badgeFill: "rgba(148, 163, 184, 0.18)",
-    badgeBorder: "rgba(100, 116, 139, 0.28)",
-    badgeText: "rgba(71, 85, 105, 0.92)",
-    metricFill: "rgba(255, 255, 255, 0.24)",
-    metricBorder: "rgba(100, 116, 139, 0.16)",
-    minimapColor: "#94a3b8",
-    edgeColor: "rgba(100, 116, 139, 0.52)",
-  },
+  assistant: createTone("#ad46ff"),
+  coding: createTone("#06b6d4"),
+  image: createTone("#f97316"),
+  research: createTone("#6366f1"),
+  audio: createTone("#ea580c"),
+  video: createTone("#f43f5e"),
+  neutral: createTone("#94a3b8"),
 };
 
 const PROVIDER_ALIASES: Record<ProviderId, string[]> = {
@@ -171,6 +76,8 @@ const nodeTypes = {
   subscription: SubscriptionNode,
 };
 
+const REACT_FLOW_PRO_OPTIONS = { hideAttribution: true };
+
 function normalizeValue(value: string): string {
   return value
     .trim()
@@ -178,18 +85,6 @@ function normalizeValue(value: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function formatCurrency(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency,
-      maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-    }).format(amount);
-  } catch {
-    return `${currency} ${amount.toFixed(2)}`;
-  }
 }
 
 function formatShortDate(value: string | null): string {
@@ -202,12 +97,6 @@ function formatShortDate(value: string | null): string {
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-function monthlyEquivalent(subscription: Subscription): number {
-  return subscription.billingPeriod === "yearly"
-    ? subscription.monthlyCost / 12
-    : subscription.monthlyCost;
 }
 
 function getSubscriptionTone(category: string): MapNodeTone {
@@ -367,12 +256,12 @@ function buildGraph(
       position,
       sourcePosition: Position.Top,
       style: { width: 228, minHeight: 172 },
-        data: {
-          title: subscription.name,
-          caption: formatCategoryLabel(subscription.category) || "Subscription",
-          providerLabel: `Provider: ${subscription.provider || "Manual"}`,
-          billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
-          nextBillingLabel: formatShortDate(subscription.nextBillingAt),
+      data: {
+        title: subscription.name,
+        caption: formatCategoryLabel(subscription.category) || "Subscription",
+        providerLabel: `Provider: ${subscription.provider || "Manual"}`,
+        billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
+        nextBillingLabel: formatShortDate(subscription.nextBillingAt),
         statusLabel,
         tone,
       },
@@ -522,6 +411,7 @@ export function MapView() {
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              proOptions={REACT_FLOW_PRO_OPTIONS}
               nodesConnectable={false}
               elementsSelectable={false}
               onInit={setReactFlow}
@@ -535,11 +425,11 @@ export function MapView() {
                 size={1.15}
                 variant={BackgroundVariant.Dots}
               />
-              <Controls className="stashpeak-map__controls" position="bottom-right" showInteractive={false} />
+              <Controls className="stashpeak-map__controls" position="top-right" showInteractive={false} />
               <MiniMap<MapNode>
                 className="stashpeak-map__minimap"
                 bgColor="transparent"
-                maskColor="rgba(173, 70, 255, 0.06)"
+                maskColor="var(--map-minimap-mask)"
                 nodeBorderRadius={14}
                 nodeStrokeWidth={3}
                 pannable
