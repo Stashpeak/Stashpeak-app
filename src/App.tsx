@@ -143,7 +143,7 @@ export default function App() {
               onClick={() => setActive(id)}
               className={`flex h-10 w-full items-center gap-2.5 rounded-full border border-transparent px-3 text-left text-sm transition-colors cursor-pointer ${
                 active === id
-                  ? "bg-[var(--nav-active-fill)] text-[var(--text-primary)] backdrop-blur-[10px] border-[var(--border-subtle)]"
+                  ? "glass-surface [--glass-surface-fill:var(--nav-active-fill)] text-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)]"
               }`}
             >

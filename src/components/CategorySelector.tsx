@@ -155,10 +155,7 @@ export function CategorySelector({
           <div ref={dropdownRef} className="z-[140]" style={dropdownStyle}>
             <div
               className="glass-surface-elevated overflow-hidden rounded-2xl shadow-md"
-              style={{
-                backgroundColor: "var(--bg-surface)",
-                background: "color-mix(in srgb, var(--bg-surface) 82%, transparent)",
-              }}
+              style={{ background: "var(--dropdown-surface-fill)" }}
             >
               <ul ref={listRef} className="max-h-48 overflow-y-auto py-1">
                 {filteredCategories.map((category, index) => (
