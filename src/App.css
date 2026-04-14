@@ -134,6 +134,7 @@
     background: var(--bg-gradient);
     color: var(--text-primary);
     font-family: "Kumbh Sans", sans-serif;
+    overflow: hidden;
   }
 
   * {

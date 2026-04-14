@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 const inputClass =
-  "glass-input-surface w-full rounded-2xl px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-primary/10 placeholder:text-zinc-300";
+  "glass-input-surface w-full rounded-2xl px-4 py-3 text-sm text-zinc-900 outline-none transition-colors focus:ring-2 focus:ring-primary/10 placeholder:text-zinc-300";
 
 type CategorySelectorProps = {
   value: string;
@@ -25,10 +25,17 @@ export function CategorySelector({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
+  const toggleOnClickRef = useRef(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [isFiltering, setIsFiltering] = useState(!readonlyInput);
-  const [dropdownStyle, setDropdownStyle] = useState<CSSProperties>({});
+  const [dropdownStyle, setDropdownStyle] = useState<CSSProperties>({
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: 0,
+    visibility: "hidden",
+  });
 
   const filteredCategories = useMemo(() => {
     if (!isFiltering || readonlyInput) {
@@ -86,7 +93,7 @@ export function CategorySelector({
     }
   }, [activeIndex, isOpen]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isOpen || !inputRef.current) return;
 
     function updateDropdownPosition() {
@@ -98,6 +105,7 @@ export function CategorySelector({
         top: rect.bottom + 6,
         left: rect.left,
         width: rect.width,
+        visibility: "visible",
       });
     }
 
@@ -123,13 +131,34 @@ export function CategorySelector({
     setIsFiltering(false);
   }
 
+  const showDropdownIndicator = categories.length > 0;
+
+  function handleToggleButtonClick() {
+    if (!showDropdownIndicator) return;
+
+    if (isOpen) {
+      setIsOpen(false);
+      setActiveIndex(-1);
+      setIsFiltering(false);
+      return;
+    }
+
+    inputRef.current?.focus();
+    setIsOpen(true);
+    setIsFiltering(false);
+    setActiveIndex(-1);
+  }
+
   const dropdown =
     isOpen && visibleItems.length > 0
       ? createPortal(
           <div ref={dropdownRef} className="z-[140]" style={dropdownStyle}>
             <div
               className="glass-surface-elevated overflow-hidden rounded-2xl shadow-md"
-              style={{ background: "var(--bg-surface)" }}
+              style={{
+                backgroundColor: "var(--bg-surface)",
+                background: "color-mix(in srgb, var(--bg-surface) 82%, transparent)",
+              }}
             >
               <ul ref={listRef} className="max-h-48 overflow-y-auto py-1">
                 {filteredCategories.map((category, index) => (
@@ -175,6 +204,12 @@ export function CategorySelector({
             ref={inputRef}
             value={value}
             readOnly={readonlyInput}
+            onMouseDown={() => {
+              toggleOnClickRef.current =
+                readonlyInput &&
+                isOpen &&
+                document.activeElement === inputRef.current;
+            }}
             onChange={(event) => {
               if (readonlyInput) return;
               onChange(event.target.value);
@@ -188,9 +223,16 @@ export function CategorySelector({
               setActiveIndex(-1);
             }}
             onClick={() => {
-              if (readonlyInput && !isOpen) {
-                setIsOpen(true);
+              if (readonlyInput) {
+                if (toggleOnClickRef.current) {
+                  setIsOpen(false);
+                  setActiveIndex(-1);
+                  setIsFiltering(false);
+                } else if (!isOpen) {
+                  setIsOpen(true);
+                }
               }
+              toggleOnClickRef.current = false;
             }}
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") {
@@ -244,14 +286,29 @@ export function CategorySelector({
               }
             }}
             placeholder={placeholder}
-            className={`${inputClass} ${readonlyInput ? "cursor-pointer pr-11" : ""}`}
+            className={`${inputClass} ${readonlyInput ? "cursor-pointer" : ""} ${showDropdownIndicator ? "pr-11" : ""}`}
           />
-          {readonlyInput && (
+          {showDropdownIndicator && readonlyInput && (
             <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
               <svg className={`h-4 w-4 text-zinc-400 transition-transform ${isOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
               </svg>
             </div>
+          )}
+          {showDropdownIndicator && !readonlyInput && (
+            <button
+              type="button"
+              aria-label={isOpen ? "Collapse options" : "Expand options"}
+              onMouseDown={(event) => {
+                event.preventDefault();
+              }}
+              onClick={handleToggleButtonClick}
+              className="absolute inset-y-0 right-2 flex w-8 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-300"
+            >
+              <svg className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+            </button>
           )}
         </div>
       </div>
