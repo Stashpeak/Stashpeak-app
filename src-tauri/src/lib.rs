@@ -127,6 +127,23 @@ async fn delete_subscription(id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_suppressed_link_ids() -> Result<Vec<i64>, String> {
+    run_blocking("get_suppressed_link_ids", move || {
+        subscriptions::get_suppressed_link_ids().map_err(|err| err.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn set_subscription_link_suppressed(id: i64, suppressed: bool) -> Result<(), String> {
+    run_blocking("set_subscription_link_suppressed", move || {
+        subscriptions::set_subscription_link_suppressed(id, suppressed)
+            .map_err(|err| err.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
 async fn get_notification_settings() -> Result<settings::NotificationSettings, String> {
     run_blocking("get_notification_settings", settings::get_notification_settings).await
 }
@@ -281,6 +298,8 @@ pub fn run() {
             create_subscription,
             update_subscription,
             delete_subscription,
+            get_suppressed_link_ids,
+            set_subscription_link_suppressed,
             get_notification_settings,
             set_notification_days,
             set_notifications_enabled,

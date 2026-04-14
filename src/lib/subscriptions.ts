@@ -58,3 +58,19 @@ export async function deleteSubscription(id: number): Promise<void> {
     throw new Error(`Failed to delete subscription ${id}: ${e}`);
   }
 }
+
+export async function getSuppressedLinkIds(): Promise<number[]> {
+  try {
+    return await invoke<number[]>("get_suppressed_link_ids");
+  } catch (e) {
+    throw new Error(`Failed to load suppressed map links: ${e}`);
+  }
+}
+
+export async function setSubscriptionLinkSuppressed(id: number, suppressed: boolean): Promise<void> {
+  try {
+    await invoke("set_subscription_link_suppressed", { id, suppressed });
+  } catch (e) {
+    throw new Error(`Failed to persist suppressed map link ${id}: ${e}`);
+  }
+}

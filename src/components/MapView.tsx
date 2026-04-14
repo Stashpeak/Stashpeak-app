@@ -21,7 +21,12 @@ import {
   type ProviderStatus,
 } from "../lib/spendProviders";
 import { formatCurrency, monthlyEquivalent } from "../lib/subscriptionMetrics";
-import { listSubscriptions, type Subscription } from "../lib/subscriptions";
+import {
+  getSuppressedLinkIds,
+  listSubscriptions,
+  setSubscriptionLinkSuppressed,
+  type Subscription,
+} from "../lib/subscriptions";
 import { EMPTY_DASHED_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 import { findPresetForSubscription } from "./SubscriptionPresets";
@@ -352,6 +357,7 @@ export function MapView() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<MapEdge>([]);
   const { loadError, states, visibleProviders } = useSpendData();
   const pendingResetIdsRef = useRef<Set<string>>(new Set());
+  const suppressedLinkIdsRef = useRef<Record<number, boolean>>({});
 
   const mapProviders = useMemo(
     () => visibleProviders.filter(({ id }) => states[id].tag !== "unconfigured"),
@@ -363,8 +369,15 @@ export function MapView() {
     [mapProviders],
   );
 
+  useEffect(() => {
+    suppressedLinkIdsRef.current = suppressedLinkIds;
+  }, [suppressedLinkIds]);
+
   const toggleSubscriptionLink = useCallback((subscriptionId: Subscription["id"]) => {
+    const nextSuppressed = !suppressedLinkIdsRef.current[subscriptionId];
     pendingResetIdsRef.current.add(`subscription:${subscriptionId}`);
+    void setSubscriptionLinkSuppressed(subscriptionId, nextSuppressed).catch(() => {});
+
     setSuppressedLinkIds((current) => {
       if (current[subscriptionId]) {
         const next = { ...current };
@@ -382,10 +395,11 @@ export function MapView() {
   useEffect(() => {
     let cancelled = false;
 
-    listSubscriptions()
-      .then((data) => {
+    Promise.all([listSubscriptions(), getSuppressedLinkIds()])
+      .then(([subscriptionData, suppressedIds]) => {
         if (cancelled) return;
-        setSubscriptions(data);
+        setSubscriptions(subscriptionData);
+        setSuppressedLinkIds(Object.fromEntries(suppressedIds.map((id) => [id, true])));
         setSubscriptionsLoaded(true);
       })
       .catch((error) => {
