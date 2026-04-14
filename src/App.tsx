@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { DashboardView } from "./components/DashboardView";
+import { MapView } from "./components/MapView";
 import { SettingsView } from "./components/SettingsView";
 import { SpendView } from "./components/SpendView";
 import { StashpeakLogo } from "./components/StashpeakLogo";
@@ -67,13 +68,9 @@ const SECTION_LABELS: Record<Section, string> = {
   settings: "Settings",
 };
 
-function EmptyState({ section }: { section: Exclude<Section, "settings"> }) {
-  const descriptions: Record<Exclude<Section, "settings">, string> = {
-    dashboard: "Your AI ecosystem at a glance. Add subscriptions, connect Docker, and configure providers to populate this view.",
-    subscriptions: "Track your recurring AI subscriptions - ChatGPT Plus, Claude Pro, Cursor, and more. No surprises on billing day.",
+function EmptyState({ section }: { section: "docker" }) {
+  const descriptions: Record<"docker", string> = {
     docker: "Monitor your local AI containers - Ollama, OpenWebUI, Qdrant, and anything else running on your machine.",
-    spend: "See real API spend across Anthropic, OpenAI, OpenRouter, and Groq in one place. No more tab-switching.",
-    map: "A visual map of your entire AI ecosystem - services, tools, and how they connect.",
   };
 
   return (
@@ -189,6 +186,8 @@ export default function App() {
             <SubscriptionsView />
           ) : active === "spend" ? (
             <SpendView onNavigate={setActive} />
+          ) : active === "map" ? (
+            <MapView />
           ) : active === "settings" ? (
             <SettingsView
               onThemeChange={setTheme}

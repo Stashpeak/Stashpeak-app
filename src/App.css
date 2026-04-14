@@ -336,4 +336,45 @@
   .hover\:border-zinc-200:hover {
     border-color: var(--border-standard);
   }
+
+  .stashpeak-map .react-flow__node {
+    background: transparent;
+    border: none;
+  }
+
+  .stashpeak-map .react-flow__controls {
+    display: flex;
+    gap: 0.5rem;
+    box-shadow: none;
+  }
+
+  .stashpeak-map .react-flow__controls-button {
+    height: 2.25rem;
+    width: 2.25rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+    color: var(--text-primary);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+  }
+
+  .stashpeak-map .react-flow__controls-button:hover {
+    background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  }
+
+  .stashpeak-map .react-flow__controls-button svg {
+    fill: currentColor;
+  }
+
+  .stashpeak-map .react-flow__minimap {
+    border: 1px solid var(--glass-border);
+    border-radius: 1.25rem;
+    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.1);
+    overflow: hidden;
+  }
 }
