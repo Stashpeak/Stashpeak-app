@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -27,7 +27,7 @@ import { SelectableErrorMessage } from "./SelectableErrorMessage";
 import { findPresetForSubscription } from "./SubscriptionPresets";
 import { ProviderNode, type ProviderGraphNode } from "./map/ProviderNode";
 import { SubscriptionNode, type SubscriptionGraphNode } from "./map/SubscriptionNode";
-import type { MapNodeTone } from "./map/types";
+import type { MapLinkState, MapNodeTone } from "./map/types";
 
 type MapNode = ProviderGraphNode | SubscriptionGraphNode;
 type MapEdge = Edge<{ relation: "uses" }, "smoothstep">;
@@ -144,12 +144,15 @@ function inferProviderId(subscription: Subscription, availableProviderIds: Set<P
   return null;
 }
 
-function mergeNodePositions(currentNodes: MapNode[], nextNodes: MapNode[]): MapNode[] {
+function mergeNodePositions(currentNodes: MapNode[], nextNodes: MapNode[], resetPositionIds?: Set<string>): MapNode[] {
   const positionsById = new Map(currentNodes.map((node) => [node.id, node.position]));
 
   return nextNodes.map((node) => ({
     ...node,
-    position: positionsById.get(node.id) ?? node.position,
+    position:
+      resetPositionIds?.has(node.id)
+        ? node.position
+        : (positionsById.get(node.id) ?? node.position),
   }));
 }
 
@@ -157,19 +160,35 @@ function buildGraph(
   subscriptions: Subscription[],
   providers: ProviderDefinition[],
   states: Record<ProviderId, ProviderStatus>,
+  suppressedLinkIds: Record<number, boolean>,
+  onToggleSubscriptionLink: (subscriptionId: Subscription["id"]) => void,
 ): { nodes: MapNode[]; edges: MapEdge[] } {
+  const PROVIDER_X_START = 120;
+  const PROVIDER_Y = 72;
+  const PROVIDER_WIDTH = 272;
+  const PROVIDER_COLUMN_GAP = 336;
+  const LINKED_SUBSCRIPTION_Y = 328;
+  const SUBSCRIPTION_WIDTH = 236;
+  const SUBSCRIPTION_ROW_GAP = 194;
+  const STANDALONE_COLUMN_GAP = 264;
+  const STANDALONE_GROUP_GAP = providers.length > 0 ? 76 : 0;
+
   const providerNodes: ProviderGraphNode[] = [];
   const edges: MapEdge[] = [];
   const providerXById = new Map<ProviderId, number>();
+  const providerNameById = new Map(providers.map(({ id, name }) => [id, name]));
   const configuredProviderIds = new Set(providers.map(({ id }) => id));
+  const linkedSubscriptionsByProvider = new Map<ProviderId, Subscription[]>();
+  const standaloneSubscriptions: Array<{
+    subscription: Subscription;
+    inferredProviderId: ProviderId | null;
+  }> = [];
 
   providers.forEach(({ id: providerId, name }, index) => {
     const status = states[providerId];
     const tone = PROVIDER_TONES[providerId];
-    const spendUsd = status.tag === "ok" ? status.data.currentMonthUsd : 0;
-    const width = 236 + Math.min(spendUsd, 500) * 0.14;
     const previousMonthUsd = status.tag === "ok" ? status.data.previousMonthUsd : 0;
-    const position = { x: 120 + index * 320, y: 72 };
+    const position = { x: PROVIDER_X_START + index * PROVIDER_COLUMN_GAP, y: PROVIDER_Y };
     providerXById.set(providerId, position.x);
 
     providerNodes.push({
@@ -177,7 +196,7 @@ function buildGraph(
       type: "provider",
       position,
       targetPosition: Position.Bottom,
-      style: { width, minHeight: 164 },
+      style: { width: PROVIDER_WIDTH, minHeight: 184 },
       data: {
         title: name,
         caption: "Configured provider",
@@ -192,7 +211,7 @@ function buildGraph(
         primaryLabel: "This month",
         primaryValue:
           status.tag === "ok"
-            ? formatCurrency(spendUsd, "USD")
+            ? formatCurrency(status.data.currentMonthUsd, "USD")
             : status.tag === "loading"
               ? "Fetching..."
               : "Unavailable",
@@ -214,58 +233,107 @@ function buildGraph(
     });
   });
 
-  const groupedCounts = new Map<string, number>();
-  const standaloneX = providers.length === 0 ? 120 : 120 + providers.length * 320;
-  const subscriptionBaseY = providers.length === 0 ? 112 : 308;
+  subscriptions.forEach((subscription) => {
+    const inferredProviderId = inferProviderId(subscription, configuredProviderIds);
+    if (inferredProviderId && !suppressedLinkIds[subscription.id]) {
+      const groupedSubscriptions = linkedSubscriptionsByProvider.get(inferredProviderId) ?? [];
+      groupedSubscriptions.push(subscription);
+      linkedSubscriptionsByProvider.set(inferredProviderId, groupedSubscriptions);
+      return;
+    }
 
-  const subscriptionNodes: SubscriptionGraphNode[] = subscriptions.map((subscription) => {
-    const linkedProviderId = inferProviderId(subscription, configuredProviderIds);
-    const tone = getSubscriptionTone(subscription.category);
-    const statusLabel = linkedProviderId ? "Linked" : "Standalone";
-    const groupKey = linkedProviderId ?? "standalone";
-    const groupIndex = groupedCounts.get(groupKey) ?? 0;
-    groupedCounts.set(groupKey, groupIndex + 1);
+    standaloneSubscriptions.push({ subscription, inferredProviderId });
+  });
 
-    const anchorX = linkedProviderId ? (providerXById.get(linkedProviderId) ?? standaloneX) : standaloneX;
-    const position = {
-      x: anchorX + (groupIndex % 2) * 244,
-      y: subscriptionBaseY + Math.floor(groupIndex / 2) * 170,
-    };
+  const subscriptionNodes: SubscriptionGraphNode[] = [];
+  const linkedSubscriptionOffset = (PROVIDER_WIDTH - SUBSCRIPTION_WIDTH) / 2;
 
-    if (linkedProviderId) {
+  providers.forEach(({ id: providerId }) => {
+    const anchorX = providerXById.get(providerId) ?? PROVIDER_X_START;
+    const groupedSubscriptions = linkedSubscriptionsByProvider.get(providerId) ?? [];
+
+    groupedSubscriptions.forEach((subscription, index) => {
+      const tone = getSubscriptionTone(subscription.category);
+
       edges.push({
-        id: `edge:subscription:${subscription.id}->provider:${linkedProviderId}`,
+        id: `edge:subscription:${subscription.id}->provider:${providerId}`,
         source: `subscription:${subscription.id}`,
-        target: `provider:${linkedProviderId}`,
+        target: `provider:${providerId}`,
         type: "smoothstep",
         data: { relation: "uses" },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: PROVIDER_TONES[linkedProviderId].edgeColor,
+          color: PROVIDER_TONES[providerId].edgeColor,
         },
         style: {
-          stroke: PROVIDER_TONES[linkedProviderId].edgeColor,
+          stroke: PROVIDER_TONES[providerId].edgeColor,
           strokeWidth: 1.6,
         },
       });
-    }
 
-    return {
+      subscriptionNodes.push({
+        id: `subscription:${subscription.id}`,
+        type: "subscription",
+        position: {
+          x: anchorX + linkedSubscriptionOffset,
+          y: LINKED_SUBSCRIPTION_Y + index * SUBSCRIPTION_ROW_GAP,
+        },
+        sourcePosition: Position.Top,
+        style: { width: SUBSCRIPTION_WIDTH, minHeight: 172 },
+        data: {
+          title: subscription.name,
+          caption: formatCategoryLabel(subscription.category) || "Subscription",
+          providerLabel: `Provider: ${subscription.provider || "Manual"}`,
+          linkLabel: `Connected to ${providerNameById.get(providerId) ?? "matched"} spend`,
+          linkActionLabel: "Unlink",
+          linkState: "linked",
+          onToggleLink: () => onToggleSubscriptionLink(subscription.id),
+          billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
+          nextBillingLabel: formatShortDate(subscription.nextBillingAt),
+          statusLabel: "Linked",
+          tone,
+        },
+      });
+    });
+  });
+
+  const standaloneColumnCount = standaloneSubscriptions.length <= 2 ? 1 : 2;
+  const standaloneX =
+    providers.length === 0
+      ? PROVIDER_X_START
+      : PROVIDER_X_START + providers.length * PROVIDER_COLUMN_GAP + STANDALONE_GROUP_GAP;
+  const standaloneY = providers.length === 0 ? 112 : LINKED_SUBSCRIPTION_Y;
+
+  standaloneSubscriptions.forEach(({ subscription, inferredProviderId }, index) => {
+    const tone = getSubscriptionTone(subscription.category);
+    const row = Math.floor(index / standaloneColumnCount);
+    const column = index % standaloneColumnCount;
+    const linkState: MapLinkState = inferredProviderId ? "unlinked" : "standalone";
+    const linkedProviderName = inferredProviderId ? providerNameById.get(inferredProviderId) : null;
+
+    subscriptionNodes.push({
       id: `subscription:${subscription.id}`,
       type: "subscription",
-      position,
+      position: {
+        x: standaloneX + column * STANDALONE_COLUMN_GAP,
+        y: standaloneY + row * SUBSCRIPTION_ROW_GAP,
+      },
       sourcePosition: Position.Top,
-      style: { width: 228, minHeight: 172 },
+      style: { width: SUBSCRIPTION_WIDTH, minHeight: 172 },
       data: {
         title: subscription.name,
         caption: formatCategoryLabel(subscription.category) || "Subscription",
         providerLabel: `Provider: ${subscription.provider || "Manual"}`,
+        linkLabel: linkedProviderName ? `Suggested link: ${linkedProviderName}` : undefined,
+        linkActionLabel: inferredProviderId ? "Relink" : undefined,
+        linkState,
+        onToggleLink: inferredProviderId ? () => onToggleSubscriptionLink(subscription.id) : undefined,
         billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
         nextBillingLabel: formatShortDate(subscription.nextBillingAt),
-        statusLabel,
+        statusLabel: inferredProviderId ? "Unlinked" : "Standalone",
         tone,
       },
-    };
+    });
   });
 
   return {
@@ -278,10 +346,12 @@ export function MapView() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [subscriptionsLoaded, setSubscriptionsLoaded] = useState(false);
   const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
+  const [suppressedLinkIds, setSuppressedLinkIds] = useState<Record<number, boolean>>({});
   const [reactFlow, setReactFlow] = useState<ReactFlowInstance<MapNode, MapEdge> | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<MapEdge>([]);
   const { loadError, states, visibleProviders } = useSpendData();
+  const pendingResetIdsRef = useRef<Set<string>>(new Set());
 
   const mapProviders = useMemo(
     () => visibleProviders.filter(({ id }) => states[id].tag !== "unconfigured"),
@@ -292,6 +362,22 @@ export function MapView() {
     () => mapProviders.map(({ id }) => id),
     [mapProviders],
   );
+
+  const toggleSubscriptionLink = useCallback((subscriptionId: Subscription["id"]) => {
+    pendingResetIdsRef.current.add(`subscription:${subscriptionId}`);
+    setSuppressedLinkIds((current) => {
+      if (current[subscriptionId]) {
+        const next = { ...current };
+        delete next[subscriptionId];
+        return next;
+      }
+
+      return {
+        ...current,
+        [subscriptionId]: true,
+      };
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -314,10 +400,13 @@ export function MapView() {
   }, []);
 
   useEffect(() => {
-    const nextGraph = buildGraph(subscriptions, mapProviders, states);
-    setNodes((currentNodes) => mergeNodePositions(currentNodes, nextGraph.nodes));
+    const resetPositionIds = pendingResetIdsRef.current;
+    const nextGraph = buildGraph(subscriptions, mapProviders, states, suppressedLinkIds, toggleSubscriptionLink);
+
+    pendingResetIdsRef.current = new Set();
+    setNodes((currentNodes) => mergeNodePositions(currentNodes, nextGraph.nodes, resetPositionIds));
     setEdges(nextGraph.edges);
-  }, [mapProviders, setEdges, setNodes, states, subscriptions]);
+  }, [mapProviders, setEdges, setNodes, states, subscriptions, suppressedLinkIds, toggleSubscriptionLink]);
 
   useEffect(() => {
     if (!reactFlow || nodes.length === 0) return;
@@ -350,7 +439,8 @@ export function MapView() {
             <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">Ecosystem map</h2>
             <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
               Live AI subscriptions and configured spend providers rendered as draggable nodes. This first pass keeps
-              layout deterministic while inferring basic subscription-to-provider links from existing data.
+              layout deterministic while inferring subscription-to-provider links from existing data, with inline
+              unlink controls when you want a cleaner overview.
             </p>
           </div>
 

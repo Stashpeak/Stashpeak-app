@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Node, NodeProps } from "@xyflow/react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { MapNodeTone } from "./types";
 
 export interface ProviderNodeData extends Record<string, unknown> {
@@ -15,6 +15,14 @@ export interface ProviderNodeData extends Record<string, unknown> {
 }
 
 export type ProviderGraphNode = Node<ProviderNodeData, "provider">;
+
+const HIDDEN_HANDLE_STYLE = {
+  width: 10,
+  height: 10,
+  opacity: 0,
+  background: "transparent",
+  border: "none",
+} as const;
 
 export function ProviderNode({ data }: NodeProps<ProviderGraphNode>) {
   const surfaceStyle = {
@@ -34,10 +42,12 @@ export function ProviderNode({ data }: NodeProps<ProviderGraphNode>) {
   } as CSSProperties;
 
   return (
-    <div
-      className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4"
-      style={surfaceStyle}
-    >
+    <div className="relative">
+      <Handle type="target" position={Position.Bottom} style={HIDDEN_HANDLE_STYLE} />
+      <div
+        className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4"
+        style={surfaceStyle}
+      >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-muted)]">{data.caption}</p>
@@ -65,6 +75,7 @@ export function ProviderNode({ data }: NodeProps<ProviderGraphNode>) {
       {data.note ? (
         <p className="mt-3 text-xs leading-relaxed text-[var(--text-secondary)]">{data.note}</p>
       ) : null}
+      </div>
     </div>
   );
 }

@@ -8,3 +8,5 @@ export interface MapNodeTone {
   minimapColor: string;
   edgeColor: string;
 }
+
+export type MapLinkState = "linked" | "unlinked" | "standalone";
