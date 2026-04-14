@@ -12,7 +12,7 @@ import { formatCurrency, monthlyEquivalent } from "../lib/subscriptionMetrics";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { SubscriptionList } from "./SubscriptionList";
 import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
-import { ACCENT_PILL_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
+import { ACCENT_PILL_SURFACE, PILL_SURFACE, WARNING_PILL_SURFACE } from "../lib/surfaceStyles";
 import { StatHero } from "./StatHero";
 import { useUpcomingRenewals } from "../hooks/useUpcomingRenewals";
 
@@ -29,7 +29,7 @@ export function SubscriptionsView() {
 
   const [homeCurrency, setHomeCurrency] = useState<string>("USD");
   const [exchangeRates, setExchangeRates] = useState<ExchangeRate[]>([]);
-  const upcomingRenewals = useUpcomingRenewals();
+  const upcomingRenewals = useUpcomingRenewals(subscriptions);
 
   async function loadSubscriptions() {
     try {
@@ -220,7 +220,7 @@ export function SubscriptionsView() {
                   {aggregateTotal.hasMissingRate && (
                     <span
                       title="Some currencies are missing exchange rates — set them in Settings"
-                      className="text-amber-500 text-xs cursor-help"
+                      className="text-[var(--warning-text)] text-xs cursor-help"
                     >
                       ⚠️
                     </span>
@@ -255,7 +255,7 @@ export function SubscriptionsView() {
               return (
                 <div
                   key={`${renewal.id}-${renewal.nextBillingAt}`}
-                  className="flex items-center gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300"
+                  className={`${WARNING_PILL_SURFACE} flex items-center gap-2`}
                 >
                   <span className="shrink-0">⏰</span>
                   <span>

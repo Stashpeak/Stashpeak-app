@@ -39,6 +39,9 @@
     --danger-surface: rgba(244, 63, 94, 0.12);
     --danger-border: rgba(244, 63, 94, 0.22);
     --danger-text: rgba(225, 29, 72, 0.9);
+    --warning-surface: rgba(245, 158, 11, 0.12);
+    --warning-border: rgba(245, 158, 11, 0.24);
+    --warning-text: rgba(161, 98, 7, 0.9);
     --focus-ring: rgba(173, 70, 255, 0.18);
     --scrollbar-thumb: rgba(0, 0, 0, 0.12);
     --logo-text: #ffffff;
@@ -115,6 +118,9 @@
     --danger-surface: rgba(244, 63, 94, 0.14);
     --danger-border: rgba(251, 113, 133, 0.28);
     --danger-text: rgba(254, 205, 211, 0.95);
+    --warning-surface: rgba(245, 158, 11, 0.18);
+    --warning-border: rgba(251, 191, 36, 0.3);
+    --warning-text: rgba(253, 230, 138, 0.95);
     --focus-ring: rgba(173, 70, 255, 0.25);
     --scrollbar-thumb: rgba(255, 255, 255, 0.15);
     --toggle-off-bg: rgba(255, 255, 255, 0.18);

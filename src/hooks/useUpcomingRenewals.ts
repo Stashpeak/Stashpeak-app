@@ -11,12 +11,24 @@ export interface UpcomingRenewal {
   nextBillingAt: string;
 }
 
-export function useUpcomingRenewals() {
+export function useUpcomingRenewals(refreshTrigger?: unknown) {
   const [renewals, setRenewals] = useState<UpcomingRenewal[]>([]);
 
   useEffect(() => {
-    invoke<UpcomingRenewal[]>("get_upcoming_renewals").then(setRenewals).catch(() => {});
-  }, []);
+    let isActive = true;
+
+    void invoke<UpcomingRenewal[]>("get_upcoming_renewals")
+      .then((nextRenewals) => {
+        if (isActive) {
+          setRenewals(nextRenewals);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isActive = false;
+    };
+  }, [refreshTrigger]);
 
   return renewals;
 }

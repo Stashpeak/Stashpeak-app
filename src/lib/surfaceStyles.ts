@@ -10,6 +10,9 @@ export const PILL_SURFACE =
 export const ACCENT_PILL_SURFACE =
   "glass-surface rounded-full px-4 py-2 [--glass-surface-fill:var(--purple-accent)]";
 
+export const WARNING_PILL_SURFACE =
+  "glass-surface rounded-xl border-[var(--warning-border)] text-[var(--warning-text)] [--glass-surface-fill:var(--warning-surface)]";
+
 export const SUBTLE_PANEL_SURFACE =
   "glass-surface-elevated rounded-2xl p-4 transition-opacity hover:opacity-95";
 
