@@ -65,8 +65,45 @@ impl fmt::Display for SubscriptionError {
 
 impl std::error::Error for SubscriptionError {}
 
+/// Advance any `next_billing_at` dates that are in the past to the next future cycle.
+/// Loops so that subscriptions not opened for multiple cycles are fully caught up.
+fn advance_past_billing_dates(conn: &Connection) -> rusqlite::Result<()> {
+    loop {
+        let updated = conn.execute(
+            "UPDATE subscriptions \
+             SET next_billing_at = date(next_billing_at, '+1 month'), \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+             WHERE billing_period = 'monthly' \
+               AND next_billing_at IS NOT NULL \
+               AND date(next_billing_at) < date('now', 'localtime')",
+            [],
+        )?;
+        if updated == 0 {
+            break;
+        }
+    }
+
+    loop {
+        let updated = conn.execute(
+            "UPDATE subscriptions \
+             SET next_billing_at = date(next_billing_at, '+1 year'), \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+             WHERE billing_period = 'yearly' \
+               AND next_billing_at IS NOT NULL \
+               AND date(next_billing_at) < date('now', 'localtime')",
+            [],
+        )?;
+        if updated == 0 {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn list_subscriptions() -> Result<Vec<Subscription>, SubscriptionError> {
     let conn = open_connection()?;
+    advance_past_billing_dates(&conn).map_err(|_| SubscriptionError::Database)?;
     let mut stmt = conn
         .prepare(
             r#"

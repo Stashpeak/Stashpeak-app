@@ -8,8 +8,9 @@ import {
 } from "../lib/subscriptions";
 import { getHomeCurrency, getExchangeRates, type ExchangeRate } from "../lib/settings";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
+import { formatCurrency, monthlyEquivalent } from "../lib/subscriptionMetrics";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
-import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./SubscriptionList";
+import { SubscriptionList } from "./SubscriptionList";
 import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
 import { ACCENT_PILL_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { StatHero } from "./StatHero";

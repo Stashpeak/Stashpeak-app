@@ -1,0 +1,110 @@
+import type { CSSProperties } from "react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import type { MapLinkState, MapNodeTone } from "./types";
+
+export interface SubscriptionNodeData extends Record<string, unknown> {
+  title: string;
+  caption: string;
+  providerLabel: string;
+  linkLabel?: string;
+  linkActionLabel?: string;
+  linkState: MapLinkState;
+  onToggleLink?: () => void;
+  billingLabel: string;
+  nextBillingLabel: string;
+  statusLabel: string;
+  tone: MapNodeTone;
+}
+
+export type SubscriptionGraphNode = Node<SubscriptionNodeData, "subscription">;
+
+const HIDDEN_HANDLE_STYLE = {
+  width: 10,
+  height: 10,
+  opacity: 0,
+  background: "transparent",
+  border: "none",
+} as const;
+
+export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
+  const surfaceStyle = {
+    ["--glass-surface-fill" as "--glass-surface-fill"]: data.tone.surfaceFill,
+    boxShadow: "var(--map-node-shadow)",
+  } as CSSProperties;
+
+  const badgeStyle = {
+    backgroundColor: data.tone.badgeFill,
+    borderColor: data.tone.badgeBorder,
+    color: data.tone.badgeText,
+  } as CSSProperties;
+
+  const metricStyle = {
+    backgroundColor: data.tone.metricFill,
+    borderColor: data.tone.metricBorder,
+  } as CSSProperties;
+
+  const actionStyle = {
+    backgroundColor: data.tone.metricFill,
+    borderColor: data.tone.metricBorder,
+    color: data.tone.badgeText,
+  } as CSSProperties;
+
+  return (
+    <div className="relative">
+      <Handle type="source" position={Position.Top} style={HIDDEN_HANDLE_STYLE} />
+      <div
+        className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4"
+        style={surfaceStyle}
+      >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-muted)]">{data.caption}</p>
+          <h3 className="mt-1 truncate text-base font-medium text-[var(--text-primary)]">{data.title}</h3>
+        </div>
+        <span
+          className="shrink-0 rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.18em]"
+          style={badgeStyle}
+        >
+          {data.statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-2 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm text-[var(--text-secondary)]">{data.providerLabel}</p>
+          {data.linkLabel ? (
+            <p className="mt-1 text-xs text-[var(--text-muted)]">{data.linkLabel}</p>
+          ) : null}
+        </div>
+
+        {data.linkActionLabel && data.onToggleLink ? (
+          <button
+            type="button"
+            className="nodrag nopan shrink-0 rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] transition-colors"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              data.onToggleLink?.();
+            }}
+            style={actionStyle}
+            aria-label={`${data.linkActionLabel} ${data.title}`}
+          >
+            {data.linkActionLabel}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-4 space-y-2.5">
+        <div className="rounded-[18px] border px-3 py-2.5" style={metricStyle}>
+          <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">Monthly equivalent</p>
+          <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">{data.billingLabel}</p>
+        </div>
+        <div className="rounded-[18px] border px-3 py-2.5" style={metricStyle}>
+          <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">Next billing</p>
+          <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">{data.nextBillingLabel}</p>
+        </div>
+      </div>
+      </div>
+    </div>
+  );
+}
