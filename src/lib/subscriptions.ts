@@ -67,10 +67,26 @@ export async function getSuppressedLinkIds(): Promise<number[]> {
   }
 }
 
+export async function getPinnedSubscriptionIds(): Promise<number[]> {
+  try {
+    return await invoke<number[]>("get_pinned_subscription_ids");
+  } catch (e) {
+    throw new Error(`Failed to load pinned map subscriptions: ${e}`);
+  }
+}
+
 export async function setSubscriptionLinkSuppressed(id: number, suppressed: boolean): Promise<void> {
   try {
     await invoke("set_subscription_link_suppressed", { id, suppressed });
   } catch (e) {
     throw new Error(`Failed to persist suppressed map link ${id}: ${e}`);
+  }
+}
+
+export async function setSubscriptionLinkPinned(id: number, pinned: boolean): Promise<void> {
+  try {
+    await invoke("set_subscription_link_pinned", { id, pinned });
+  } catch (e) {
+    throw new Error(`Failed to persist pinned map link ${id}: ${e}`);
   }
 }

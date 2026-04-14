@@ -244,6 +244,27 @@ pub fn get_suppressed_link_ids() -> Result<Vec<i64>, SubscriptionError> {
         .map_err(|_| SubscriptionError::Database)
 }
 
+pub fn get_pinned_subscription_ids() -> Result<Vec<i64>, SubscriptionError> {
+    let conn = open_connection()?;
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT subscription_id
+            FROM subscription_link_overrides
+            WHERE pinned = 1
+            ORDER BY subscription_id
+            "#,
+        )
+        .map_err(|_| SubscriptionError::Database)?;
+
+    let rows = stmt
+        .query_map([], |row| row.get::<_, i64>("subscription_id"))
+        .map_err(|_| SubscriptionError::Database)?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|_| SubscriptionError::Database)
+}
+
 pub fn set_subscription_link_suppressed(
     id: i64,
     suppressed: bool,
@@ -253,18 +274,50 @@ pub fn set_subscription_link_suppressed(
     if suppressed {
         conn.execute(
             r#"
-            INSERT OR REPLACE INTO subscription_link_overrides (subscription_id, suppress_link)
-            VALUES (?1, 1)
+            INSERT INTO subscription_link_overrides (subscription_id, suppress_link, pinned)
+            VALUES (?1, 1, 0)
+            ON CONFLICT(subscription_id) DO UPDATE
+            SET suppress_link = 1,
+                pinned = 0
             "#,
             params![id],
         )
         .map_err(|_| SubscriptionError::Database)?;
     } else {
         conn.execute(
-            "DELETE FROM subscription_link_overrides WHERE subscription_id = ?1",
+            "UPDATE subscription_link_overrides SET suppress_link = 0 WHERE subscription_id = ?1",
             params![id],
         )
         .map_err(|_| SubscriptionError::Database)?;
+
+        delete_empty_link_override(&conn, id)?;
+    }
+
+    Ok(())
+}
+
+pub fn set_subscription_link_pinned(id: i64, pinned: bool) -> Result<(), SubscriptionError> {
+    let conn = open_connection()?;
+
+    if pinned {
+        conn.execute(
+            r#"
+            INSERT INTO subscription_link_overrides (subscription_id, suppress_link, pinned)
+            VALUES (?1, 0, 1)
+            ON CONFLICT(subscription_id) DO UPDATE
+            SET pinned = 1
+            "#,
+            params![id],
+        )
+        .map_err(|_| SubscriptionError::Database)?;
+    } else {
+        conn.execute(
+            "UPDATE subscription_link_overrides SET pinned = 0 WHERE subscription_id = ?1",
+            params![id],
+        )
+        .map_err(|_| SubscriptionError::Database)?;
+
+        delete_empty_link_override(&conn, id)?;
     }
 
     Ok(())
@@ -272,6 +325,16 @@ pub fn set_subscription_link_suppressed(
 
 fn open_connection() -> Result<Connection, SubscriptionError> {
     db::connect().map_err(|_| SubscriptionError::Database)
+}
+
+fn delete_empty_link_override(conn: &Connection, id: i64) -> Result<(), SubscriptionError> {
+    conn.execute(
+        "DELETE FROM subscription_link_overrides WHERE subscription_id = ?1 AND suppress_link = 0 AND pinned = 0",
+        params![id],
+    )
+    .map_err(|_| SubscriptionError::Database)?;
+
+    Ok(())
 }
 
 fn fetch_subscription(conn: &Connection, id: i64) -> Result<Subscription, SubscriptionError> {

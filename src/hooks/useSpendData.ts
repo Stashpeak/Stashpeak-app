@@ -32,8 +32,10 @@ export function useSpendData() {
     setStates((prev) => ({ ...prev, [id]: status }));
   }
 
-  async function refresh(id: ProviderId, showLoading = true) {
-    if (showLoading) {
+  async function refresh(id: ProviderId, showLoading?: boolean) {
+    const shouldShowLoading = showLoading ?? states[id].tag !== "ok";
+
+    if (shouldShowLoading) {
       setStatus(id, { tag: "loading" });
     } else {
       setStates((prev) => {
@@ -51,7 +53,23 @@ export function useSpendData() {
       persistCache(id, data);
     } catch (error) {
       if (cancelledRef.current) return;
-      setStatus(id, { tag: "stale", error: String(error) });
+      setStates((prev) => {
+        const status = prev[id];
+        if (!shouldShowLoading && status.tag === "ok") {
+          return {
+            ...prev,
+            [id]: {
+              ...status,
+              backgroundRefreshing: false,
+            },
+          };
+        }
+
+        return {
+          ...prev,
+          [id]: { tag: "stale", error: String(error) },
+        };
+      });
     }
   }
 

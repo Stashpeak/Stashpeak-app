@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  applyNodeChanges,
   Background,
   BackgroundVariant,
   Controls,
@@ -10,6 +11,7 @@ import {
   useEdgesState,
   useNodesState,
   type Edge,
+  type NodeChange,
   type ReactFlowInstance,
 } from "@xyflow/react";
 import { useSpendData } from "../hooks/useSpendData";
@@ -22,11 +24,18 @@ import {
 } from "../lib/spendProviders";
 import { formatCurrency, monthlyEquivalent } from "../lib/subscriptionMetrics";
 import {
+  getPinnedSubscriptionIds,
   getSuppressedLinkIds,
   listSubscriptions,
+  setSubscriptionLinkPinned,
   setSubscriptionLinkSuppressed,
   type Subscription,
 } from "../lib/subscriptions";
+import {
+  loadMapLayout,
+  persistMapLayout,
+  type StoredMapLayout,
+} from "../lib/mapLayout";
 import { EMPTY_DASHED_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 import { findPresetForSubscription } from "./SubscriptionPresets";
@@ -150,15 +159,103 @@ function inferProviderId(subscription: Subscription, availableProviderIds: Set<P
 }
 
 function mergeNodePositions(currentNodes: MapNode[], nextNodes: MapNode[], resetPositionIds?: Set<string>): MapNode[] {
-  const positionsById = new Map(currentNodes.map((node) => [node.id, node.position]));
+  const currentNodesById = new Map(currentNodes.map((node) => [node.id, node]));
 
   return nextNodes.map((node) => ({
     ...node,
     position:
-      resetPositionIds?.has(node.id)
+      shouldResetNodePosition(currentNodesById.get(node.id), node, resetPositionIds)
         ? node.position
-        : (positionsById.get(node.id) ?? node.position),
+        : (currentNodesById.get(node.id)?.position ?? node.position),
   }));
+}
+
+function shouldResetNodePosition(
+  currentNode: MapNode | undefined,
+  nextNode: MapNode,
+  resetPositionIds?: Set<string>,
+) {
+  if (resetPositionIds?.has(nextNode.id)) return true;
+  if (!currentNode) return false;
+  if (currentNode.type !== nextNode.type) return true;
+
+  if (currentNode.type === "subscription" && nextNode.type === "subscription") {
+    return currentNode.data.layoutKey !== nextNode.data.layoutKey;
+  }
+
+  return false;
+}
+
+function movePinnedSubscriptionsWithProviders(currentNodes: MapNode[], nextNodes: MapNode[]): MapNode[] {
+  const providerDeltas = new Map<string, { x: number; y: number }>();
+  const previousProviderPositions = new Map(
+    currentNodes
+      .filter((node): node is ProviderGraphNode => node.type === "provider")
+      .map((node) => [node.id, node.position]),
+  );
+
+  nextNodes.forEach((node) => {
+    if (node.type !== "provider") return;
+
+    const previousPosition = previousProviderPositions.get(node.id);
+    if (!previousPosition) return;
+
+    const deltaX = node.position.x - previousPosition.x;
+    const deltaY = node.position.y - previousPosition.y;
+    if (deltaX === 0 && deltaY === 0) return;
+
+    providerDeltas.set(node.id, { x: deltaX, y: deltaY });
+  });
+
+  if (providerDeltas.size === 0) {
+    return nextNodes;
+  }
+
+  return nextNodes.map((node) => {
+    if (node.type !== "subscription" || !node.data.isPinned || !node.data.linkedProviderNodeId) {
+      return node;
+    }
+
+    const providerDelta = providerDeltas.get(node.data.linkedProviderNodeId);
+    if (!providerDelta) {
+      return node;
+    }
+
+    return {
+      ...node,
+      position: {
+        x: node.position.x + providerDelta.x,
+        y: node.position.y + providerDelta.y,
+      },
+    };
+  });
+}
+
+function getStoredPosition(
+  nodeId: string,
+  storedLayout: StoredMapLayout,
+  layoutKey?: string,
+) {
+  const storedNode = storedLayout[nodeId];
+  if (!storedNode) return null;
+  if (layoutKey && storedNode.layoutKey !== layoutKey) return null;
+
+  return { x: storedNode.x, y: storedNode.y };
+}
+
+function getCurrentNodePosition(
+  nodeId: string,
+  currentNodesById: Map<string, MapNode>,
+  layoutKey?: string,
+) {
+  const currentNode = currentNodesById.get(nodeId);
+  if (!currentNode) return null;
+
+  if (currentNode.type === "subscription" && layoutKey && currentNode.data.layoutKey !== layoutKey) {
+    return null;
+  }
+
+  return currentNode.position;
 }
 
 function buildGraph(
@@ -166,13 +263,18 @@ function buildGraph(
   providers: ProviderDefinition[],
   states: Record<ProviderId, ProviderStatus>,
   suppressedLinkIds: Record<number, boolean>,
+  pinnedSubscriptionIds: Record<number, boolean>,
   onToggleSubscriptionLink: (subscriptionId: Subscription["id"]) => void,
+  onToggleSubscriptionPin: (subscriptionId: Subscription["id"]) => void,
+  storedLayout: StoredMapLayout,
+  currentNodesById: Map<string, MapNode>,
 ): { nodes: MapNode[]; edges: MapEdge[] } {
   const PROVIDER_X_START = 120;
   const PROVIDER_Y = 72;
   const PROVIDER_WIDTH = 272;
   const PROVIDER_COLUMN_GAP = 336;
   const LINKED_SUBSCRIPTION_Y = 328;
+  const LINKED_SUBSCRIPTION_OFFSET_Y = LINKED_SUBSCRIPTION_Y - PROVIDER_Y;
   const SUBSCRIPTION_WIDTH = 236;
   const SUBSCRIPTION_ROW_GAP = 194;
   const STANDALONE_COLUMN_GAP = 264;
@@ -180,7 +282,7 @@ function buildGraph(
 
   const providerNodes: ProviderGraphNode[] = [];
   const edges: MapEdge[] = [];
-  const providerXById = new Map<ProviderId, number>();
+  const providerPositionById = new Map<ProviderId, { x: number; y: number }>();
   const providerNameById = new Map(providers.map(({ id, name }) => [id, name]));
   const configuredProviderIds = new Set(providers.map(({ id }) => id));
   const linkedSubscriptionsByProvider = new Map<ProviderId, Subscription[]>();
@@ -193,11 +295,16 @@ function buildGraph(
     const status = states[providerId];
     const tone = PROVIDER_TONES[providerId];
     const previousMonthUsd = status.tag === "ok" ? status.data.previousMonthUsd : 0;
-    const position = { x: PROVIDER_X_START + index * PROVIDER_COLUMN_GAP, y: PROVIDER_Y };
-    providerXById.set(providerId, position.x);
+    const providerNodeId = `provider:${providerId}`;
+    const defaultPosition = { x: PROVIDER_X_START + index * PROVIDER_COLUMN_GAP, y: PROVIDER_Y };
+    const position =
+      getCurrentNodePosition(providerNodeId, currentNodesById)
+      ?? getStoredPosition(providerNodeId, storedLayout)
+      ?? defaultPosition;
+    providerPositionById.set(providerId, position);
 
     providerNodes.push({
-      id: `provider:${providerId}`,
+      id: providerNodeId,
       type: "provider",
       position,
       targetPosition: Position.Bottom,
@@ -254,15 +361,31 @@ function buildGraph(
   const linkedSubscriptionOffset = (PROVIDER_WIDTH - SUBSCRIPTION_WIDTH) / 2;
 
   providers.forEach(({ id: providerId }) => {
-    const anchorX = providerXById.get(providerId) ?? PROVIDER_X_START;
+    const providerPosition = providerPositionById.get(providerId) ?? { x: PROVIDER_X_START, y: PROVIDER_Y };
     const groupedSubscriptions = linkedSubscriptionsByProvider.get(providerId) ?? [];
 
     groupedSubscriptions.forEach((subscription, index) => {
       const tone = getSubscriptionTone(subscription.category);
+      const isPinned = Boolean(pinnedSubscriptionIds[subscription.id]);
+      const subscriptionNodeId = `subscription:${subscription.id}`;
+      const layoutKey = isPinned
+        ? `pinned:${providerId}:${providers.length}:${index}`
+        : `linked:${providerId}:${providers.length}:${index}`;
+      const defaultPosition = {
+        x: providerPosition.x + linkedSubscriptionOffset,
+        y: providerPosition.y + LINKED_SUBSCRIPTION_OFFSET_Y + index * SUBSCRIPTION_ROW_GAP,
+      };
+      const position = isPinned
+        ? defaultPosition
+        : (
+          getCurrentNodePosition(subscriptionNodeId, currentNodesById, layoutKey)
+          ?? getStoredPosition(subscriptionNodeId, storedLayout, layoutKey)
+          ?? defaultPosition
+        );
 
       edges.push({
         id: `edge:subscription:${subscription.id}->provider:${providerId}`,
-        source: `subscription:${subscription.id}`,
+        source: subscriptionNodeId,
         target: `provider:${providerId}`,
         type: "smoothstep",
         data: { relation: "uses" },
@@ -277,22 +400,26 @@ function buildGraph(
       });
 
       subscriptionNodes.push({
-        id: `subscription:${subscription.id}`,
+        id: subscriptionNodeId,
         type: "subscription",
-        position: {
-          x: anchorX + linkedSubscriptionOffset,
-          y: LINKED_SUBSCRIPTION_Y + index * SUBSCRIPTION_ROW_GAP,
-        },
+        position,
         sourcePosition: Position.Top,
+        draggable: !isPinned,
         style: { width: SUBSCRIPTION_WIDTH, minHeight: 172 },
         data: {
           title: subscription.name,
           caption: formatCategoryLabel(subscription.category) || "Subscription",
           providerLabel: `Provider: ${subscription.provider || "Manual"}`,
-          linkLabel: `Connected to ${providerNameById.get(providerId) ?? "matched"} spend`,
+          linkLabel: isPinned
+            ? `Pinned to ${providerNameById.get(providerId) ?? "matched"} spend`
+            : `Connected to ${providerNameById.get(providerId) ?? "matched"} spend`,
           linkActionLabel: "Unlink",
+          linkedProviderNodeId: `provider:${providerId}`,
           linkState: "linked",
+          isPinned,
+          layoutKey,
           onToggleLink: () => onToggleSubscriptionLink(subscription.id),
+          onTogglePin: () => onToggleSubscriptionPin(subscription.id),
           billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
           nextBillingLabel: formatShortDate(subscription.nextBillingAt),
           statusLabel: "Linked",
@@ -302,7 +429,7 @@ function buildGraph(
     });
   });
 
-  const standaloneColumnCount = standaloneSubscriptions.length <= 2 ? 1 : 2;
+  const standaloneColumnCount = standaloneSubscriptions.length <= 1 ? 1 : 2;
   const standaloneX =
     providers.length === 0
       ? PROVIDER_X_START
@@ -315,14 +442,23 @@ function buildGraph(
     const column = index % standaloneColumnCount;
     const linkState: MapLinkState = inferredProviderId ? "unlinked" : "standalone";
     const linkedProviderName = inferredProviderId ? providerNameById.get(inferredProviderId) : null;
+    const subscriptionNodeId = `subscription:${subscription.id}`;
+    const layoutKey = inferredProviderId
+      ? `unlinked:${inferredProviderId}:${providers.length}:${standaloneColumnCount}:${row}:${column}`
+      : `standalone:${providers.length}:${standaloneColumnCount}:${row}:${column}`;
+    const defaultPosition = {
+      x: standaloneX + column * STANDALONE_COLUMN_GAP,
+      y: standaloneY + row * SUBSCRIPTION_ROW_GAP,
+    };
+    const position =
+      getCurrentNodePosition(subscriptionNodeId, currentNodesById, layoutKey)
+      ?? getStoredPosition(subscriptionNodeId, storedLayout, layoutKey)
+      ?? defaultPosition;
 
     subscriptionNodes.push({
-      id: `subscription:${subscription.id}`,
+      id: subscriptionNodeId,
       type: "subscription",
-      position: {
-        x: standaloneX + column * STANDALONE_COLUMN_GAP,
-        y: standaloneY + row * SUBSCRIPTION_ROW_GAP,
-      },
+      position,
       sourcePosition: Position.Top,
       style: { width: SUBSCRIPTION_WIDTH, minHeight: 172 },
       data: {
@@ -332,6 +468,7 @@ function buildGraph(
         linkLabel: linkedProviderName ? `Suggested link: ${linkedProviderName}` : undefined,
         linkActionLabel: inferredProviderId ? "Relink" : undefined,
         linkState,
+        layoutKey,
         onToggleLink: inferredProviderId ? () => onToggleSubscriptionLink(subscription.id) : undefined,
         billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
         nextBillingLabel: formatShortDate(subscription.nextBillingAt),
@@ -352,12 +489,16 @@ export function MapView() {
   const [subscriptionsLoaded, setSubscriptionsLoaded] = useState(false);
   const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
   const [suppressedLinkIds, setSuppressedLinkIds] = useState<Record<number, boolean>>({});
+  const [pinnedSubscriptionIds, setPinnedSubscriptionIds] = useState<Record<number, boolean>>({});
   const [reactFlow, setReactFlow] = useState<ReactFlowInstance<MapNode, MapEdge> | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>([]);
+  const [nodes, setNodes] = useNodesState<MapNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<MapEdge>([]);
   const { loadError, states, visibleProviders } = useSpendData();
   const pendingResetIdsRef = useRef<Set<string>>(new Set());
   const suppressedLinkIdsRef = useRef<Record<number, boolean>>({});
+  const pinnedSubscriptionIdsRef = useRef<Record<number, boolean>>({});
+  const nodesRef = useRef<MapNode[]>([]);
+  const storedLayoutRef = useRef<StoredMapLayout>(loadMapLayout());
 
   const mapProviders = useMemo(
     () => visibleProviders.filter(({ id }) => states[id].tag !== "unconfigured"),
@@ -373,10 +514,51 @@ export function MapView() {
     suppressedLinkIdsRef.current = suppressedLinkIds;
   }, [suppressedLinkIds]);
 
+  useEffect(() => {
+    pinnedSubscriptionIdsRef.current = pinnedSubscriptionIds;
+  }, [pinnedSubscriptionIds]);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  const persistNodePositions = useCallback((nextNodes: MapNode[]) => {
+    const nextLayout = { ...storedLayoutRef.current };
+
+    nextNodes.forEach((node) => {
+      if (node.type === "provider") {
+        nextLayout[node.id] = {
+          x: node.position.x,
+          y: node.position.y,
+        };
+        return;
+      }
+
+      if (node.type === "subscription" && !node.data.isPinned) {
+        nextLayout[node.id] = {
+          x: node.position.x,
+          y: node.position.y,
+          layoutKey: node.data.layoutKey,
+        };
+      }
+    });
+
+    storedLayoutRef.current = nextLayout;
+    persistMapLayout(nextLayout);
+  }, []);
+
   const toggleSubscriptionLink = useCallback((subscriptionId: Subscription["id"]) => {
     const nextSuppressed = !suppressedLinkIdsRef.current[subscriptionId];
     pendingResetIdsRef.current.add(`subscription:${subscriptionId}`);
     void setSubscriptionLinkSuppressed(subscriptionId, nextSuppressed).catch(() => {});
+
+    if (nextSuppressed && pinnedSubscriptionIdsRef.current[subscriptionId]) {
+      setPinnedSubscriptionIds((current) => {
+        const next = { ...current };
+        delete next[subscriptionId];
+        return next;
+      });
+    }
 
     setSuppressedLinkIds((current) => {
       if (current[subscriptionId]) {
@@ -392,14 +574,50 @@ export function MapView() {
     });
   }, []);
 
+  const toggleSubscriptionPin = useCallback((subscriptionId: Subscription["id"]) => {
+    const nextPinned = !pinnedSubscriptionIdsRef.current[subscriptionId];
+    if (nextPinned) {
+      pendingResetIdsRef.current.add(`subscription:${subscriptionId}`);
+    }
+
+    void setSubscriptionLinkPinned(subscriptionId, nextPinned).catch(() => {});
+
+    setPinnedSubscriptionIds((current) => {
+      if (current[subscriptionId]) {
+        const next = { ...current };
+        delete next[subscriptionId];
+        return next;
+      }
+
+      return {
+        ...current,
+        [subscriptionId]: true,
+      };
+    });
+  }, []);
+
+  const handleNodesChange = useCallback((changes: NodeChange<MapNode>[]) => {
+    setNodes((currentNodes) => {
+      const nextNodes = applyNodeChanges(changes, currentNodes);
+      const repositionedNodes = movePinnedSubscriptionsWithProviders(currentNodes, nextNodes);
+
+      if (changes.some((change) => change.type === "position")) {
+        persistNodePositions(repositionedNodes);
+      }
+
+      return repositionedNodes;
+    });
+  }, [persistNodePositions, setNodes]);
+
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([listSubscriptions(), getSuppressedLinkIds()])
-      .then(([subscriptionData, suppressedIds]) => {
+    Promise.all([listSubscriptions(), getSuppressedLinkIds(), getPinnedSubscriptionIds()])
+      .then(([subscriptionData, suppressedIds, pinnedIds]) => {
         if (cancelled) return;
         setSubscriptions(subscriptionData);
         setSuppressedLinkIds(Object.fromEntries(suppressedIds.map((id) => [id, true])));
+        setPinnedSubscriptionIds(Object.fromEntries(pinnedIds.map((id) => [id, true])));
         setSubscriptionsLoaded(true);
       })
       .catch((error) => {
@@ -415,12 +633,33 @@ export function MapView() {
 
   useEffect(() => {
     const resetPositionIds = pendingResetIdsRef.current;
-    const nextGraph = buildGraph(subscriptions, mapProviders, states, suppressedLinkIds, toggleSubscriptionLink);
+    const currentNodesById = new Map(nodesRef.current.map((node) => [node.id, node]));
+    const nextGraph = buildGraph(
+      subscriptions,
+      mapProviders,
+      states,
+      suppressedLinkIds,
+      pinnedSubscriptionIds,
+      toggleSubscriptionLink,
+      toggleSubscriptionPin,
+      storedLayoutRef.current,
+      currentNodesById,
+    );
 
     pendingResetIdsRef.current = new Set();
     setNodes((currentNodes) => mergeNodePositions(currentNodes, nextGraph.nodes, resetPositionIds));
     setEdges(nextGraph.edges);
-  }, [mapProviders, setEdges, setNodes, states, subscriptions, suppressedLinkIds, toggleSubscriptionLink]);
+  }, [
+    mapProviders,
+    pinnedSubscriptionIds,
+    setEdges,
+    setNodes,
+    states,
+    subscriptions,
+    suppressedLinkIds,
+    toggleSubscriptionLink,
+    toggleSubscriptionPin,
+  ]);
 
   useEffect(() => {
     if (!reactFlow || nodes.length === 0) return;
@@ -519,7 +758,7 @@ export function MapView() {
               nodesConnectable={false}
               elementsSelectable={false}
               onInit={setReactFlow}
-              onNodesChange={onNodesChange}
+              onNodesChange={handleNodesChange}
               onEdgesChange={onEdgesChange}
             >
               <Background

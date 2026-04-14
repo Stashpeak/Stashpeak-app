@@ -135,10 +135,26 @@ async fn get_suppressed_link_ids() -> Result<Vec<i64>, String> {
 }
 
 #[tauri::command]
+async fn get_pinned_subscription_ids() -> Result<Vec<i64>, String> {
+    run_blocking("get_pinned_subscription_ids", move || {
+        subscriptions::get_pinned_subscription_ids().map_err(|err| err.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
 async fn set_subscription_link_suppressed(id: i64, suppressed: bool) -> Result<(), String> {
     run_blocking("set_subscription_link_suppressed", move || {
         subscriptions::set_subscription_link_suppressed(id, suppressed)
             .map_err(|err| err.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn set_subscription_link_pinned(id: i64, pinned: bool) -> Result<(), String> {
+    run_blocking("set_subscription_link_pinned", move || {
+        subscriptions::set_subscription_link_pinned(id, pinned).map_err(|err| err.to_string())
     })
     .await
 }
@@ -299,7 +315,9 @@ pub fn run() {
             update_subscription,
             delete_subscription,
             get_suppressed_link_ids,
+            get_pinned_subscription_ids,
             set_subscription_link_suppressed,
+            set_subscription_link_pinned,
             get_notification_settings,
             set_notification_days,
             set_notifications_enabled,

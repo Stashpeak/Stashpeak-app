@@ -10,6 +10,10 @@ export interface SubscriptionNodeData extends Record<string, unknown> {
   linkActionLabel?: string;
   linkState: MapLinkState;
   onToggleLink?: () => void;
+  isPinned?: boolean;
+  linkedProviderNodeId?: string;
+  layoutKey: string;
+  onTogglePin?: () => void;
   billingLabel: string;
   nextBillingLabel: string;
   statusLabel: string;
@@ -49,6 +53,8 @@ export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
     color: data.tone.badgeText,
   } as CSSProperties;
 
+  const pinActionStyle = (data.isPinned ? badgeStyle : actionStyle) as CSSProperties;
+
   return (
     <div className="relative">
       <Handle type="source" position={Position.Top} style={HIDDEN_HANDLE_STYLE} />
@@ -77,21 +83,43 @@ export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
           ) : null}
         </div>
 
-        {data.linkActionLabel && data.onToggleLink ? (
-          <button
-            type="button"
-            className="nodrag nopan shrink-0 rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] transition-colors"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              data.onToggleLink?.();
-            }}
-            style={actionStyle}
-            aria-label={`${data.linkActionLabel} ${data.title}`}
-          >
-            {data.linkActionLabel}
-          </button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {data.onTogglePin ? (
+            <button
+              type="button"
+              className="nodrag nopan flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                data.onTogglePin?.();
+              }}
+              style={pinActionStyle}
+              aria-label={`${data.isPinned ? "Unpin" : "Pin"} ${data.title}`}
+              aria-pressed={data.isPinned}
+              title={data.isPinned ? "Pinned to provider" : "Pin to provider"}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5.5 2.5h5l-1 4 2 2v1h-3v3.5l-.5.5-.5-.5V9.5h-3v-1l2-2-1-4Z" />
+              </svg>
+            </button>
+          ) : null}
+
+          {data.linkActionLabel && data.onToggleLink ? (
+            <button
+              type="button"
+              className="nodrag nopan rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] transition-colors"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                data.onToggleLink?.();
+              }}
+              style={actionStyle}
+              aria-label={`${data.linkActionLabel} ${data.title}`}
+            >
+              {data.linkActionLabel}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-4 space-y-2.5">
