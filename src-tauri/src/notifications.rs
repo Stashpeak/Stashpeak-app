@@ -3,6 +3,18 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::{db, settings};
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpcomingRenewal {
+    pub id: i64,
+    pub name: String,
+    pub currency: String,
+    pub cost: f64,
+    pub billing_period: String,
+    pub days_until: i64,
+    pub next_billing_at: String,
+}
+
 struct PendingNotification {
     subscription_id: i64,
     billing_date: String,
@@ -11,6 +23,51 @@ struct PendingNotification {
     cost: f64,
     billing_period: String,
     days_until: i64,
+}
+
+/// Returns upcoming renewals within `days` days for display in the UI.
+/// Unlike `check_and_notify`, this does NOT filter already-notified items so the
+/// banner stays visible even after OS notifications have fired.
+pub fn get_upcoming(days: u32) -> Result<Vec<UpcomingRenewal>, String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+
+    let date_expr = if days == 0 {
+        "date('now', 'localtime')".to_string()
+    } else {
+        format!("date('now', 'localtime', '+{days} days')")
+    };
+
+    let query = format!(
+        r#"
+        SELECT s.id, s.name, s.currency, s.monthly_cost, s.billing_period, s.next_billing_at,
+               CAST(julianday(date(s.next_billing_at)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_until
+        FROM subscriptions s
+        WHERE s.next_billing_at IS NOT NULL
+          AND date(s.next_billing_at) >= date('now', 'localtime')
+          AND date(s.next_billing_at) <= {date_expr}
+        ORDER BY s.next_billing_at ASC
+        "#
+    );
+
+    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(UpcomingRenewal {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                currency: row.get(2)?,
+                cost: row.get(3)?,
+                billing_period: row.get(4)?,
+                next_billing_at: row.get(5)?,
+                days_until: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(rows)
 }
 
 pub fn check_and_notify(app: &AppHandle) {

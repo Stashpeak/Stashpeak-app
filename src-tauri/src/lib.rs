@@ -19,6 +19,19 @@ where
 }
 
 #[tauri::command]
+async fn get_upcoming_renewals() -> Result<Vec<notifications::UpcomingRenewal>, String> {
+    run_blocking("get_upcoming_renewals", || {
+        let days = settings::get_notification_days_before().map_err(|e| e.to_string())?;
+        let enabled = settings::get_notifications_enabled().map_err(|e| e.to_string())?;
+        if !enabled {
+            return Ok(vec![]);
+        }
+        notifications::get_upcoming(days)
+    })
+    .await
+}
+
+#[tauri::command]
 async fn db_path() -> String {
     db::data_dir()
         .join("stashpeak.db")
@@ -234,9 +247,29 @@ pub fn run() {
                     .build(app)?;
             }
             notifications::check_and_notify(app.handle());
+
+            // Periodic background check every 30 minutes so notifications fire
+            // mid-session, not only at startup.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+                interval.tick().await; // skip first tick — startup already ran
+                loop {
+                    interval.tick().await;
+                    tauri::async_runtime::spawn_blocking({
+                        let h = handle.clone();
+                        move || notifications::check_and_notify(&h)
+                    })
+                    .await
+                    .ok();
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_upcoming_renewals,
             db_path,
             store_provider_api_key,
             get_provider_api_key,
