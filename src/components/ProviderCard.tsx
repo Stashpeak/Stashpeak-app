@@ -1,21 +1,6 @@
-import type { SpendData } from "../lib/connectors";
+import type { ProviderDefinition, ProviderId, ProviderStatus } from "../lib/spendProviders";
 import { PILL_SURFACE, SUBTLE_PANEL_SURFACE, TEXT_INPUT_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
-
-export type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "gcp";
-
-export type ProviderStatus =
-  | { tag: "unconfigured" }
-  | { tag: "loading" }
-  | { tag: "ok"; data: SpendData; refreshedAt: Date; backgroundRefreshing?: boolean }
-  | { tag: "stale"; error: string };
-
-export interface ProviderDefinition {
-  id: ProviderId;
-  name: string;
-  note?: string;
-  comingSoon?: boolean;
-}
 
 interface ProviderCardProps {
   provider: ProviderDefinition;

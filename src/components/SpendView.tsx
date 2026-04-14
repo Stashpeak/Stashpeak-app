@@ -1,53 +1,22 @@
 import { useEffect, useState } from "react";
 import type { Section } from "../App";
-import { deleteProviderApiKey, hasProviderApiKey, storeProviderApiKey } from "../lib/credentials";
-import { fetchProviderSpend, getProviderEnabled, type SpendData } from "../lib/connectors";
+import { deleteProviderApiKey, storeProviderApiKey } from "../lib/credentials";
 import {
   CARD_SURFACE,
   EMPTY_DASHED_SURFACE,
   PILL_SURFACE,
   SUBTLE_PANEL_SURFACE,
 } from "../lib/surfaceStyles";
-import { STALE_AFTER_MS, buildInitialStates, evictCache, loadCache, persistCache } from "../lib/spendCache";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
-import { ProviderCard, type ProviderDefinition, type ProviderId, type ProviderStatus } from "./ProviderCard";
+import { formatProviderRefreshedAt, type ProviderId } from "../lib/spendProviders";
+import { useSpendData } from "../hooks/useSpendData";
+import { ProviderCard } from "./ProviderCard";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 import { StatHero } from "./StatHero";
 
-const PROVIDERS: ProviderDefinition[] = [
-  { id: "anthropic", name: "Anthropic", note: "Requires Admin API key (sk-ant-admin-...)" },
-  { id: "openai", name: "OpenAI", note: "Requires API key with usage read scope" },
-  { id: "openrouter", name: "OpenRouter" },
-  { id: "groq", name: "Groq", comingSoon: true },
-  { id: "gcp", name: "Google Cloud", note: "Billing export to BigQuery required" },
-];
-
-const EMPTY_STATES: Record<ProviderId, ProviderStatus> = {
-  anthropic: { tag: "unconfigured" },
-  openai: { tag: "unconfigured" },
-  openrouter: { tag: "unconfigured" },
-  groq: { tag: "unconfigured" },
-  gcp: { tag: "unconfigured" },
-};
-
-function formatRefreshedAt(date: Date): string {
-  const isToday = date.toDateString() === new Date().toDateString();
-  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (isToday) return time;
-  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
-}
-
 export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [providers, setProviders] = useState<Record<ProviderId, ProviderStatus>>(() =>
-    buildInitialStates<ProviderId, SpendData, ProviderStatus>(EMPTY_STATES, (data, fetchedAt) => ({
-      tag: "ok",
-      data,
-      refreshedAt: new Date(fetchedAt),
-    })),
-  );
-  const [enabledProviders, setEnabledProviders] = useState<Record<ProviderId, boolean> | null>(null);
+  const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
   const [addingKey, setAddingKey] = useState<ProviderId | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<ProviderId | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -56,30 +25,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
   const [gcpTable, setGcpTable] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState(false);
-
-  function setStatus(id: ProviderId, status: ProviderStatus) {
-    setProviders((prev) => ({ ...prev, [id]: status }));
-  }
-
-  async function runFetch(id: ProviderId, showLoading = true) {
-    if (showLoading) {
-      setStatus(id, { tag: "loading" });
-    } else {
-      setProviders((prev) => {
-        const status = prev[id];
-        if (status.tag === "ok") return { ...prev, [id]: { ...status, backgroundRefreshing: true } };
-        return prev;
-      });
-    }
-
-    try {
-      const data = await fetchProviderSpend(id);
-      setStatus(id, { tag: "ok", data, refreshedAt: new Date() });
-      persistCache(id, data);
-    } catch (e) {
-      setStatus(id, { tag: "stale", error: String(e) });
-    }
-  }
+  const { clear, loadError, refresh, refreshAll, states, visibleProviders } = useSpendData();
 
   useEffect(() => {
     let cancelled = false;
@@ -89,62 +35,13 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         if (!cancelled) setSubscriptions(data);
       })
       .catch((e) => {
-        if (!cancelled) setLoadError(String(e));
-      });
-
-    const cache = loadCache<ProviderId, SpendData>();
-    const now = Date.now();
-
-    Promise.all(PROVIDERS.map(({ id }) => getProviderEnabled(id).then((enabled) => ({ id, enabled }))))
-      .then((results) => {
-        if (cancelled) return;
-
-        const nextEnabled = {} as Record<ProviderId, boolean>;
-        for (const { id, enabled } of results) {
-          nextEnabled[id] = enabled;
-          if (!enabled) {
-            setStatus(id, { tag: "unconfigured" });
-            evictCache(id);
-          }
-        }
-        setEnabledProviders(nextEnabled);
-
-        PROVIDERS.forEach(({ id, comingSoon }) => {
-          if (comingSoon || !nextEnabled[id]) return;
-
-          hasProviderApiKey(id)
-            .then((has) => {
-              if (cancelled) return;
-              if (!has) {
-                setStatus(id, { tag: "unconfigured" });
-                evictCache(id);
-                return;
-              }
-
-              const entry = cache[id];
-              const isStale = !entry || now - entry.fetchedAt > STALE_AFTER_MS;
-              if (isStale) {
-                runFetch(id, !entry);
-              }
-            })
-            .catch(() => {});
-        });
-      })
-      .catch((e) => {
-        if (!cancelled) setLoadError(String(e));
+        if (!cancelled) setSubscriptionsError(String(e));
       });
 
     return () => {
       cancelled = true;
     };
   }, []);
-
-  function refreshAll() {
-    visibleProviders.forEach(({ id }) => {
-      const status = providers[id];
-      if (status.tag === "ok" || status.tag === "stale") runFetch(id);
-    });
-  }
 
   async function handleSaveKey(id: ProviderId) {
     if (id !== "gcp" && !keyInput.trim()) return;
@@ -178,7 +75,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
       setGcpDataset("");
       setGcpTable("");
       setAddingKey(null);
-      runFetch(id);
+      void refresh(id);
     } catch (e) {
       setAddError(String(e));
     } finally {
@@ -192,8 +89,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     } catch {
       // Key may already be gone.
     }
-    evictCache(id);
-    setStatus(id, { tag: "unconfigured" });
+    clear(id);
     setConfirmRevoke(null);
   }
 
@@ -206,15 +102,12 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     setAddError(null);
   }
 
-  const visibleProviders =
-    enabledProviders === null ? [] : PROVIDERS.filter(({ id }) => enabledProviders[id]);
-
   const apiTotal = visibleProviders.reduce((sum, { id }) => {
-    const status = providers[id];
+    const status = states[id];
     return status.tag === "ok" ? sum + status.data.currentMonthUsd : sum;
   }, 0);
 
-  const hasAnyApiData = visibleProviders.some(({ id }) => providers[id].tag === "ok");
+  const hasAnyApiData = visibleProviders.some(({ id }) => states[id].tag === "ok");
 
   const monthlyByCurrency = subscriptions.reduce(
     (acc, subscription) => {
@@ -224,22 +117,15 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     {} as Record<string, number>,
   );
 
-  const hasConfiguredProviders = visibleProviders.some(({ id }) => providers[id].tag !== "unconfigured");
+  const hasConfiguredProviders = visibleProviders.some(({ id }) => states[id].tag !== "unconfigured");
 
   return (
     <div className="flex h-full flex-col">
-      {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
-              API Usage
-            </p>
-            <h2
-              className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight"
-            >
-              Spend tracker
-            </h2>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">API Usage</p>
+            <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">Spend tracker</h2>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
               Monitor your API usage across various providers and track your monthly subscription costs in one place.
             </p>
@@ -248,17 +134,12 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
           <StatHero label="Providers" value={String(visibleProviders.length)} />
         </div>
 
-        {/* Totals row */}
         {(hasAnyApiData || subscriptions.length > 0) && (
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
             {hasAnyApiData && (
               <div className={`${PILL_SURFACE} flex items-center gap-1.5`}>
-                <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-1">
-                  API this month
-                </span>
-                <span className="text-sm font-medium text-ink">
-                  ${apiTotal.toFixed(2)}
-                </span>
+                <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-1">API this month</span>
+                <span className="text-sm font-medium text-ink">${apiTotal.toFixed(2)}</span>
               </div>
             )}
             {subscriptions.length > 0 &&
@@ -274,15 +155,13 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
         )}
       </div>
 
-      {/* Body */}
       <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
         {loadError && <SelectableErrorMessage>{loadError}</SelectableErrorMessage>}
+        {subscriptionsError && <SelectableErrorMessage>{subscriptionsError}</SelectableErrorMessage>}
 
         <section className={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base text-primary font-normal">
-              API Spend
-            </h2>
+            <h2 className="text-base text-primary font-normal">API Spend</h2>
             {hasConfiguredProviders && (
               <button
                 onClick={refreshAll}
@@ -295,7 +174,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
           <div className="space-y-2">
             {visibleProviders.map(({ id, name, note, comingSoon }) => {
-              const status = providers[id];
+              const status = states[id];
               return (
                 <ProviderCard
                   key={id}
@@ -315,7 +194,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                   onGcpTableChange={setGcpTable}
                   onSaveKey={handleSaveKey}
                   onCancelAddKey={cancelAddKey}
-                  onRefresh={(providerId) => runFetch(providerId)}
+                  onRefresh={(providerId) => void refresh(providerId)}
                   onRevokeKey={(providerId) => void handleRevokeKey(providerId)}
                   onToggleConfirmRevoke={(providerId) => {
                     if (confirmRevoke === providerId) {
@@ -331,7 +210,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
                     setAddError(null);
                     setKeyInput("");
                   }}
-                  formatRefreshedAt={formatRefreshedAt}
+                  formatRefreshedAt={formatProviderRefreshedAt}
                 />
               );
             })}
@@ -340,9 +219,7 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
         <section className={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base text-primary font-normal">
-              Subscriptions
-            </h2>
+            <h2 className="text-base text-primary font-normal">Subscriptions</h2>
             <button
               onClick={() => onNavigate("subscriptions")}
               className="text-xs text-primary hover:text-primary/70 cursor-pointer transition-colors"
