@@ -176,7 +176,7 @@ export default function App() {
                 className="pointer-events-none absolute right-0 top-0 h-2 w-2 rounded-full"
                 style={{
                   background: "var(--purple-primary)",
-                  boxShadow: `0 0 0 2px ${resolvedTheme === "dark" ? "rgb(25 25 25)" : "rgb(255 255 255)"}`,
+                  boxShadow: "0 0 0 2px var(--bg-surface)",
                 }}
               />
             )}

@@ -1,4 +1,4 @@
-export const CACHE_KEY = import.meta.env.DEV ? "spend_cache_dev_v1" : "spend_cache_v1";
+const CACHE_KEY = import.meta.env.DEV ? "spend_cache_dev_v1" : "spend_cache_v1";
 export const STALE_AFTER_MS = 5 * 60 * 1000;
 
 interface CacheEntry<TData> {
