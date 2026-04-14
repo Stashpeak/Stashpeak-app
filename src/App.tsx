@@ -173,11 +173,7 @@ export default function App() {
             </button>
             {updateAvailable && (
               <span
-                className="pointer-events-none absolute right-0 top-0 h-2 w-2 rounded-full"
-                style={{
-                  background: "var(--purple-primary)",
-                  boxShadow: "0 0 0 2px var(--bg-surface)",
-                }}
+                className="pointer-events-none absolute right-0 top-0 h-2 w-2 rounded-full bg-[var(--purple-primary)] shadow-[0_0_0_2px_var(--bg-surface)]"
               />
             )}
           </div>
