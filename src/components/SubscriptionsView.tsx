@@ -13,6 +13,7 @@ import { monthlyEquivalent, formatCurrency, SubscriptionList } from "./Subscript
 import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
 import { ACCENT_PILL_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { StatHero } from "./StatHero";
+import { useUpcomingRenewals } from "../hooks/useUpcomingRenewals";
 
 const SEED_CATEGORIES = ["AI", "Assistant", "Audio", "Coding", "Image", "Research", "Video"];
 
@@ -27,6 +28,7 @@ export function SubscriptionsView() {
 
   const [homeCurrency, setHomeCurrency] = useState<string>("USD");
   const [exchangeRates, setExchangeRates] = useState<ExchangeRate[]>([]);
+  const upcomingRenewals = useUpcomingRenewals();
 
   async function loadSubscriptions() {
     try {
@@ -238,6 +240,35 @@ export function SubscriptionsView() {
             </>
           )}
         </div>
+
+        {/* Upcoming renewals banner */}
+        {upcomingRenewals.length > 0 && (
+          <div className="mt-4 space-y-1.5">
+            {upcomingRenewals.map((renewal) => {
+              const when =
+                renewal.daysUntil === 0
+                  ? "today"
+                  : renewal.daysUntil === 1
+                    ? "in 1 day"
+                    : `in ${renewal.daysUntil} days`;
+              return (
+                <div
+                  key={`${renewal.id}-${renewal.nextBillingAt}`}
+                  className="flex items-center gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300"
+                >
+                  <span className="shrink-0">⏰</span>
+                  <span>
+                    <span className="font-medium">{renewal.name}</span>
+                    {" renews "}
+                    <span className="font-medium">{when}</span>
+                    {" — "}
+                    {formatCurrency(renewal.cost, renewal.currency)}/{renewal.billingPeriod}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Body */}
