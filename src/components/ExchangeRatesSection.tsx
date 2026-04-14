@@ -7,6 +7,7 @@ import {
 } from "../lib/settings";
 import { CURRENCY_OPTIONS } from "../lib/currencies";
 import { RateRow } from "./RateRow";
+import { CategorySelector } from "./CategorySelector";
 
 interface ExchangeRatesSectionProps {
   subCurrencies: string[];
@@ -72,18 +73,15 @@ export function ExchangeRatesSection({
       </div>
 
       <div className="flex items-center gap-3">
-        <select
-          id="home-currency-select"
-          value={homeCurrency}
-          onChange={(event) => void handleHomeCurrencyChange(event.target.value)}
-          className="cursor-pointer rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-primary"
-        >
-          {CURRENCY_OPTIONS.map((option) => (
-            <option key={option.code} value={option.code}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <div className="w-full max-w-56">
+          <CategorySelector
+            value={homeCurrency}
+            categories={CURRENCY_OPTIONS.map((option) => option.code)}
+            onChange={(value) => void handleHomeCurrencyChange(value)}
+            allowCreate={false}
+            readonlyInput={true}
+          />
+        </div>
         {currencySaved && <span className="text-xs text-primary">Saved</span>}
       </div>
 

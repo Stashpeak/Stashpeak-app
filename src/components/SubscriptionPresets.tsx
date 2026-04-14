@@ -1,4 +1,6 @@
-import { CARD_SURFACE, SELECT_SURFACE } from "../lib/surfaceStyles";
+import { useMemo, useState } from "react";
+import { CARD_SURFACE } from "../lib/surfaceStyles";
+import { CategorySelector } from "./CategorySelector";
 
 export type Preset = {
   id: string;
@@ -83,52 +85,46 @@ interface SubscriptionPresetsProps {
   onPresetSelect: (preset: Preset) => void;
 }
 
-export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps) {
-  // Group presets by category preserving insertion order
-  const groups = PRESETS.reduce<Map<string, Preset[]>>((acc, preset) => {
-    const list = acc.get(preset.category) ?? [];
-    list.push(preset);
-    acc.set(preset.category, list);
-    return acc;
-  }, new Map());
+function presetLabel(preset: Preset): string {
+  return `${preset.name} - ${preset.provider}`;
+}
 
-  function handleChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const { value } = event.target;
-    event.target.value = "";
-    const preset = PRESETS.find((p) => p.id === value);
-    if (preset) onPresetSelect(preset);
+export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps) {
+  const [selectedLabel, setSelectedLabel] = useState("");
+
+  const presetLabels = useMemo(() => PRESETS.map(presetLabel), []);
+  const presetByLabel = useMemo(
+    () => new Map(PRESETS.map((preset) => [presetLabel(preset), preset])),
+    [],
+  );
+
+  function handleChange(value: string) {
+    setSelectedLabel("");
+    const preset = presetByLabel.get(value);
+    if (preset) {
+      onPresetSelect(preset);
+    }
   }
 
   return (
     <div className={CARD_SURFACE}>
       <h3 className="text-base text-primary font-normal">
-        Quick-fill from preset
+        Presets
       </h3>
       <p className="mt-1 text-sm text-secondary">
         Pick a service to pre-fill the form. Review and add your actual billing amount before saving.
       </p>
 
-      <select
-        defaultValue=""
-        onChange={handleChange}
-        className={SELECT_SURFACE}
-      >
-        <option value="" disabled>
-          Select a preset…
-        </option>
-        {Array.from(groups.entries()).map(([category, presets]) => (
-          <optgroup
-            key={category}
-            label={category.charAt(0).toUpperCase() + category.slice(1)}
-          >
-            {presets.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.name} — {preset.provider}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
+      <div className="mt-4">
+        <CategorySelector
+          value={selectedLabel}
+          categories={presetLabels}
+          onChange={handleChange}
+          placeholder="Select a preset..."
+          allowCreate={false}
+          readonlyInput={true}
+        />
+      </div>
     </div>
   );
 }
