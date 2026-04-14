@@ -1,22 +1,11 @@
-import { useState, useEffect, useRef } from "react";
-import { getVersion } from "@tauri-apps/api/app";
-import {
-  getNotificationSettings,
-  setNotificationDays,
-  setNotificationsEnabled,
-  getHomeCurrency,
-  setHomeCurrency,
-  getExchangeRates,
-  type ExchangeRate,
-} from "../lib/settings";
+import { useEffect, useState } from "react";
 import { getProviderEnabled, setProviderEnabled } from "../lib/connectors";
-import { checkForUpdate, downloadAndInstall, type Update } from "../lib/updater";
-import { CURRENCY_OPTIONS } from "../lib/currencies";
 import type { ResolvedTheme, Theme } from "../hooks/useTheme";
-import { ACCENT_BUTTON_SURFACE, SECONDARY_BUTTON_SURFACE } from "../lib/surfaceStyles";
-import { NotificationSettings, NOTIFICATION_PRESETS } from "./NotificationSettings";
-import { RateRow } from "./RateRow";
+import { SECONDARY_BUTTON_SURFACE } from "../lib/surfaceStyles";
+import { ExchangeRatesSection } from "./ExchangeRatesSection";
+import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
+import { UpdateSection } from "./UpdateSection";
 
 const SPEND_PROVIDERS = [
   { id: "anthropic", name: "Anthropic" },
@@ -47,442 +36,162 @@ export function SettingsView({
   updateAvailable,
   onUpdateConsumed,
 }: SettingsViewProps) {
-  // Notification settings
-  const [days, setDays] = useState<number | null>(null);
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [customInput, setCustomInput] = useState("");
-  const [isCustom, setIsCustom] = useState(false);
-  const [notifSaved, setNotifSaved] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Provider settings
   const [providerStates, setProviderStates] = useState<Record<string, boolean>>({});
-
-  // Currency settings
-  const [homeCurrency, setHomeCurrencyState] = useState<string | null>(null);
-  const [exchangeRates, setExchangeRates] = useState<ExchangeRate[]>([]);
-  // Currencies that appear in subscriptions — loaded from parent via localStorage trick
-  // We read them in SettingsView via the Tauri backend list_subscriptions query
   const [subCurrencies, setSubCurrencies] = useState<string[]>([]);
-  const [currencySaved, setCurrencySaved] = useState(false);
-
-  // About / updater state
-  const [appVersion, setAppVersion] = useState<string>("");
-  type CheckState = "idle" | "checking" | "upToDate" | "available" | "downloading" | "done" | "error";
-  const [checkState, setCheckState] = useState<CheckState>("idle");
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string | null } | null>(null);
-  const updateRef = useRef<Update | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadTotal, setDownloadTotal] = useState<number | null>(null);
-  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [notificationReady, setNotificationReady] = useState(false);
+  const [exchangeReady, setExchangeReady] = useState(false);
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0"));
-  }, []);
-
-  useEffect(() => {
-    if (updateAvailable) {
-      setCheckState("available");
-    }
-  }, [updateAvailable]);
-
-  useEffect(() => {
-    getNotificationSettings()
-      .then(({ daysBefore, enabled }) => {
-        setEnabled(enabled);
-        if (NOTIFICATION_PRESETS.includes(daysBefore)) {
-          setDays(daysBefore);
-          setIsCustom(false);
-        } else {
-          setDays(daysBefore);
-          setCustomInput(String(daysBefore));
-          setIsCustom(true);
-        }
-      })
-      .catch((e) => setLoadError(String(e)));
-
-    getHomeCurrency()
-      .then(setHomeCurrencyState)
-      .catch((e) => setLoadError(String(e)));
-
-    Promise.all(SPEND_PROVIDERS.map(p => getProviderEnabled(p.id).then(enabled => ({ id: p.id, enabled }))))
-      .then(results => {
+    Promise.all(
+      SPEND_PROVIDERS.map((provider) =>
+        getProviderEnabled(provider.id).then((enabled) => ({ id: provider.id, enabled })),
+      ),
+    )
+      .then((results) => {
         const state: Record<string, boolean> = {};
-        for (const res of results) state[res.id] = res.enabled;
+        for (const result of results) {
+          state[result.id] = result.enabled;
+        }
         setProviderStates(state);
       })
-      .catch(e => setLoadError(String(e)));
+      .catch((error) => setLoadError(String(error)));
 
-    loadExchangeRates();
-
-    // Read subscription currencies stored in sessionStorage by SubscriptionsView
     const stored = sessionStorage.getItem("sub_currencies");
-    if (stored) {
-      try { setSubCurrencies(JSON.parse(stored) as string[]); } catch { /* ignore */ }
+    if (!stored) {
+      return;
+    }
+
+    try {
+      setSubCurrencies(JSON.parse(stored) as string[]);
+    } catch {
+      // Ignore malformed session data from older renders.
     }
   }, []);
-
-  function loadExchangeRates() {
-    getExchangeRates()
-      .then(setExchangeRates)
-      .catch((e) => setLoadError(String(e)));
-  }
-
-  async function saveDays(newDays: number) {
-    await setNotificationDays(newDays);
-    setDays(newDays);
-    flashNotifSaved();
-  }
-
-  async function saveEnabled(val: boolean) {
-    await setNotificationsEnabled(val);
-    setEnabled(val);
-    flashNotifSaved();
-  }
-
-  function flashNotifSaved() {
-    setNotifSaved(true);
-    setTimeout(() => setNotifSaved(false), 2000);
-  }
-
-  function handlePreset(d: number) {
-    setIsCustom(false);
-    setCustomInput("");
-    void saveDays(d);
-  }
-
-  function handleCustomCommit() {
-    const parsed = parseInt(customInput, 10);
-    if (!isNaN(parsed) && parsed >= 0 && parsed <= 365) {
-      void saveDays(parsed);
-    }
-  }
-
-  async function handleHomeCurrencyChange(currency: string) {
-    setHomeCurrencyState(currency);
-    try {
-      await setHomeCurrency(currency);
-      setCurrencySaved(true);
-      setTimeout(() => setCurrencySaved(false), 2000);
-    } catch (e) {
-      setLoadError(String(e));
-    }
-  }
 
   async function handleProviderToggle(id: string, enabled: boolean) {
     try {
       await setProviderEnabled(id, enabled);
-      setProviderStates(prev => ({ ...prev, [id]: enabled }));
-    } catch (e) {
-      setLoadError(String(e));
+      setProviderStates((previous) => ({ ...previous, [id]: enabled }));
+    } catch (error) {
+      setLoadError(String(error));
     }
   }
 
-  async function handleCheckForUpdates() {
-    setCheckState("checking");
-    setUpdateError(null);
-    try {
-      const result = await checkForUpdate();
-      if (result) {
-        updateRef.current = result.update;
-        setUpdateInfo({ version: result.info.version, body: result.info.body });
-        setCheckState("available");
-      } else {
-        setCheckState("upToDate");
-      }
-    } catch (e) {
-      setUpdateError(String(e));
-      setCheckState("error");
-    }
-  }
-
-  async function handleInstall() {
-    if (!updateRef.current) return;
-    setCheckState("downloading");
-    setDownloadProgress(0);
-    setDownloadTotal(null);
-    try {
-      await downloadAndInstall(updateRef.current, (dl, total) => {
-        setDownloadProgress(dl);
-        setDownloadTotal(total);
-      });
-      setCheckState("done");
-      onUpdateConsumed();
-    } catch (e) {
-      setUpdateError(String(e));
-      setCheckState("error");
-    }
-  }
-
-  const loaded = days !== null && enabled !== null && homeCurrency !== null;
-
-  // Currencies that need a rate: subscription currencies that differ from home currency
-  const ratesNeeded = subCurrencies.filter((c) => c !== homeCurrency);
-
-  // Map existing rates for quick lookup
-  const rateMap = new Map<string, number>(
-    exchangeRates
-      .filter((r) => r.toCurrency === homeCurrency)
-      .map((r) => [r.fromCurrency, r.rate])
-  );
+  const contentReady = notificationReady && exchangeReady;
 
   return (
     <div className="flex h-full flex-col">
-      {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
-          Preferences
-        </p>
-        <h2
-          className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight"
-        >
-          Settings
-        </h2>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">Preferences</p>
+        <h2 className="mt-1.5 text-3xl font-light tracking-tight text-[var(--text-primary)]">Settings</h2>
         <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
           Configure your regional preferences, notification settings, and API connectors.
         </p>
       </div>
 
-      {/* Body */}
       <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
         <div className="w-full">
+          {loadError && (
+            <SelectableErrorMessage kind="inline" className="mb-4">
+              {loadError}
+            </SelectableErrorMessage>
+          )}
 
-      {loadError && (
-        <SelectableErrorMessage kind="inline" className="mb-4">
-          {loadError}
-        </SelectableErrorMessage>
-      )}
-
-      {loaded && (
-        <div className="space-y-10">
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-sm font-medium text-ink">
-                Appearance
-              </h2>
-              <p className="text-xs text-secondary mt-0.5">
-                System is the default. Manual overrides are saved on this device.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {THEME_OPTIONS.map((option) => {
-                const isActive = theme === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={isActive}
-                    onClick={() => onThemeChange(option.value)}
-                    className={isActive
-                      ? "rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg-elevated)] px-4 py-2 text-sm text-[var(--text-primary)] backdrop-blur-[5px] transition-all"
-                      : SECONDARY_BUTTON_SURFACE}
-                    title={option.description}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <p className="text-xs text-secondary/60">
-              Currently rendering the {resolvedTheme} theme.
-            </p>
-          </section>
-
-          <div className="border-t border-zinc-100" />
-
-          {/* ── Home currency ─────────────────────────────────────── */}
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-sm font-medium text-ink">
-                Home currency
-              </h2>
-              <p className="text-xs text-secondary mt-0.5">
-                Subscription totals are converted into this currency in the header.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <select
-                id="home-currency-select"
-                value={homeCurrency}
-                onChange={(e) => void handleHomeCurrencyChange(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-zinc-200 text-sm text-ink outline-none focus:border-primary transition-colors cursor-pointer bg-white"
-              >
-                {CURRENCY_OPTIONS.map((opt) => (
-                  <option key={opt.code} value={opt.code}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              {currencySaved && (
-                <span className="text-xs text-primary">Saved</span>
-              )}
-            </div>
-
-            {/* Exchange rates — only shown if there are subscription currencies that differ */}
-            {ratesNeeded.length > 0 && (
-              <div className="space-y-3 pt-1">
-                <p className="text-xs text-secondary leading-relaxed">
-                  Enter exchange rates for your subscription currencies. Used to calculate the aggregate total.
+          <div className={contentReady ? "space-y-10" : "invisible h-0 overflow-hidden"}>
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-sm font-medium text-ink">Appearance</h2>
+                <p className="mt-0.5 text-xs text-secondary">
+                  System is the default. Manual overrides are saved on this device.
                 </p>
-                {ratesNeeded.map((from) => (
-                  <RateRow
-                    key={from}
-                    fromCurrency={from}
-                    homeCurrency={homeCurrency}
-                    initialRate={rateMap.get(from) ?? null}
-                    onSaved={loadExchangeRates}
-                  />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {THEME_OPTIONS.map((option) => {
+                  const isActive = theme === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={isActive}
+                      onClick={() => onThemeChange(option.value)}
+                      className={
+                        isActive
+                          ? "rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg-elevated)] px-4 py-2 text-sm text-[var(--text-primary)] backdrop-blur-[5px] transition-all"
+                          : SECONDARY_BUTTON_SURFACE
+                      }
+                      title={option.description}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs text-secondary/60">
+                Currently rendering the {resolvedTheme} theme.
+              </p>
+            </section>
+
+            <div className="border-t border-zinc-100" />
+
+            <ExchangeRatesSection
+              subCurrencies={subCurrencies}
+              onError={setLoadError}
+              onReadyChange={setExchangeReady}
+            />
+
+            <div className="border-t border-zinc-100" />
+
+            <NotificationSettingsSection
+              onError={setLoadError}
+              onReadyChange={setNotificationReady}
+            />
+
+            <div className="border-t border-zinc-100" />
+
+            <section className="space-y-6">
+              <div>
+                <h2 className="text-sm font-medium text-ink">API Connectors</h2>
+                <p className="mt-0.5 text-xs text-secondary">
+                  Enable or disable specific connectors from fetching data
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {SPEND_PROVIDERS.map((provider) => (
+                  <div key={provider.id} className="flex items-center justify-between">
+                    <span className="text-sm text-ink">{provider.name}</span>
+                    <button
+                      role="switch"
+                      aria-checked={providerStates[provider.id] ?? true}
+                      onClick={() =>
+                        void handleProviderToggle(provider.id, !(providerStates[provider.id] ?? true))
+                      }
+                      className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors ${
+                        providerStates[provider.id] ?? true ? "bg-primary" : "bg-zinc-200"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-1 h-4 w-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
+                          providerStates[provider.id] ?? true ? "left-5" : "left-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
                 ))}
               </div>
-            )}
+            </section>
 
-            {ratesNeeded.length === 0 && subCurrencies.length > 0 && (
-              <p className="text-xs text-secondary/60">
-                All your subscriptions are already in {homeCurrency} — no conversion needed.
-              </p>
-            )}
-          </section>
+            <div className="border-t border-zinc-100" />
 
-          <div className="border-t border-zinc-100" />
-
-          {/* ── Billing renewal reminders ──────────────────────────── */}
-          <NotificationSettings
-            enabled={enabled}
-            days={days}
-            isCustom={isCustom}
-            customInput={customInput}
-            notifSaved={notifSaved}
-            onToggleEnabled={() => void saveEnabled(!enabled)}
-            onPreset={handlePreset}
-            onSelectCustom={() => {
-              setIsCustom(true);
-              setCustomInput(days !== null && NOTIFICATION_PRESETS.includes(days) ? "" : String(days));
-            }}
-            onCustomInputChange={setCustomInput}
-            onCustomCommit={handleCustomCommit}
-          />
-
-          <div className="border-t border-zinc-100" />
-
-          {/* ── API Connectors ─────────────────────────────────────── */}
-          <section className="space-y-6">
-            <div>
-              <h2 className="text-sm font-medium text-ink">
-                API Connectors
-              </h2>
-              <p className="text-xs text-secondary mt-0.5">
-                Enable or disable specific connectors from fetching data
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              {SPEND_PROVIDERS.map(p => (
-                <div key={p.id} className="flex items-center justify-between">
-                  <span className="text-sm text-ink">{p.name}</span>
-                  <button
-                    role="switch"
-                    aria-checked={providerStates[p.id] ?? true}
-                    onClick={() => void handleProviderToggle(p.id, !(providerStates[p.id] ?? true))}
-                    className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
-                      (providerStates[p.id] ?? true) ? "bg-primary" : "bg-zinc-200"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 w-4 h-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
-                        (providerStates[p.id] ?? true) ? "left-5" : "left-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <div className="border-t border-zinc-100" />
-
-          {/* ── About ──────────────────────────────────────────────── */}
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-sm font-medium text-ink">About</h2>
-              <p className="text-xs text-secondary mt-0.5">
-                Stashpeak{appVersion ? ` v${appVersion}` : ""}
-              </p>
-            </div>
-
-            {checkState === "idle" && (
-              <button
-                onClick={() => void handleCheckForUpdates()}
-                className={`${ACCENT_BUTTON_SURFACE} cursor-pointer`}
-              >
-                {updateAvailable ? "Update available — view" : "Check for updates"}
-              </button>
-            )}
-
-            {checkState === "checking" && (
-              <p className="text-xs text-secondary">Checking…</p>
-            )}
-
-            {checkState === "upToDate" && (
-              <p className="text-xs text-primary">You're up to date.</p>
-            )}
-
-            {checkState === "available" && (
-              <div className="space-y-2">
-                {updateInfo && (
-                  <p className="text-xs text-secondary">
-                    v{updateInfo.version} is available.
-                    {updateInfo.body && (
-                      <span className="block mt-1 text-ink/70 whitespace-pre-wrap">{updateInfo.body}</span>
-                    )}
-                  </p>
-                )}
-                <button
-                  onClick={() => void handleInstall()}
-                  className="px-4 py-1.5 rounded-full text-sm bg-primary text-white hover:bg-primary/90 transition-all cursor-pointer"
-                >
-                  Download and install
-                </button>
-              </div>
-            )}
-
-            {checkState === "downloading" && (
-              <div className="space-y-1.5">
-                <p className="text-xs text-secondary">Downloading…</p>
-                {downloadTotal !== null && (
-                  <div className="w-full h-1 rounded-full bg-zinc-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: `${Math.round((downloadProgress / downloadTotal) * 100)}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {checkState === "done" && (
-              <p className="text-xs text-primary">
-                Update installed. The app will restart shortly.
-              </p>
-            )}
-
-            {checkState === "error" && (
-              <div className="space-y-2">
-                <SelectableErrorMessage kind="inline">{updateError}</SelectableErrorMessage>
-                <button
-                  onClick={() => void handleCheckForUpdates()}
-                  className="text-xs text-primary underline cursor-pointer"
-                >
-                  Try again
-                </button>
-              </div>
-            )}
-          </section>
-        </div>
-      )}
+            <UpdateSection
+              updateAvailable={updateAvailable}
+              onUpdateConsumed={onUpdateConsumed}
+            />
+          </div>
         </div>
       </div>
     </div>
