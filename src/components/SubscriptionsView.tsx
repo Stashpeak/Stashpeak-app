@@ -8,10 +8,11 @@ import {
 } from "../lib/subscriptions";
 import { getHomeCurrency, getExchangeRates, type ExchangeRate } from "../lib/settings";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
+import { PRESETS, type Preset } from "../lib/subscriptionPresets";
 import { formatCurrency, monthlyEquivalent } from "../lib/subscriptionMetrics";
 import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { SubscriptionList } from "./SubscriptionList";
-import { PRESETS, SubscriptionPresets, type Preset } from "./SubscriptionPresets";
+import { SubscriptionPresets } from "./SubscriptionPresets";
 import { ACCENT_PILL_SURFACE, PILL_SURFACE, WARNING_PILL_SURFACE } from "../lib/surfaceStyles";
 import { StatHero } from "./StatHero";
 import { useUpcomingRenewals } from "../hooks/useUpcomingRenewals";

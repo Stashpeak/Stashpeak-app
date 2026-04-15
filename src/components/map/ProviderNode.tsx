@@ -1,20 +1,6 @@
 import type { CSSProperties } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import type { MapNodeTone } from "./types";
-
-export interface ProviderNodeData extends Record<string, unknown> {
-  title: string;
-  caption: string;
-  statusLabel: string;
-  primaryLabel: string;
-  primaryValue: string;
-  secondaryLabel: string;
-  secondaryValue: string;
-  note?: string;
-  tone: MapNodeTone;
-}
-
-export type ProviderGraphNode = Node<ProviderNodeData, "provider">;
+import { Handle, Position, type NodeProps } from "@xyflow/react";
+import type { ProviderGraphNode } from "./types";
 
 const HIDDEN_HANDLE_STYLE = {
   width: 10,
