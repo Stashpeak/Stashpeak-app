@@ -57,7 +57,18 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Stashpeak ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install this version of Stashpeak."
+          releaseBody: ""
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
+
+      - name: Generate release notes
+        if: matrix.platform == 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo Stashpeak/app \
+            --notes "$(gh api repos/Stashpeak/app/releases/generate-notes \
+              -f tag_name="${{ github.ref_name }}" \
+              --jq '.body')"
