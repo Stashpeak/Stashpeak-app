@@ -243,6 +243,18 @@ export function MapView() {
     setLayoutVersion((current) => current + 1);
   }, [deleteStoredNodeLayout]);
 
+  const handleNodeDragStop = useCallback((_event: unknown, node: MapNode) => {
+    const isProviderLinkedChild =
+      node.type === "product"
+      || (node.type === "subscription" && Boolean(node.data.linkedProviderNodeId));
+
+    if (!isProviderLinkedChild) {
+      return;
+    }
+
+    setLayoutVersion((current) => current + 1);
+  }, []);
+
   const handleNodesChange = useCallback((changes: NodeChange<MapNode>[]) => {
     const changedPositionIds = new Set(
       changes
@@ -491,6 +503,7 @@ export function MapView() {
               elementsSelectable={false}
               onInit={setReactFlow}
               onNodesChange={handleNodesChange}
+              onNodeDragStop={handleNodeDragStop}
               onEdgesChange={onEdgesChange}
             >
               <Background

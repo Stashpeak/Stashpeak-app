@@ -265,14 +265,20 @@ function getStoredRelativePosition(
 function hasStoredRelativePositionOverride(
   nodeId: string,
   parentNodeId: string,
+  defaultPosition: { x: number; y: number },
+  parentPosition: { x: number; y: number },
   storedLayout: StoredMapLayout,
   layoutKey?: string,
 ) {
   const storedNode = storedLayout[nodeId];
   if (!storedNode || !isStoredRelativeNodeLayout(storedNode)) return false;
   if (storedNode.parentNodeId !== parentNodeId) return false;
+  if (layoutKey && storedNode.layoutKey !== layoutKey) return false;
 
-  return !layoutKey || storedNode.layoutKey === layoutKey;
+  const defaultOffsetX = defaultPosition.x - parentPosition.x;
+  const defaultOffsetY = defaultPosition.y - parentPosition.y;
+
+  return storedNode.x !== defaultOffsetX || storedNode.y !== defaultOffsetY;
 }
 
 function getCurrentNodePosition(
@@ -482,6 +488,8 @@ export function buildGraph({
       const hasPositionOverride = hasStoredRelativePositionOverride(
         productNodeId,
         providerNodeId,
+        defaultPosition,
+        layout.position,
         storedLayout,
         layoutKey,
       );
@@ -560,6 +568,8 @@ export function buildGraph({
       const hasPositionOverride = hasStoredRelativePositionOverride(
         subscriptionNodeId,
         providerNodeId,
+        defaultPosition,
+        layout.position,
         storedLayout,
         layoutKey,
       );
