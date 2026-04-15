@@ -29,6 +29,7 @@ export function ProviderNode({ data }: NodeProps<ProviderGraphNode>) {
 
   return (
     <div className="relative">
+      <Handle type="source" position={Position.Bottom} style={HIDDEN_HANDLE_STYLE} />
       <Handle type="target" position={Position.Bottom} style={HIDDEN_HANDLE_STYLE} />
       <div
         className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4"

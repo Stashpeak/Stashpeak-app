@@ -26,6 +26,19 @@ export interface ProviderNodeData extends Record<string, unknown> {
   tone: MapNodeTone;
 }
 
+export interface ProductNodeData extends Record<string, unknown> {
+  title: string;
+  caption: string;
+  description?: string;
+  statusLabel: string;
+  activityLabel: string;
+  subscriptionCount: number;
+  isLinked: boolean;
+  parentProviderNodeId: string;
+  layoutKey: string;
+  tone: MapNodeTone;
+}
+
 export interface SubscriptionNodeData extends Record<string, unknown> {
   title: string;
   caption: string;
@@ -45,6 +58,7 @@ export interface SubscriptionNodeData extends Record<string, unknown> {
 }
 
 export type ProviderGraphNode = Node<ProviderNodeData, "provider">;
+export type ProductGraphNode = Node<ProductNodeData, "product">;
 export type SubscriptionGraphNode = Node<SubscriptionNodeData, "subscription">;
 
 function createTone(accent: string): MapNodeTone {

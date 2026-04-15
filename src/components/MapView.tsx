@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   applyNodeChanges,
   Background,
@@ -12,13 +12,20 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import { useSpendData } from "../hooks/useSpendData";
+import { getProductVisibility, setProductVisibility } from "../lib/api/products";
 import {
   buildGraph,
   mergeNodePositions,
-  movePinnedSubscriptionsWithProviders,
+  moveAnchoredNodesWithProviders,
   type MapEdge,
   type MapNode,
 } from "../lib/mapGraph";
+import {
+  createDefaultProductVisibility,
+  getProductsForProvider,
+  type ProductId,
+  type ProductVisibilityState,
+} from "../lib/products";
 import { formatCurrency } from "../lib/subscriptionMetrics";
 import {
   getPinnedSubscriptionIds,
@@ -35,11 +42,14 @@ import {
 } from "../lib/mapLayout";
 import { EMPTY_DASHED_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
+import { ProductNode } from "./map/ProductNode";
 import { ProviderNode } from "./map/ProviderNode";
 import { SubscriptionNode } from "./map/SubscriptionNode";
+import { PROVIDER_TONES } from "./map/types";
 
 const nodeTypes = {
   provider: ProviderNode,
+  product: ProductNode,
   subscription: SubscriptionNode,
 };
 
@@ -51,6 +61,9 @@ export function MapView() {
   const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
   const [suppressedLinkIds, setSuppressedLinkIds] = useState<Record<number, boolean>>({});
   const [pinnedSubscriptionIds, setPinnedSubscriptionIds] = useState<Record<number, boolean>>({});
+  const [productVisibility, setProductVisibilityState] = useState<ProductVisibilityState>(
+    createDefaultProductVisibility(),
+  );
   const [reactFlow, setReactFlow] = useState<ReactFlowInstance<MapNode, MapEdge> | null>(null);
   const [nodes, setNodes] = useNodesState<MapNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<MapEdge>([]);
@@ -69,6 +82,29 @@ export function MapView() {
   const providerIds = useMemo(
     () => mapProviders.map(({ id }) => id),
     [mapProviders],
+  );
+
+  const productGroups = useMemo(
+    () => mapProviders.map((provider) => ({
+      provider,
+      products: getProductsForProvider(provider.id),
+    })),
+    [mapProviders],
+  );
+
+  const totalToggleableProducts = useMemo(
+    () => productGroups.reduce((sum, { products }) => sum + products.length, 0),
+    [productGroups],
+  );
+
+  const visibleProductToggleCount = useMemo(
+    () =>
+      productGroups.reduce(
+        (sum, { products }) =>
+          sum + products.filter((product) => productVisibility[product.id]).length,
+        0,
+      ),
+    [productGroups, productVisibility],
   );
 
   useEffect(() => {
@@ -157,10 +193,23 @@ export function MapView() {
     });
   }, []);
 
+  const toggleProductVisibility = useCallback((productId: ProductId) => {
+    pendingResetIdsRef.current.add(`product:${productId}`);
+    setProductVisibilityState((current) => {
+      const nextEnabled = !current[productId];
+      void setProductVisibility(productId, nextEnabled).catch(() => {});
+
+      return {
+        ...current,
+        [productId]: nextEnabled,
+      };
+    });
+  }, []);
+
   const handleNodesChange = useCallback((changes: NodeChange<MapNode>[]) => {
     setNodes((currentNodes) => {
       const nextNodes = applyNodeChanges(changes, currentNodes);
-      const repositionedNodes = movePinnedSubscriptionsWithProviders(currentNodes, nextNodes);
+      const repositionedNodes = moveAnchoredNodesWithProviders(currentNodes, nextNodes);
 
       if (changes.some((change) => change.type === "position")) {
         persistNodePositions(repositionedNodes);
@@ -173,12 +222,18 @@ export function MapView() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([listSubscriptions(), getSuppressedLinkIds(), getPinnedSubscriptionIds()])
-      .then(([subscriptionData, suppressedIds, pinnedIds]) => {
+    Promise.all([
+      listSubscriptions(),
+      getSuppressedLinkIds(),
+      getPinnedSubscriptionIds(),
+      getProductVisibility(),
+    ])
+      .then(([subscriptionData, suppressedIds, pinnedIds, visibility]) => {
         if (cancelled) return;
         setSubscriptions(subscriptionData);
         setSuppressedLinkIds(Object.fromEntries(suppressedIds.map((id) => [id, true])));
         setPinnedSubscriptionIds(Object.fromEntries(pinnedIds.map((id) => [id, true])));
+        setProductVisibilityState(visibility);
         setSubscriptionsLoaded(true);
       })
       .catch((error) => {
@@ -201,6 +256,7 @@ export function MapView() {
       states,
       suppressedLinkIds,
       pinnedSubscriptionIds,
+      productVisibility,
       onToggleSubscriptionLink: toggleSubscriptionLink,
       onToggleSubscriptionPin: toggleSubscriptionPin,
       storedLayout: storedLayoutRef.current,
@@ -213,6 +269,7 @@ export function MapView() {
   }, [
     mapProviders,
     pinnedSubscriptionIds,
+    productVisibility,
     setEdges,
     setNodes,
     states,
@@ -240,6 +297,7 @@ export function MapView() {
   }, 0);
 
   const providerCount = nodes.filter((node) => node.type === "provider").length;
+  const productCount = nodes.filter((node) => node.type === "product").length;
   const subscriptionCount = nodes.filter((node) => node.type === "subscription").length;
   const isEmpty = nodes.length === 0;
   const showLoading = !subscriptionsLoaded && isEmpty && !loadError;
@@ -251,10 +309,10 @@ export function MapView() {
           <div>
             <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">Visual graph</p>
             <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">Ecosystem map</h2>
-            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">
-              Live AI subscriptions and configured spend providers rendered as draggable nodes. This first pass keeps
-              layout deterministic while inferring subscription-to-provider links from existing data, with inline
-              unlink controls when you want a cleaner overview.
+            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-[var(--text-secondary)]">
+              Configured providers, their product tiers, and linked subscriptions rendered as a single map. Product
+              visibility is adjustable inline so you can keep the hierarchy detailed without turning the canvas into
+              noise.
             </p>
           </div>
 
@@ -262,6 +320,10 @@ export function MapView() {
             <div className={PILL_SURFACE}>
               <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Providers</span>
               <span className="text-sm font-medium text-[var(--text-primary)]">{providerCount}</span>
+            </div>
+            <div className={PILL_SURFACE}>
+              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Products</span>
+              <span className="text-sm font-medium text-[var(--text-primary)]">{productCount}</span>
             </div>
             <div className={PILL_SURFACE}>
               <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Subscriptions</span>
@@ -282,13 +344,80 @@ export function MapView() {
           <span className="rounded-full border px-3 py-1.5 text-xs text-[var(--text-secondary)] border-[rgba(16,185,129,0.28)] bg-[rgba(16,185,129,0.12)]">
             Provider nodes
           </span>
+          <span className="rounded-full border px-3 py-1.5 text-xs text-[var(--text-secondary)] border-[rgba(245,158,11,0.28)] bg-[rgba(245,158,11,0.12)]">
+            Product nodes
+          </span>
           <span className="rounded-full border px-3 py-1.5 text-xs text-[var(--text-secondary)] border-[rgba(173,70,255,0.28)] bg-[rgba(173,70,255,0.12)]">
             Subscription nodes
           </span>
           <span className="rounded-full border px-3 py-1.5 text-xs text-[var(--text-secondary)] border-[var(--glass-border)] bg-[var(--glass-bg)]">
-            Drag nodes to personalize the layout
+            Drag providers and subscriptions to personalize the layout
           </span>
         </div>
+
+        {productGroups.length > 0 ? (
+          <div className="mt-4 rounded-[24px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-muted)]">Product visibility</p>
+                <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
+                  Hide product tiers you do not want rendered. Linked subscriptions stay attached to the provider even
+                  when an intermediate product node is filtered out.
+                </p>
+              </div>
+              <div className={PILL_SURFACE}>
+                <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Visible</span>
+                <span className="text-sm font-medium text-[var(--text-primary)]">
+                  {visibleProductToggleCount}/{totalToggleableProducts}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              {productGroups.map(({ provider, products }) => (
+                <div
+                  key={provider.id}
+                  className="min-w-[220px] rounded-[20px] border border-[var(--glass-border)] px-3.5 py-3"
+                >
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">{provider.name}</p>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    {products.map((product) => {
+                      const enabled = productVisibility[product.id];
+                      const tone = PROVIDER_TONES[provider.id];
+                      const toggleStyle = (
+                        enabled
+                          ? {
+                            backgroundColor: tone.badgeFill,
+                            borderColor: tone.badgeBorder,
+                            color: tone.badgeText,
+                          }
+                          : {
+                            backgroundColor: tone.metricFill,
+                            borderColor: tone.metricBorder,
+                            color: "var(--text-secondary)",
+                          }
+                      ) as CSSProperties;
+
+                      return (
+                        <button
+                          key={product.id}
+                          type="button"
+                          className="rounded-full border px-3 py-1.5 text-xs transition-colors"
+                          style={toggleStyle}
+                          onClick={() => toggleProductVisibility(product.id)}
+                          aria-pressed={enabled}
+                          title={enabled ? `Hide ${product.label}` : `Show ${product.label}`}
+                        >
+                          {product.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-1 flex-col gap-4 overflow-auto px-8 py-6">
