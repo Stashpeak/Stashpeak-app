@@ -30,7 +30,20 @@ import { formatCurrency, monthlyEquivalent } from "./subscriptionMetrics";
 import { type Subscription } from "./subscriptions";
 
 export type MapNode = ProviderGraphNode | ProductGraphNode | SubscriptionGraphNode;
-export type MapEdge = Edge<{ relation: "uses" | "provides" | "covers" }, "smoothstep" | "bus">;
+export interface MapBusData {
+  laneStartX: number;
+  laneEndX: number;
+  drawHorizontal: boolean;
+  drawSourceStub: boolean;
+  drawTargetStub: boolean;
+}
+
+export interface MapEdgeData extends Record<string, unknown> {
+  relation: "uses" | "provides" | "covers";
+  bus?: MapBusData;
+}
+
+export type MapEdge = Edge<MapEdgeData, "smoothstep" | "bus">;
 
 interface BuildGraphOptions {
   subscriptions: Subscription[];
@@ -50,6 +63,7 @@ interface ProviderLayout {
   centerX: number;
   columnWidth: number;
   visibleProducts: ProductDefinition[];
+  productCenterXById: Map<ProductId, number>;
 }
 
 interface LinkedSubscription {
@@ -371,6 +385,7 @@ export function buildGraph({
       centerX,
       columnWidth,
       visibleProducts,
+      productCenterXById: new Map(),
     });
 
     providerNodes.push({
@@ -429,7 +444,6 @@ export function buildGraph({
       ? 0
       : productCount * PRODUCT_WIDTH + (productCount - 1) * PRODUCT_ROW_GAP;
     const productStartX = layout.centerX - productRowWidth / 2;
-
     layout.visibleProducts.forEach((product, index) => {
       const productNodeId = `product:${product.id}`;
       const linkedSubscriptionCount = linkedSubscriptionCountByProductId.get(product.id) ?? 0;
@@ -441,6 +455,8 @@ export function buildGraph({
       const position =
         getCurrentNodePosition(productNodeId, currentNodesById, layoutKey)
         ?? defaultPosition;
+      const productCenterX = position.x + PRODUCT_WIDTH / 2;
+      layout.productCenterXById.set(product.id, productCenterX);
 
       productNodes.push({
         id: productNodeId,
@@ -465,14 +481,32 @@ export function buildGraph({
           tone: PROVIDER_TONES[providerId],
         },
       });
+    });
 
+    const productCenterXs = layout.visibleProducts
+      .map((product) => layout.productCenterXById.get(product.id))
+      .filter((value): value is number => typeof value === "number");
+    const laneStartX = productCenterXs[0] ?? layout.centerX;
+    const laneEndX = productCenterXs[productCenterXs.length - 1] ?? layout.centerX;
+
+    layout.visibleProducts.forEach((product, index) => {
+      const productNodeId = `product:${product.id}`;
       edges.push({
         id: `edge:${providerNodeId}->${productNodeId}`,
         source: providerNodeId,
         target: productNodeId,
         targetHandle: "provider",
         type: "bus",
-        data: { relation: "provides" },
+        data: {
+          relation: "provides",
+          bus: {
+            laneStartX,
+            laneEndX,
+            drawHorizontal: index === 0,
+            drawSourceStub: index === 0,
+            drawTargetStub: true,
+          },
+        },
         markerEnd: {
           type: MarkerType.ArrowClosed,
           color: edgeColor,
@@ -496,6 +530,15 @@ export function buildGraph({
       : linkedSubscriptionColumnCount * SUBSCRIPTION_WIDTH
         + (linkedSubscriptionColumnCount - 1) * LINKED_SUBSCRIPTION_COLUMN_GAP;
     const linkedSubscriptionStartX = layout.centerX - linkedSubscriptionGridWidth / 2;
+    const visibleProviderProducts = layout.visibleProducts.filter((product) =>
+      groupedSubscriptions.some(({ visibleProductIds }) => visibleProductIds.includes(product.id)),
+    );
+    const coveredProductCenterXs = visibleProviderProducts
+      .map((product) => layout.productCenterXById.get(product.id))
+      .filter((value): value is number => typeof value === "number");
+    const coverageLaneStart = coveredProductCenterXs[0] ?? layout.centerX;
+    const coverageLaneEnd = coveredProductCenterXs[coveredProductCenterXs.length - 1] ?? layout.centerX;
+    const drawnCoverageTargets = new Set<ProductId>();
 
     groupedSubscriptions.forEach(({ subscription, visibleProductIds, matchedProductIds }, index) => {
       const tone = getSubscriptionTone(subscription.category);
@@ -521,13 +564,27 @@ export function buildGraph({
 
       if (visibleProductIds.length > 0) {
         visibleProductIds.forEach((productId) => {
+          const isFirstEdgeForSubscription = visibleProductIds[0] === productId;
+          const isFirstEdgeForProvider = index === 0 && isFirstEdgeForSubscription;
+          const shouldDrawTargetStub = !drawnCoverageTargets.has(productId);
+          drawnCoverageTargets.add(productId);
+
           edges.push({
             id: `edge:${subscriptionNodeId}->product:${productId}`,
             source: subscriptionNodeId,
             target: `product:${productId}`,
             targetHandle: "subscription",
             type: "bus",
-            data: { relation: "covers" },
+            data: {
+              relation: "covers",
+              bus: {
+                laneStartX: coverageLaneStart,
+                laneEndX: coverageLaneEnd,
+                drawHorizontal: isFirstEdgeForProvider,
+                drawSourceStub: isFirstEdgeForSubscription,
+                drawTargetStub: shouldDrawTargetStub,
+              },
+            },
             markerEnd: {
               type: MarkerType.ArrowClosed,
               color: PROVIDER_TONES[providerId].edgeColor,
