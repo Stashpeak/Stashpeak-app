@@ -27,6 +27,16 @@ export interface SubscriptionInput {
   notes: string;
 }
 
+export interface UpcomingRenewal {
+  id: number;
+  name: string;
+  currency: string;
+  cost: number;
+  billingPeriod: string;
+  daysUntil: number;
+  nextBillingAt: string;
+}
+
 export async function listSubscriptions(): Promise<Subscription[]> {
   try {
     return await invoke<Subscription[]>("list_subscriptions");
@@ -64,6 +74,14 @@ export async function getSuppressedLinkIds(): Promise<number[]> {
     return await invoke<number[]>("get_suppressed_link_ids");
   } catch (e) {
     throw new Error(`Failed to load suppressed map links: ${e}`);
+  }
+}
+
+export async function getUpcomingRenewals(): Promise<UpcomingRenewal[]> {
+  try {
+    return await invoke<UpcomingRenewal[]>("get_upcoming_renewals");
+  } catch (e) {
+    throw new Error(`Failed to load upcoming renewals: ${e}`);
   }
 }
 

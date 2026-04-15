@@ -1,15 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-
-export interface UpcomingRenewal {
-  id: number;
-  name: string;
-  currency: string;
-  cost: number;
-  billingPeriod: string;
-  daysUntil: number;
-  nextBillingAt: string;
-}
+import { getUpcomingRenewals, type UpcomingRenewal } from "../lib/subscriptions";
 
 export function useUpcomingRenewals(refreshTrigger?: unknown) {
   const [renewals, setRenewals] = useState<UpcomingRenewal[]>([]);
@@ -17,7 +7,7 @@ export function useUpcomingRenewals(refreshTrigger?: unknown) {
   useEffect(() => {
     let isActive = true;
 
-    void invoke<UpcomingRenewal[]>("get_upcoming_renewals")
+    void getUpcomingRenewals()
       .then((nextRenewals) => {
         if (isActive) {
           setRenewals(nextRenewals);

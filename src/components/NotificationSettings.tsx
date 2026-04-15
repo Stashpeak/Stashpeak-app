@@ -1,5 +1,5 @@
 export const NOTIFICATION_PRESETS = [0, 1, 3, 7];
-export const PRESET_LABELS: Record<number, string> = {
+const PRESET_LABELS: Record<number, string> = {
   0: "Same day",
   1: "1 day",
   3: "3 days",

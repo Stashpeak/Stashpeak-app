@@ -22,9 +22,6 @@ export const EMPTY_STATE_SURFACE =
 export const EMPTY_DASHED_SURFACE =
   "glass-surface rounded-2xl border-dashed px-4 py-10 text-center";
 
-export const SELECT_SURFACE =
-  "glass-input-surface mt-4 w-full cursor-pointer appearance-none rounded-[14px] px-4 py-3 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-subtle)] focus:ring-2 focus:ring-[var(--focus-ring)]";
-
 export const TEXT_INPUT_SURFACE =
   "glass-input-surface w-full rounded-[14px] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-subtle)] focus:ring-2 focus:ring-[var(--focus-ring)]";
 

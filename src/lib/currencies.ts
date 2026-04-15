@@ -19,5 +19,3 @@ export const CURRENCY_OPTIONS = [
   { code: "RON", label: "RON — Romanian Leu" },
   { code: "BGN", label: "BGN — Bulgarian Lev" },
 ] as const;
-
-export type CurrencyCode = (typeof CURRENCY_OPTIONS)[number]["code"];
