@@ -50,4 +50,6 @@ export async function downloadAndInstall(
         break;
     }
   });
+
+  await update.relaunch();
 }

@@ -30,6 +30,16 @@ export function UpdateSection({
   useEffect(() => {
     if (updateAvailable) {
       setCheckState("available");
+      // IMPORTANT: App.tsx background check only passes `updateAvailable: boolean` —
+      // the Update object is discarded there. We must re-fetch here to populate
+      // updateRef.current; without it handleInstall() silently exits (guard on line ~56).
+      // Do NOT remove this re-fetch or the "Download and install" button will do nothing.
+      void checkForUpdate().then((result) => {
+        if (result) {
+          updateRef.current = result.update;
+          setUpdateInfo({ version: result.info.version, body: result.info.body });
+        }
+      });
     }
   }, [updateAvailable]);
 
@@ -54,6 +64,9 @@ export function UpdateSection({
 
   async function handleInstall() {
     if (!updateRef.current) {
+      // updateRef is populated either by handleCheckForUpdates() (manual flow)
+      // or by the useEffect above (background-detection flow). If it's still null
+      // here, the re-fetch hasn't resolved yet — do not proceed silently.
       return;
     }
 
