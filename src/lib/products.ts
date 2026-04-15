@@ -143,11 +143,7 @@ const PRODUCT_MATCH_RULES: ProductMatchRule[] = [
     productId: "openai:chatgpt",
     field: "name",
     keywords: ["chatgpt plus", "chatgpt pro", "chat gpt", "chatgpt"],
-  },
-  {
-    productId: "openai:chatgpt",
-    field: "provider",
-    keywords: ["openai"],
+    excludeKeywords: ["codex", "api"],
   },
   {
     productId: "openai:codex",
@@ -197,6 +193,11 @@ const PRODUCT_BUNDLE_RULES: ProductBundleRule[] = [
     providerId: "anthropic",
     keywords: ["claude pro", "claude max"],
     productIds: ["anthropic:claude-ai", "anthropic:claude-code"],
+  },
+  {
+    providerId: "openai",
+    keywords: ["chatgpt plus", "chatgpt pro"],
+    productIds: ["openai:chatgpt", "openai:codex"],
   },
 ];
 
