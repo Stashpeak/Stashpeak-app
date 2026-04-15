@@ -7,7 +7,7 @@ import {
   type ProductGraphNode,
   type ProviderGraphNode,
   type SubscriptionGraphNode,
-} from "../components/map/types";
+} from "./mapTypes";
 import { formatCategoryLabel } from "./categoryFormatting";
 import {
   isStoredRelativeNodeLayout,
