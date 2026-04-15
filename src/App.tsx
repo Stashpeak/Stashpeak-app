@@ -123,25 +123,15 @@ export default function App() {
           className="flex items-center border-b px-4 py-4 border-(--border-subtle)" 
           data-tauri-drag-region
         >
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => openUrl("https://stashpeak.com")}
-              className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 py-[7px] pl-[7px] pr-[14px] backdrop-blur-[10px] border-none"
-            >
-              <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
-              <span className="font-normal text-[14px] text-(--logo-text) whitespace-nowrap">
-                Stashpeak
-              </span>
-            </button>
-            {IS_DEV_BUILD && (
-              <span
-                title="Development build"
-                className="rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2.5 py-1 text-[10px] font-semibold tracking-[0.24em] text-emerald-600"
-              >
-                DEV
-              </span>
-            )}
-          </div>
+          <button
+            onClick={() => openUrl("https://stashpeak.com")}
+            className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 py-[7px] pl-[7px] pr-[14px] backdrop-blur-[10px] border-none"
+          >
+            <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
+            <span className="font-normal text-[14px] text-(--logo-text) whitespace-nowrap">
+              Stashpeak
+            </span>
+          </button>
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 p-3">
@@ -164,9 +154,19 @@ export default function App() {
         </nav>
 
         <div className="flex items-center justify-between border-t px-4 py-3 border-(--border-subtle)">
-          <span className="text-[10px] tracking-wider text-(--text-subtle)">
-            {appVersion ? `v${appVersion}` : ""}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] tracking-wider text-(--text-subtle)">
+              {appVersion ? `v${appVersion}` : ""}
+            </span>
+            {IS_DEV_BUILD && (
+              <span
+                title="Development build"
+                className="rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2 py-0.5 text-[9px] font-semibold tracking-[0.24em] text-emerald-600"
+              >
+                DEV
+              </span>
+            )}
+          </div>
           <div className="relative">
             <button
               onClick={() => setActive("settings")}
