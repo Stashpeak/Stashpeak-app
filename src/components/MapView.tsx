@@ -42,6 +42,7 @@ import {
 } from "../lib/mapLayout";
 import { EMPTY_DASHED_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
+import { BusEdge } from "./map/BusEdge";
 import { ProductNode } from "./map/ProductNode";
 import { ProviderNode } from "./map/ProviderNode";
 import { SubscriptionNode } from "./map/SubscriptionNode";
@@ -51,6 +52,10 @@ const nodeTypes = {
   provider: ProviderNode,
   product: ProductNode,
   subscription: SubscriptionNode,
+};
+
+const edgeTypes = {
+  bus: BusEdge,
 };
 
 const REACT_FLOW_PRO_OPTIONS = { hideAttribution: true };
@@ -444,6 +449,7 @@ export function MapView() {
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               proOptions={REACT_FLOW_PRO_OPTIONS}
               nodesConnectable={false}
               elementsSelectable={false}

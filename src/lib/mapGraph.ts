@@ -30,7 +30,7 @@ import { formatCurrency, monthlyEquivalent } from "./subscriptionMetrics";
 import { type Subscription } from "./subscriptions";
 
 export type MapNode = ProviderGraphNode | ProductGraphNode | SubscriptionGraphNode;
-export type MapEdge = Edge<{ relation: "uses" | "provides" | "covers" }, "smoothstep">;
+export type MapEdge = Edge<{ relation: "uses" | "provides" | "covers" }, "smoothstep" | "bus">;
 
 interface BuildGraphOptions {
   subscriptions: Subscription[];
@@ -279,13 +279,17 @@ export function buildGraph({
   const PROVIDER_X_START = 120;
   const PROVIDER_Y = 72;
   const PROVIDER_WIDTH = 272;
+  const PROVIDER_MIN_HEIGHT = 220;
   const PROVIDER_COLUMN_GAP = 112;
   const PRODUCT_WIDTH = 172;
+  const PRODUCT_MIN_HEIGHT = 188;
   const PRODUCT_ROW_GAP = 18;
-  const PRODUCT_OFFSET_Y = 218;
+  const PRODUCT_OFFSET_Y = PROVIDER_MIN_HEIGHT + 40;
   const SUBSCRIPTION_WIDTH = 236;
-  const LINKED_SUBSCRIPTION_OFFSET_Y = 388;
-  const SUBSCRIPTION_ROW_GAP = 194;
+  const SUBSCRIPTION_MIN_HEIGHT = 292;
+  const LINKED_SUBSCRIPTION_COLUMN_GAP = 28;
+  const LINKED_SUBSCRIPTION_OFFSET_Y = PRODUCT_OFFSET_Y + PRODUCT_MIN_HEIGHT + 44;
+  const SUBSCRIPTION_ROW_GAP = SUBSCRIPTION_MIN_HEIGHT + 28;
   const STANDALONE_COLUMN_GAP = 264;
   const STANDALONE_GROUP_GAP = providers.length > 0 ? 104 : 0;
 
@@ -304,6 +308,34 @@ export function buildGraph({
     inferredProviderId: ProviderId | null;
   }> = [];
 
+  subscriptions.forEach((subscription) => {
+    const inferredProviderId = inferProviderId(subscription, configuredProviderIds);
+    if (inferredProviderId && !suppressedLinkIds[subscription.id]) {
+      const matchedProductIds = inferProductIds(subscription, inferredProviderId);
+      const visibleProductIds = matchedProductIds.filter((productId) =>
+        isProductEnabled(productId, productVisibility),
+      );
+
+      visibleProductIds.forEach((productId) => {
+        linkedSubscriptionCountByProductId.set(
+          productId,
+          (linkedSubscriptionCountByProductId.get(productId) ?? 0) + 1,
+        );
+      });
+
+      const groupedSubscriptions = linkedSubscriptionsByProvider.get(inferredProviderId) ?? [];
+      groupedSubscriptions.push({
+        subscription,
+        visibleProductIds,
+        matchedProductIds,
+      });
+      linkedSubscriptionsByProvider.set(inferredProviderId, groupedSubscriptions);
+      return;
+    }
+
+    standaloneSubscriptions.push({ subscription, inferredProviderId });
+  });
+
   let nextProviderColumnX = PROVIDER_X_START;
 
   providers.forEach(({ id: providerId, name }) => {
@@ -314,10 +346,16 @@ export function buildGraph({
     const visibleProducts = getProductsForProvider(providerId).filter((product) =>
       isProductEnabled(product.id, productVisibility),
     );
+    const groupedSubscriptions = linkedSubscriptionsByProvider.get(providerId) ?? [];
+    const linkedSubscriptionColumnCount = groupedSubscriptions.length <= 1 ? 1 : 2;
+    const linkedSubscriptionGridWidth = groupedSubscriptions.length === 0
+      ? 0
+      : linkedSubscriptionColumnCount * SUBSCRIPTION_WIDTH
+        + (linkedSubscriptionColumnCount - 1) * LINKED_SUBSCRIPTION_COLUMN_GAP;
     const productRowWidth = visibleProducts.length === 0
       ? 0
       : visibleProducts.length * PRODUCT_WIDTH + (visibleProducts.length - 1) * PRODUCT_ROW_GAP;
-    const columnWidth = Math.max(PROVIDER_WIDTH, SUBSCRIPTION_WIDTH, productRowWidth);
+    const columnWidth = Math.max(PROVIDER_WIDTH, productRowWidth, linkedSubscriptionGridWidth);
     const defaultPosition = {
       x: nextProviderColumnX + (columnWidth - PROVIDER_WIDTH) / 2,
       y: PROVIDER_Y,
@@ -341,7 +379,7 @@ export function buildGraph({
       position,
       sourcePosition: Position.Bottom,
       targetPosition: Position.Bottom,
-      style: { width: PROVIDER_WIDTH, minHeight: 184 },
+      style: { width: PROVIDER_WIDTH, minHeight: PROVIDER_MIN_HEIGHT },
       data: {
         title: name,
         caption: "Configured provider",
@@ -380,34 +418,6 @@ export function buildGraph({
     nextProviderColumnX += columnWidth + PROVIDER_COLUMN_GAP;
   });
 
-  subscriptions.forEach((subscription) => {
-    const inferredProviderId = inferProviderId(subscription, configuredProviderIds);
-    if (inferredProviderId && !suppressedLinkIds[subscription.id]) {
-      const matchedProductIds = inferProductIds(subscription, inferredProviderId);
-      const visibleProductIds = matchedProductIds.filter((productId) =>
-        isProductEnabled(productId, productVisibility),
-      );
-
-      visibleProductIds.forEach((productId) => {
-        linkedSubscriptionCountByProductId.set(
-          productId,
-          (linkedSubscriptionCountByProductId.get(productId) ?? 0) + 1,
-        );
-      });
-
-      const groupedSubscriptions = linkedSubscriptionsByProvider.get(inferredProviderId) ?? [];
-      groupedSubscriptions.push({
-        subscription,
-        visibleProductIds,
-        matchedProductIds,
-      });
-      linkedSubscriptionsByProvider.set(inferredProviderId, groupedSubscriptions);
-      return;
-    }
-
-    standaloneSubscriptions.push({ subscription, inferredProviderId });
-  });
-
   providers.forEach(({ id: providerId }) => {
     const layout = providerLayouts.get(providerId);
     if (!layout) return;
@@ -437,7 +447,8 @@ export function buildGraph({
         type: "product",
         position,
         draggable: false,
-        style: { width: PRODUCT_WIDTH, minHeight: 128 },
+        selectable: false,
+        style: { width: PRODUCT_WIDTH, minHeight: PRODUCT_MIN_HEIGHT, pointerEvents: "none", zIndex: 1 },
         data: {
           title: product.label,
           caption: providerNameById.get(providerId) ?? "Product",
@@ -460,7 +471,7 @@ export function buildGraph({
         source: providerNodeId,
         target: productNodeId,
         targetHandle: "provider",
-        type: "smoothstep",
+        type: "bus",
         data: { relation: "provides" },
         markerEnd: {
           type: MarkerType.ArrowClosed,
@@ -479,18 +490,26 @@ export function buildGraph({
     if (!layout) return;
 
     const groupedSubscriptions = linkedSubscriptionsByProvider.get(providerId) ?? [];
+    const linkedSubscriptionColumnCount = groupedSubscriptions.length <= 1 ? 1 : 2;
+    const linkedSubscriptionGridWidth = groupedSubscriptions.length === 0
+      ? 0
+      : linkedSubscriptionColumnCount * SUBSCRIPTION_WIDTH
+        + (linkedSubscriptionColumnCount - 1) * LINKED_SUBSCRIPTION_COLUMN_GAP;
+    const linkedSubscriptionStartX = layout.centerX - linkedSubscriptionGridWidth / 2;
 
     groupedSubscriptions.forEach(({ subscription, visibleProductIds, matchedProductIds }, index) => {
       const tone = getSubscriptionTone(subscription.category);
       const isPinned = Boolean(pinnedSubscriptionIds[subscription.id]);
       const subscriptionNodeId = `subscription:${subscription.id}`;
       const providerNodeId = `provider:${providerId}`;
+      const row = Math.floor(index / linkedSubscriptionColumnCount);
+      const column = index % linkedSubscriptionColumnCount;
       const layoutKey = isPinned
-        ? `pinned:${providerId}:${providers.length}:${index}`
-        : `linked:${providerId}:${providers.length}:${index}`;
+        ? `pinned:${providerId}:${providers.length}:${linkedSubscriptionColumnCount}:${row}:${column}`
+        : `linked:${providerId}:${providers.length}:${linkedSubscriptionColumnCount}:${row}:${column}`;
       const defaultPosition = {
-        x: layout.centerX - SUBSCRIPTION_WIDTH / 2,
-        y: layout.position.y + LINKED_SUBSCRIPTION_OFFSET_Y + index * SUBSCRIPTION_ROW_GAP,
+        x: linkedSubscriptionStartX + column * (SUBSCRIPTION_WIDTH + LINKED_SUBSCRIPTION_COLUMN_GAP),
+        y: layout.position.y + LINKED_SUBSCRIPTION_OFFSET_Y + row * SUBSCRIPTION_ROW_GAP,
       };
       const position = isPinned
         ? defaultPosition
@@ -507,7 +526,7 @@ export function buildGraph({
             source: subscriptionNodeId,
             target: `product:${productId}`,
             targetHandle: "subscription",
-            type: "smoothstep",
+            type: "bus",
             data: { relation: "covers" },
             markerEnd: {
               type: MarkerType.ArrowClosed,
@@ -515,7 +534,6 @@ export function buildGraph({
             },
             style: {
               stroke: PROVIDER_TONES[providerId].edgeColor,
-              strokeDasharray: "6 4",
               strokeWidth: 1.5,
             },
           });
@@ -544,7 +562,7 @@ export function buildGraph({
         position,
         sourcePosition: Position.Top,
         draggable: !isPinned,
-        style: { width: SUBSCRIPTION_WIDTH, minHeight: 172 },
+        style: { width: SUBSCRIPTION_WIDTH, minHeight: SUBSCRIPTION_MIN_HEIGHT, zIndex: 2 },
         data: {
           title: subscription.name,
           caption: formatCategoryLabel(subscription.category) || "Subscription",
@@ -613,7 +631,7 @@ export function buildGraph({
       type: "subscription",
       position,
       sourcePosition: Position.Top,
-      style: { width: SUBSCRIPTION_WIDTH, minHeight: 172 },
+      style: { width: SUBSCRIPTION_WIDTH, minHeight: SUBSCRIPTION_MIN_HEIGHT, zIndex: 2 },
       data: {
         title: subscription.name,
         caption: formatCategoryLabel(subscription.category) || "Subscription",

@@ -375,6 +375,12 @@
     border: none;
   }
 
+  .stashpeak-map .react-flow__edge,
+  .stashpeak-map .react-flow__edge-interaction,
+  .stashpeak-map .react-flow__edges {
+    pointer-events: none;
+  }
+
   .stashpeak-map .react-flow__controls {
     display: flex;
     padding: 0.35rem;
