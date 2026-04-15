@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { SubscriptionGraphNode } from "./types";
 
@@ -11,6 +11,10 @@ const HIDDEN_HANDLE_STYLE = {
 } as const;
 
 export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
+  const stopInteractionPropagation = (event: MouseEvent | PointerEvent) => {
+    event.stopPropagation();
+  };
+
   const surfaceStyle = {
     ["--glass-surface-fill" as "--glass-surface-fill"]: data.tone.surfaceFill,
     boxShadow: "var(--map-node-shadow)",
@@ -42,7 +46,7 @@ export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
         className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4"
         style={surfaceStyle}
       >
-      <div className="flex items-start justify-between gap-3">
+      <div className="map-node-drag-handle flex cursor-grab items-start justify-between gap-3 active:cursor-grabbing">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-muted)]">{data.caption}</p>
           <h3 className="mt-1 truncate text-base font-medium text-[var(--text-primary)]">{data.title}</h3>
@@ -63,11 +67,13 @@ export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
           {data.onTogglePin ? (
             <button
               type="button"
-              className="nodrag nopan flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
+              className="nodrag nopan pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
+              onPointerDown={stopInteractionPropagation}
+              onMouseDown={stopInteractionPropagation}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -87,7 +93,9 @@ export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
           {data.linkActionLabel && data.onToggleLink ? (
             <button
               type="button"
-              className="nodrag nopan rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] transition-colors"
+              className="nodrag nopan pointer-events-auto rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] transition-colors"
+              onPointerDown={stopInteractionPropagation}
+              onMouseDown={stopInteractionPropagation}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();

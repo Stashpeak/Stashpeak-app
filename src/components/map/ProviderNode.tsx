@@ -35,7 +35,7 @@ export function ProviderNode({ data }: NodeProps<ProviderGraphNode>) {
         className="glass-surface rounded-[24px] border border-[var(--glass-border)] px-4 py-4"
         style={surfaceStyle}
       >
-      <div className="flex items-start justify-between gap-3">
+      <div className="map-node-drag-handle flex cursor-grab items-start justify-between gap-3 active:cursor-grabbing">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-muted)]">{data.caption}</p>
           <h3 className="mt-1 text-base font-medium text-[var(--text-primary)]">{data.title}</h3>

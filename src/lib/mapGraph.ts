@@ -377,6 +377,7 @@ export function buildGraph({
       id: providerNodeId,
       type: "provider",
       position,
+      dragHandle: ".map-node-drag-handle",
       sourcePosition: Position.Bottom,
       targetPosition: Position.Bottom,
       style: { width: PROVIDER_WIDTH, minHeight: PROVIDER_MIN_HEIGHT },
@@ -560,6 +561,7 @@ export function buildGraph({
         id: subscriptionNodeId,
         type: "subscription",
         position,
+        dragHandle: isPinned ? undefined : ".map-node-drag-handle",
         sourcePosition: Position.Top,
         draggable: !isPinned,
         style: { width: SUBSCRIPTION_WIDTH, minHeight: SUBSCRIPTION_MIN_HEIGHT, zIndex: 2 },
@@ -630,6 +632,7 @@ export function buildGraph({
       id: subscriptionNodeId,
       type: "subscription",
       position,
+      dragHandle: ".map-node-drag-handle",
       sourcePosition: Position.Top,
       style: { width: SUBSCRIPTION_WIDTH, minHeight: SUBSCRIPTION_MIN_HEIGHT, zIndex: 2 },
       data: {
