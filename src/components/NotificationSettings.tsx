@@ -38,21 +38,27 @@ export function NotificationSettings({
           <h2 className="text-sm font-medium text-ink">Billing renewal reminders</h2>
           <p className="text-xs text-secondary mt-0.5">Notify when a subscription is about to renew</p>
         </div>
-        <button
-          role="switch"
-          aria-checked={enabled ? "true" : "false"}
-          aria-label="Toggle billing renewal reminders"
-          onClick={onToggleEnabled}
-          className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
-            enabled ? "bg-primary" : "bg-zinc-200"
-          }`}
-        >
-          <span
-            className={`absolute top-1 w-4 h-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
-              enabled ? "left-5" : "left-1"
-            }`}
+        <label className="relative block w-10 h-6 shrink-0 cursor-pointer">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={enabled}
+            aria-label="Toggle billing renewal reminders"
+            onChange={onToggleEnabled}
+            className="sr-only"
           />
-        </button>
+          <span
+            className={`absolute inset-0 rounded-full transition-colors ${
+              enabled ? "bg-primary" : "bg-zinc-200"
+            }`}
+          >
+            <span
+              className={`absolute top-1 w-4 h-4 rounded-full bg-(--toggle-thumb) shadow-sm transition-all ${
+                enabled ? "left-5" : "left-1"
+              }`}
+            />
+          </span>
+        </label>
       </div>
 
       {enabled && (

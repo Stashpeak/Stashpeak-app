@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const inputClass =
@@ -29,12 +29,11 @@ export function CategorySelector({
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [isFiltering, setIsFiltering] = useState(!readonlyInput);
-  const [dropdownStyle, setDropdownStyle] = useState<CSSProperties>({
-    position: "fixed",
-    top: 0,
-    left: 0,
-    width: 0,
-    visibility: "hidden",
+  const [dropdownStyle, setDropdownStyle] = useState<Record<string, string>>({
+    "--dd-top": "0px",
+    "--dd-left": "0px",
+    "--dd-w": "0px",
+    "--dd-vis": "hidden",
   });
 
   const filteredCategories = useMemo(() => {
@@ -101,11 +100,10 @@ export function CategorySelector({
       if (!rect) return;
 
       setDropdownStyle({
-        position: "fixed",
-        top: rect.bottom + 6,
-        left: rect.left,
-        width: rect.width,
-        visibility: "visible",
+        "--dd-top": `${rect.bottom + 6}px`,
+        "--dd-left": `${rect.left}px`,
+        "--dd-w": `${rect.width}px`,
+        "--dd-vis": "visible",
       });
     }
 
@@ -123,6 +121,15 @@ export function CategorySelector({
       window.removeEventListener("scroll", updateDropdownPosition, true);
     };
   }, [isOpen]);
+
+  useLayoutEffect(() => {
+    const dropdownElement = dropdownRef.current;
+    if (!dropdownElement) return;
+
+    for (const [key, value] of Object.entries(dropdownStyle)) {
+      dropdownElement.style.setProperty(key, value);
+    }
+  }, [dropdownStyle]);
 
   function handleSelect(category: string) {
     onChange(category);
@@ -152,7 +159,10 @@ export function CategorySelector({
   const dropdown =
     isOpen && visibleItems.length > 0
       ? createPortal(
-          <div ref={dropdownRef} className="z-140" style={dropdownStyle}>
+          <div
+            ref={dropdownRef}
+            className="fixed z-140 top-(--dd-top) left-(--dd-left) w-(--dd-w) [visibility:var(--dd-vis)]"
+          >
             <div
               className="glass-surface-elevated bg-(--dropdown-surface-fill) overflow-hidden rounded-2xl shadow-md"
             >

@@ -19,6 +19,7 @@ export function UpdateSection({
   const [checkState, setCheckState] = useState<CheckState>("idle");
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null);
   const updateRef = useRef<Update | null>(null);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadTotal, setDownloadTotal] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -42,6 +43,16 @@ export function UpdateSection({
       });
     }
   }, [updateAvailable]);
+
+  useEffect(() => {
+    const progressBar = progressBarRef.current;
+    if (!progressBar || downloadTotal === null) return;
+
+    progressBar.style.setProperty(
+      "--progress",
+      `${Math.round((downloadProgress / downloadTotal) * 100)}%`,
+    );
+  }, [downloadProgress, downloadTotal]);
 
   async function handleCheckForUpdates() {
     setCheckState("checking");
@@ -131,8 +142,8 @@ export function UpdateSection({
           {downloadTotal !== null && (
             <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-100">
               <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${Math.round((downloadProgress / downloadTotal) * 100)}%` }}
+                ref={progressBarRef}
+                className="h-full w-(--progress) rounded-full bg-primary transition-all"
               />
             </div>
           )}
