@@ -116,7 +116,10 @@ function getProviderNote(providerId: ProviderId, status: ProviderStatus): string
   return "Connected through the Spend view.";
 }
 
-function inferProviderId(subscription: Subscription, availableProviderIds: Set<ProviderId>): ProviderId | null {
+export function inferSubscriptionProviderId(
+  subscription: Pick<Subscription, "name" | "provider">,
+  availableProviderIds: Set<ProviderId>,
+): ProviderId | null {
   const presetProvider = findPresetForSubscription(subscription)?.provider ?? "";
   const candidates = [subscription.provider, presetProvider, subscription.name];
 
@@ -355,7 +358,7 @@ export function buildGraph({
   }> = [];
 
   subscriptions.forEach((subscription) => {
-    const inferredProviderId = inferProviderId(subscription, configuredProviderIds);
+    const inferredProviderId = inferSubscriptionProviderId(subscription, configuredProviderIds);
     if (inferredProviderId && !suppressedLinkIds[subscription.id]) {
       const matchedProductIds = inferProductIds(subscription, inferredProviderId);
       const visibleProductIds = matchedProductIds.filter((productId) =>

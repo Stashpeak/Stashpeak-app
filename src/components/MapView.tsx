@@ -15,6 +15,7 @@ import { useSpendData } from "../hooks/useSpendData";
 import { getProductVisibility, setProductVisibility } from "../lib/api/products";
 import {
   buildGraph,
+  inferSubscriptionProviderId,
   mergeNodePositions,
   moveProviderRelativeNodesWithProviders,
   type MapEdge,
@@ -26,6 +27,7 @@ import {
   type ProductId,
   type ProductVisibilityState,
 } from "../lib/products";
+import { SPEND_PROVIDERS } from "../lib/spendProviders";
 import { formatCurrency } from "../lib/subscriptionMetrics";
 import {
   getSuppressedLinkIds,
@@ -78,10 +80,25 @@ export function MapView() {
   const nodesRef = useRef<MapNode[]>([]);
   const storedLayoutRef = useRef<StoredMapLayout>(loadMapLayout());
 
-  const mapProviders = useMemo(
-    () => visibleProviders.filter(({ id }) => states[id].tag !== "unconfigured"),
-    [states, visibleProviders],
-  );
+  const mapProviders = useMemo(() => {
+    const providerIds = new Set(
+      visibleProviders
+        .filter(({ id }) => states[id].tag !== "unconfigured")
+        .map(({ id }) => id),
+    );
+    const knownProviderIds = new Set(SPEND_PROVIDERS.map(({ id }) => id));
+
+    subscriptions.forEach((subscription) => {
+      const inferredProviderId = inferSubscriptionProviderId(subscription, knownProviderIds);
+      if (inferredProviderId) {
+        providerIds.add(inferredProviderId);
+      }
+    });
+
+    return SPEND_PROVIDERS.filter(
+      ({ id, comingSoon }) => !comingSoon && providerIds.has(id),
+    );
+  }, [states, subscriptions, visibleProviders]);
 
   const providerIds = useMemo(
     () => mapProviders.map(({ id }) => id),
