@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { CARD_SURFACE, EMPTY_DASHED_SURFACE, EMPTY_STATE_SURFACE, SUBTLE_PANEL_SURFACE } from "../lib/surfaceStyles";
 import { formatCurrency } from "../lib/subscriptionMetrics";
+import { findPresetForSubscription } from "../lib/subscriptionPresets";
 import type { Subscription } from "../lib/subscriptions";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
-import { findPresetForSubscription } from "./SubscriptionPresets";
 
 function formatDate(value: string | null): string {
   if (!value) return "Not set";

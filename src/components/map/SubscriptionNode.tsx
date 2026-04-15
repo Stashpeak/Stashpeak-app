@@ -1,26 +1,6 @@
 import type { CSSProperties } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import type { MapLinkState, MapNodeTone } from "./types";
-
-export interface SubscriptionNodeData extends Record<string, unknown> {
-  title: string;
-  caption: string;
-  providerLabel: string;
-  linkLabel?: string;
-  linkActionLabel?: string;
-  linkState: MapLinkState;
-  onToggleLink?: () => void;
-  isPinned?: boolean;
-  linkedProviderNodeId?: string;
-  layoutKey: string;
-  onTogglePin?: () => void;
-  billingLabel: string;
-  nextBillingLabel: string;
-  statusLabel: string;
-  tone: MapNodeTone;
-}
-
-export type SubscriptionGraphNode = Node<SubscriptionNodeData, "subscription">;
+import { Handle, Position, type NodeProps } from "@xyflow/react";
+import type { SubscriptionGraphNode } from "./types";
 
 const HIDDEN_HANDLE_STYLE = {
   width: 10,
