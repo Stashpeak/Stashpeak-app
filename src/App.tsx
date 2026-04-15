@@ -12,6 +12,7 @@ import { WindowControls } from "./components/WindowControls";
 import "./App.css";
 
 export type Section = "dashboard" | "subscriptions" | "docker" | "spend" | "map" | "settings";
+const IS_DEV_BUILD = import.meta.env.DEV;
 
 const GEAR_ICON = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -122,15 +123,25 @@ export default function App() {
           className="flex items-center border-b px-4 py-4 border-(--border-subtle)" 
           data-tauri-drag-region
         >
-          <button
-            onClick={() => openUrl("https://stashpeak.com")}
-            className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 py-[7px] pl-[7px] pr-[14px] backdrop-blur-[10px] border-none"
-          >
-            <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
-            <span className="font-normal text-[14px] text-(--logo-text) whitespace-nowrap">
-              Stashpeak
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => openUrl("https://stashpeak.com")}
+              className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 py-[7px] pl-[7px] pr-[14px] backdrop-blur-[10px] border-none"
+            >
+              <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
+              <span className="font-normal text-[14px] text-(--logo-text) whitespace-nowrap">
+                Stashpeak
+              </span>
+            </button>
+            {IS_DEV_BUILD && (
+              <span
+                title="Development build"
+                className="rounded-full border border-emerald-500/35 bg-emerald-500/12 px-2.5 py-1 text-[10px] font-semibold tracking-[0.24em] text-emerald-600"
+              >
+                DEV
+              </span>
+            )}
+          </div>
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 p-3">
