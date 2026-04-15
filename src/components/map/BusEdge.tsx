@@ -9,45 +9,18 @@ export function BusEdge({
   sourceY,
   targetX,
   targetY,
-  data,
   markerEnd,
   style,
 }: EdgeProps<MapEdge>) {
   const laneY = sourceY < targetY
     ? targetY - TOP_BUS_OFFSET
     : targetY + BOTTOM_BUS_OFFSET;
-  const bus = data?.bus;
+  const path = [
+    `M ${sourceX} ${sourceY}`,
+    `L ${sourceX} ${laneY}`,
+    `L ${targetX} ${laneY}`,
+    `L ${targetX} ${targetY}`,
+  ].join(" ");
 
-  if (!bus) {
-    const fallbackPath = [
-      `M ${sourceX} ${sourceY}`,
-      `L ${sourceX} ${laneY}`,
-      `L ${targetX} ${laneY}`,
-      `L ${targetX} ${targetY}`,
-    ].join(" ");
-
-    return <BaseEdge path={fallbackPath} markerEnd={markerEnd} style={style} />;
-  }
-
-  const segments: string[] = [];
-
-  if (bus.drawHorizontal) {
-    segments.push(`M ${bus.laneStartX} ${laneY}`, `L ${bus.laneEndX} ${laneY}`);
-  }
-
-  if (bus.drawSourceStub) {
-    segments.push(`M ${sourceX} ${sourceY}`, `L ${sourceX} ${laneY}`);
-  }
-
-  if (bus.drawTargetStub) {
-    segments.push(`M ${targetX} ${laneY}`, `L ${targetX} ${targetY}`);
-  }
-
-  return (
-    <BaseEdge
-      path={segments.join(" ")}
-      markerEnd={bus.drawTargetStub ? markerEnd : undefined}
-      style={style}
-    />
-  );
+  return <BaseEdge path={path} markerEnd={markerEnd} style={style} />;
 }
