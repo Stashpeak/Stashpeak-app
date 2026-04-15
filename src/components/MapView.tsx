@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyNodeChanges,
   Background,
@@ -437,26 +437,13 @@ export function MapView() {
                     {products.map((product) => {
                       const enabled = productVisibility[product.id];
                       const tone = PROVIDER_TONES[provider.id];
-                      const toggleStyle = (
-                        enabled
-                          ? {
-                            backgroundColor: tone.badgeFill,
-                            borderColor: tone.badgeBorder,
-                            color: tone.badgeText,
-                          }
-                          : {
-                            backgroundColor: tone.metricFill,
-                            borderColor: tone.metricBorder,
-                            color: "var(--text-secondary)",
-                          }
-                      ) as CSSProperties;
+                      const toggleClassName = `map-node-tone ${tone.className} rounded-full border px-3 py-1.5 text-xs transition-colors ${enabled ? "map-product-toggle-active" : "map-product-toggle-inactive"}`;
 
                       return (
                         <button
                           key={product.id}
                           type="button"
-                          className="rounded-full border px-3 py-1.5 text-xs transition-colors"
-                          style={toggleStyle}
+                          className={toggleClassName}
                           onClick={() => toggleProductVisibility(product.id)}
                           aria-pressed={enabled}
                           title={enabled ? `Hide ${product.label}` : `Show ${product.label}`}

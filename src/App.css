@@ -428,4 +428,103 @@
   .stashpeak-map .react-flow__minimap-mask {
     fill: var(--map-minimap-mask);
   }
+
+  .map-node-handle-hidden {
+    width: 10px;
+    height: 10px;
+    opacity: 0;
+    background: transparent;
+    border: none;
+  }
+
+  .map-node-tone {
+    --map-node-surface-fill: color-mix(in srgb, var(--map-tone-accent) 16%, transparent);
+    --map-node-badge-fill: color-mix(in srgb, var(--map-tone-accent) 22%, transparent);
+    --map-node-badge-border: color-mix(in srgb, var(--map-tone-accent) 38%, transparent);
+    --map-node-badge-text: color-mix(in srgb, var(--text-primary) 76%, var(--map-tone-accent) 24%);
+    --map-node-panel-fill: color-mix(in srgb, var(--bg-surface) 72%, var(--map-tone-accent) 14%);
+    --map-node-panel-border: color-mix(in srgb, var(--map-tone-accent) 18%, var(--glass-border) 82%);
+  }
+
+  .map-tone-anthropic {
+    --map-tone-accent: #f59e0b;
+  }
+
+  .map-tone-openai {
+    --map-tone-accent: #10b981;
+  }
+
+  .map-tone-openrouter {
+    --map-tone-accent: #6366f1;
+  }
+
+  .map-tone-groq {
+    --map-tone-accent: #ec4899;
+  }
+
+  .map-tone-gcp {
+    --map-tone-accent: #3b82f6;
+  }
+
+  .map-tone-assistant {
+    --map-tone-accent: #ad46ff;
+  }
+
+  .map-tone-coding {
+    --map-tone-accent: #06b6d4;
+  }
+
+  .map-tone-image {
+    --map-tone-accent: #f97316;
+  }
+
+  .map-tone-research {
+    --map-tone-accent: #6366f1;
+  }
+
+  .map-tone-audio {
+    --map-tone-accent: #ea580c;
+  }
+
+  .map-tone-video {
+    --map-tone-accent: #f43f5e;
+  }
+
+  .map-tone-neutral {
+    --map-tone-accent: #94a3b8;
+  }
+
+  .map-node-surface {
+    --glass-surface-fill: var(--map-node-surface-fill);
+    box-shadow: var(--map-node-shadow);
+  }
+
+  .map-node-badge {
+    background-color: var(--map-node-badge-fill);
+    border-color: var(--map-node-badge-border);
+    color: var(--map-node-badge-text);
+  }
+
+  .map-node-panel {
+    background-color: var(--map-node-panel-fill);
+    border-color: var(--map-node-panel-border);
+  }
+
+  .map-node-action {
+    background-color: var(--map-node-panel-fill);
+    border-color: var(--map-node-panel-border);
+    color: var(--map-node-badge-text);
+  }
+
+  .map-product-toggle-active {
+    background-color: var(--map-node-badge-fill);
+    border-color: var(--map-node-badge-border);
+    color: var(--map-node-badge-text);
+  }
+
+  .map-product-toggle-inactive {
+    background-color: var(--map-node-panel-fill);
+    border-color: var(--map-node-panel-border);
+    color: var(--text-secondary);
+  }
 }
