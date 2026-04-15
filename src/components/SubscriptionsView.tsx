@@ -184,15 +184,15 @@ export function SubscriptionsView() {
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-(--purple-label)">
               Recurring spend
             </p>
             <h2
-              className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight"
+              className="mt-1.5 text-3xl text-(--text-primary) font-light tracking-tight"
             >
               Subscription tracker
             </h2>
-            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-(--text-secondary)">
               Track recurring AI subscriptions, quick-add common tools, and keep monthly totals grouped by currency.
               Annual plans are prorated in the totals below.
             </p>
@@ -221,7 +221,7 @@ export function SubscriptionsView() {
                   {aggregateTotal.hasMissingRate && (
                     <span
                       title="Some currencies are missing exchange rates — set them in Settings"
-                      className="text-[var(--warning-text)] text-xs cursor-help"
+                      className="text-(--warning-text) text-xs cursor-help"
                     >
                       ⚠️
                     </span>

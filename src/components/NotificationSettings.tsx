@@ -40,7 +40,8 @@ export function NotificationSettings({
         </div>
         <button
           role="switch"
-          aria-checked={enabled}
+          aria-checked={enabled ? "true" : "false"}
+          aria-label="Toggle billing renewal reminders"
           onClick={onToggleEnabled}
           className={`relative w-10 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${
             enabled ? "bg-primary" : "bg-zinc-200"
@@ -96,7 +97,7 @@ export function NotificationSettings({
                 onBlur={onCustomCommit}
                 onKeyDown={(e) => e.key === "Enter" && onCustomCommit()}
                 placeholder="e.g. 14"
-                className="w-24 rounded-[14px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-3 py-1.5 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-subtle)] focus:border-[var(--purple-primary)] focus:ring-2 focus:ring-[var(--focus-ring)]"
+                className="w-24 rounded-[14px] border border-(--glass-border) bg-(--glass-bg) px-3 py-1.5 text-sm text-(--text-primary) outline-none transition placeholder:text-(--text-subtle) focus:border-(--purple-primary) focus:ring-2 focus:ring-(--focus-ring)"
                 autoFocus
               />
               <span className="text-sm text-secondary">days before renewal</span>

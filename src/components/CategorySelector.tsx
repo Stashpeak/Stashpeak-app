@@ -152,10 +152,9 @@ export function CategorySelector({
   const dropdown =
     isOpen && visibleItems.length > 0
       ? createPortal(
-          <div ref={dropdownRef} className="z-[140]" style={dropdownStyle}>
+          <div ref={dropdownRef} className="z-140" style={dropdownStyle}>
             <div
-              className="glass-surface-elevated overflow-hidden rounded-2xl shadow-md"
-              style={{ background: "var(--dropdown-surface-fill)" }}
+              className="glass-surface-elevated bg-(--dropdown-surface-fill) overflow-hidden rounded-2xl shadow-md"
             >
               <ul ref={listRef} className="max-h-48 overflow-y-auto py-1">
                 {filteredCategories.map((category, index) => (

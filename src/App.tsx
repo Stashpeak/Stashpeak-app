@@ -75,16 +75,16 @@ function EmptyState({ section }: { section: "docker" }) {
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--glass-border)] bg-[var(--purple-accent)] text-[var(--purple-button-text)] backdrop-blur-[5px]">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-(--glass-border) bg-(--purple-accent) text-(--purple-button-text) backdrop-blur-[5px]">
         {ICONS[section]}
       </div>
       <div className="space-y-1.5">
-        <h2 className="text-xl text-[var(--text-primary)] font-light">
+        <h2 className="text-xl text-(--text-primary) font-light">
           {SECTION_LABELS[section]}
         </h2>
-        <p className="max-w-xs text-sm leading-relaxed text-[var(--text-secondary)]">{descriptions[section]}</p>
+        <p className="max-w-xs text-sm leading-relaxed text-(--text-secondary)">{descriptions[section]}</p>
       </div>
-      <span className="text-[10px] uppercase tracking-[0.25em] text-[var(--text-subtle)]">
+      <span className="text-[10px] uppercase tracking-[0.25em] text-(--text-subtle)">
         Coming soon
       </span>
     </div>
@@ -113,13 +113,13 @@ export default function App() {
 
   return (
     <div
-      className="flex h-screen overflow-hidden select-none bg-[var(--bg-gradient)] text-[var(--text-primary)]"
+      className="flex h-screen overflow-hidden select-none bg-(--bg-gradient) text-(--text-primary)"
     >
       <aside
-        className="flex w-64 shrink-0 flex-col border-r bg-[var(--sidebar-bg)] border-[var(--border-sidebar)] backdrop-blur-[20px]"
+        className="flex w-64 shrink-0 flex-col border-r bg-(--sidebar-bg) border-(--border-sidebar) backdrop-blur-[20px]"
       >
         <div 
-          className="flex items-center border-b px-4 py-4 border-[var(--border-subtle)]" 
+          className="flex items-center border-b px-4 py-4 border-(--border-subtle)" 
           data-tauri-drag-region
         >
           <button
@@ -127,7 +127,7 @@ export default function App() {
             className="glass-surface [--glass-surface-fill:var(--logo-pill-fill)] cursor-pointer rounded-[80px] flex items-center gap-2.5 py-[7px] pl-[7px] pr-[14px] backdrop-blur-[10px] border-none"
           >
             <StashpeakLogo width={28} height={27} theme={resolvedTheme} />
-            <span className="font-normal text-[14px] text-[var(--logo-text)] whitespace-nowrap">
+            <span className="font-normal text-[14px] text-(--logo-text) whitespace-nowrap">
               Stashpeak
             </span>
           </button>
@@ -140,11 +140,11 @@ export default function App() {
               onClick={() => setActive(id)}
               className={`flex h-10 w-full items-center gap-2.5 rounded-full border border-transparent px-3 text-left text-sm transition-colors cursor-pointer ${
                 active === id
-                  ? "glass-surface [--glass-surface-fill:var(--nav-active-fill)] text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)]"
+                  ? "glass-surface [--glass-surface-fill:var(--nav-active-fill)] text-(--text-primary)"
+                  : "text-(--text-secondary) hover:bg-(--glass-bg) hover:text-(--text-primary)"
               }`}
             >
-              <span className={`shrink-0 transition-colors ${active === id ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]"}`}>
+              <span className={`shrink-0 transition-colors ${active === id ? "text-(--text-primary)" : "text-(--text-secondary)"}`}>
                 {ICONS[id]}
               </span>
               {SECTION_LABELS[id]}
@@ -152,8 +152,8 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="flex items-center justify-between border-t px-4 py-3 border-[var(--border-subtle)]">
-          <span className="text-[10px] tracking-wider text-[var(--text-subtle)]">
+        <div className="flex items-center justify-between border-t px-4 py-3 border-(--border-subtle)">
+          <span className="text-[10px] tracking-wider text-(--text-subtle)">
             {appVersion ? `v${appVersion}` : ""}
           </span>
           <div className="relative">
@@ -162,15 +162,15 @@ export default function App() {
               title={updateAvailable ? "Settings (update available)" : "Settings"}
               className={`rounded-full p-1 transition-colors cursor-pointer ${
                 active === "settings"
-                  ? "text-[var(--text-primary)]"
-                  : "text-[var(--text-subtle)] hover:text-[var(--text-primary)]"
+                  ? "text-(--text-primary)"
+                  : "text-(--text-subtle) hover:text-(--text-primary)"
               }`}
             >
               {GEAR_ICON}
             </button>
             {updateAvailable && (
               <span
-                className="pointer-events-none absolute right-0 top-0 h-2 w-2 rounded-full bg-[var(--purple-primary)] shadow-[0_0_0_2px_var(--bg-surface)]"
+                className="pointer-events-none absolute right-0 top-0 h-2 w-2 rounded-full bg-(--purple-primary) shadow-[0_0_0_2px_var(--bg-surface)]"
               />
             )}
           </div>
