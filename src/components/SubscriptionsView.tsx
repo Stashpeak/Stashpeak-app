@@ -6,16 +6,17 @@ import {
   updateSubscription,
   type Subscription,
 } from "../lib/subscriptions";
-import { getHomeCurrency, getExchangeRates, type ExchangeRate } from "../lib/settings";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
-import { PRESETS, type Preset } from "../lib/subscriptionPresets";
+import { getHomeCurrency, getExchangeRates, type ExchangeRate } from "../lib/settings";
 import { formatCurrency, monthlyEquivalent } from "../lib/subscriptionMetrics";
-import { EMPTY_FORM, SubscriptionForm, toFormState, toPayload, type FormState } from "./SubscriptionForm";
+import { PRESETS, type Preset } from "../lib/subscriptionPresets";
+import { ACCENT_PILL_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
+import { useUpcomingRenewals } from "../hooks/useUpcomingRenewals";
+import { RenewalBanner } from "./RenewalBanner";
+import { StatHero } from "./StatHero";
+import { SubscriptionForm, EMPTY_FORM, toFormState, toPayload, type FormState } from "./SubscriptionForm";
 import { SubscriptionList } from "./SubscriptionList";
 import { SubscriptionPresets } from "./SubscriptionPresets";
-import { ACCENT_PILL_SURFACE, PILL_SURFACE, WARNING_PILL_SURFACE } from "../lib/surfaceStyles";
-import { StatHero } from "./StatHero";
-import { useUpcomingRenewals } from "../hooks/useUpcomingRenewals";
 
 const SEED_CATEGORIES = ["AI", "Assistant", "Audio", "Coding", "Image", "Research", "Video"];
 
@@ -49,7 +50,7 @@ export function SubscriptionsView() {
     getExchangeRates().then(setExchangeRates).catch(console.error);
   }, []);
 
-  // Share subscription currencies with SettingsView via sessionStorage
+  // Share subscription currencies with SettingsView via sessionStorage.
   useEffect(() => {
     const currencies = [...new Set(subscriptions.map((s) => s.currency))];
     sessionStorage.setItem("sub_currencies", JSON.stringify(currencies));
@@ -63,20 +64,19 @@ export function SubscriptionsView() {
     }, new Map());
   }, [subscriptions]);
 
-  // Build a lookup: fromCurrency → rate to homeCurrency
+  // Build a lookup from currency to home-currency rate.
   const rateMap = useMemo(() => {
     const map = new Map<string, number>();
-    // 1:1 for the home currency itself
     map.set(homeCurrency, 1);
-    for (const r of exchangeRates) {
-      if (r.toCurrency === homeCurrency) {
-        map.set(r.fromCurrency, r.rate);
+    for (const rate of exchangeRates) {
+      if (rate.toCurrency === homeCurrency) {
+        map.set(rate.fromCurrency, rate.rate);
       }
     }
     return map;
   }, [exchangeRates, homeCurrency]);
 
-  // Aggregate total in home currency
+  // Aggregate total in home currency.
   const aggregateTotal = useMemo(() => {
     if (subscriptions.length === 0) return null;
 
@@ -84,38 +84,38 @@ export function SubscriptionsView() {
     let hasMissingRate = false;
     let allSameCurrency = true;
 
-    for (const sub of subscriptions) {
-      if (sub.currency !== homeCurrency) allSameCurrency = false;
-      const rate = rateMap.get(sub.currency);
+    for (const subscription of subscriptions) {
+      if (subscription.currency !== homeCurrency) allSameCurrency = false;
+      const rate = rateMap.get(subscription.currency);
       if (rate === undefined) {
         hasMissingRate = true;
       } else {
-        total += monthlyEquivalent(sub) * rate;
+        total += monthlyEquivalent(subscription) * rate;
       }
     }
 
-    // If every subscription is already in the home currency, aggregate is same as the single pill — skip it
+    // Skip the aggregate when every subscription already matches the home currency.
     if (allSameCurrency) return null;
 
     return { total, hasMissingRate };
   }, [subscriptions, rateMap, homeCurrency]);
 
   const categories = useMemo(() => {
-    const fromSubs = subscriptions.map((s) => formatCategoryLabel(s.category)).filter(Boolean);
+    const fromSubscriptions = subscriptions.map((s) => formatCategoryLabel(s.category)).filter(Boolean);
     const fromPresets = PRESETS.map((p) => formatCategoryLabel(p.category));
-    return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubs])].sort((a, b) => a.localeCompare(b));
+    return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubscriptions])].sort((a, b) => a.localeCompare(b));
   }, [subscriptions]);
 
   const names = useMemo(() => {
-    const fromSubs = subscriptions.map((s) => s.name.trim()).filter(Boolean);
+    const fromSubscriptions = subscriptions.map((s) => s.name.trim()).filter(Boolean);
     const fromPresets = PRESETS.map((p) => p.name);
-    return [...new Set([...fromPresets, ...fromSubs])].sort();
+    return [...new Set([...fromPresets, ...fromSubscriptions])].sort();
   }, [subscriptions]);
 
   const providers = useMemo(() => {
-    const fromSubs = subscriptions.map((s) => s.provider.trim()).filter(Boolean);
+    const fromSubscriptions = subscriptions.map((s) => s.provider.trim()).filter(Boolean);
     const fromPresets = PRESETS.map((p) => p.provider);
-    return [...new Set([...fromPresets, ...fromSubs])].sort();
+    return [...new Set([...fromPresets, ...fromSubscriptions])].sort();
   }, [subscriptions]);
 
   function updateForm(key: keyof FormState, value: string) {
@@ -173,23 +173,24 @@ export function SubscriptionsView() {
 
   function handlePresetSelect(preset: Preset) {
     setEditingId(null);
-    setForm({ ...EMPTY_FORM, name: preset.name, provider: preset.provider, currency: preset.currency, category: formatCategoryLabel(preset.category) });
+    setForm({
+      ...EMPTY_FORM,
+      name: preset.name,
+      provider: preset.provider,
+      currency: preset.currency,
+      category: formatCategoryLabel(preset.category),
+    });
     setShowAddForm(true);
     setError(null);
   }
 
   return (
     <div className="flex h-full flex-col">
-      {/* Page header */}
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-(--purple-label)">
-              Recurring spend
-            </p>
-            <h2
-              className="mt-1.5 text-3xl text-(--text-primary) font-light tracking-tight"
-            >
+            <p className="text-[10px] uppercase tracking-[0.3em] text-(--purple-label)">Recurring spend</p>
+            <h2 className="mt-1.5 text-3xl font-light tracking-tight text-(--text-primary)">
               Subscription tracker
             </h2>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-(--text-secondary)">
@@ -201,7 +202,6 @@ export function SubscriptionsView() {
           <StatHero label="Tracked" value={String(subscriptions.length)} />
         </div>
 
-        {/* Totals row */}
         <div className="mt-4 flex flex-wrap items-center gap-2.5">
           {totals.size === 0 ? (
             <div className="rounded-full border border-dashed border-zinc-200 px-4 py-2 text-xs text-zinc-400">
@@ -209,10 +209,9 @@ export function SubscriptionsView() {
             </div>
           ) : (
             <>
-              {/* Aggregate home-currency chip — only shown when there are multiple currencies */}
               {aggregateTotal !== null && (
                 <div className={`${ACCENT_PILL_SURFACE} flex items-center gap-1.5`}>
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-primary/70 mr-1">
+                  <span className="mr-1 text-[10px] uppercase tracking-[0.2em] text-primary/70">
                     ~{homeCurrency}
                   </span>
                   <span className="text-sm font-medium text-primary">
@@ -220,22 +219,18 @@ export function SubscriptionsView() {
                   </span>
                   {aggregateTotal.hasMissingRate && (
                     <span
-                      title="Some currencies are missing exchange rates — set them in Settings"
-                      className="text-(--warning-text) text-xs cursor-help"
+                      title={"Some currencies are missing exchange rates \u2014 set them in Settings"}
+                      className="cursor-help text-xs text-(--warning-text)"
                     >
-                      ⚠️
+                      {"\u26A0\uFE0F"}
                     </span>
                   )}
                 </div>
               )}
 
-              {/* Per-currency breakdown */}
               {Array.from(totals.entries()).map(([currency, total]) => (
-                <div
-                  key={currency}
-                  className={PILL_SURFACE}
-                >
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-2">{currency}</span>
+                <div key={currency} className={PILL_SURFACE}>
+                  <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-secondary/60">{currency}</span>
                   <span className="text-sm font-medium text-primary">{formatCurrency(total, currency)}/mo</span>
                 </div>
               ))}
@@ -243,42 +238,12 @@ export function SubscriptionsView() {
           )}
         </div>
 
-        {/* Upcoming renewals banner */}
-        {upcomingRenewals.length > 0 && (
-          <div className="mt-4 space-y-1.5">
-            {upcomingRenewals.map((renewal) => {
-              const when =
-                renewal.daysUntil === 0
-                  ? "today"
-                  : renewal.daysUntil === 1
-                    ? "in 1 day"
-                    : `in ${renewal.daysUntil} days`;
-              return (
-                <div
-                  key={`${renewal.id}-${renewal.nextBillingAt}`}
-                  className={`${WARNING_PILL_SURFACE} flex items-center gap-2`}
-                >
-                  <span className="shrink-0">⏰</span>
-                  <span>
-                    <span className="font-medium">{renewal.name}</span>
-                    {" renews "}
-                    <span className="font-medium">{when}</span>
-                    {" — "}
-                    {formatCurrency(renewal.cost, renewal.currency)}/{renewal.billingPeriod}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <RenewalBanner renewals={upcomingRenewals} />
       </div>
 
-      {/* Body */}
       <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
         <section className="space-y-5">
-          <SubscriptionPresets
-            onPresetSelect={handlePresetSelect}
-          />
+          <SubscriptionPresets onPresetSelect={handlePresetSelect} />
           <SubscriptionForm
             form={form}
             categories={categories}
@@ -289,7 +254,7 @@ export function SubscriptionsView() {
             error={error}
             collapsed={!showAddForm}
             onToggleCollapse={() => {
-              setShowAddForm((v) => !v);
+              setShowAddForm((value) => !value);
               setForm(EMPTY_FORM);
               setError(null);
             }}
@@ -326,10 +291,10 @@ export function SubscriptionsView() {
                 />
               ) : null
             }
-            onEdit={(sub) => {
+            onEdit={(subscription) => {
               setShowAddForm(false);
-              setEditingId(sub.id);
-              setForm(toFormState(sub));
+              setEditingId(subscription.id);
+              setForm(toFormState(subscription));
               setError(null);
             }}
             onDelete={handleDelete}
