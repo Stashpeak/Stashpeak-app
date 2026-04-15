@@ -1,0 +1,39 @@
+name: Roadmap Sync
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: read
+  repository-projects: write
+
+jobs:
+  add-to-roadmap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add issue to org Roadmap project
+        uses: actions/github-script@v7
+        env:
+          ROADMAP_PROJECT_ID: PVT_kwDOEF2uac4BUvt3
+        with:
+          script: |
+            const projectId = process.env.ROADMAP_PROJECT_ID;
+            const issueNodeId = context.payload.issue.node_id;
+
+            await github.graphql(
+              `
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                  item {
+                    id
+                  }
+                }
+              }
+              `,
+              {
+                projectId,
+                contentId: issueNodeId
+              }
+            );
