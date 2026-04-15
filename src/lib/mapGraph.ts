@@ -9,7 +9,10 @@ import {
   type SubscriptionGraphNode,
 } from "../components/map/types";
 import { formatCategoryLabel } from "./categoryFormatting";
-import { type StoredMapLayout } from "./mapLayout";
+import {
+  isStoredRelativeNodeLayout,
+  type StoredMapLayout,
+} from "./mapLayout";
 import {
   getProductById,
   getProductsForProvider,
@@ -37,12 +40,12 @@ interface BuildGraphOptions {
   providers: ProviderDefinition[];
   states: Record<ProviderId, ProviderStatus>;
   suppressedLinkIds: Record<number, boolean>;
-  pinnedSubscriptionIds: Record<number, boolean>;
   productVisibility: ProductVisibilityState;
   onToggleSubscriptionLink: (subscriptionId: Subscription["id"]) => void;
-  onToggleSubscriptionPin: (subscriptionId: Subscription["id"]) => void;
+  onResetNodePosition: (nodeId: string) => void;
   storedLayout: StoredMapLayout;
   currentNodesById: Map<string, MapNode>;
+  ignoredCurrentPositionIds?: Set<string>;
 }
 
 interface ProviderLayout {
@@ -168,7 +171,7 @@ function getNodeLayoutKey(node: MapNode): string | undefined {
   return undefined;
 }
 
-export function moveAnchoredNodesWithProviders(currentNodes: MapNode[], nextNodes: MapNode[]): MapNode[] {
+export function moveProviderRelativeNodesWithProviders(currentNodes: MapNode[], nextNodes: MapNode[]): MapNode[] {
   const providerDeltas = new Map<string, { x: number; y: number }>();
   const previousProviderPositions = new Map(
     currentNodes
@@ -209,7 +212,7 @@ export function moveAnchoredNodesWithProviders(currentNodes: MapNode[], nextNode
       };
     }
 
-    if (node.type !== "subscription" || !node.data.isPinned || !node.data.linkedProviderNodeId) {
+    if (node.type !== "subscription" || !node.data.linkedProviderNodeId) {
       return node;
     }
 
@@ -228,23 +231,60 @@ export function moveAnchoredNodesWithProviders(currentNodes: MapNode[], nextNode
   });
 }
 
-function getStoredPosition(
+function getStoredAbsolutePosition(
   nodeId: string,
   storedLayout: StoredMapLayout,
   layoutKey?: string,
 ) {
   const storedNode = storedLayout[nodeId];
   if (!storedNode) return null;
-  if (layoutKey && storedNode.layoutKey !== layoutKey) return null;
+  if (isStoredRelativeNodeLayout(storedNode)) return null;
+  if (layoutKey && storedNode.layoutKey && storedNode.layoutKey !== layoutKey) return null;
 
   return { x: storedNode.x, y: storedNode.y };
+}
+
+function getStoredRelativePosition(
+  nodeId: string,
+  parentNodeId: string,
+  parentPosition: { x: number; y: number },
+  storedLayout: StoredMapLayout,
+  layoutKey?: string,
+) {
+  const storedNode = storedLayout[nodeId];
+  if (!storedNode || !isStoredRelativeNodeLayout(storedNode)) return null;
+  if (storedNode.parentNodeId !== parentNodeId) return null;
+  if (layoutKey && storedNode.layoutKey !== layoutKey) return null;
+
+  return {
+    x: parentPosition.x + storedNode.x,
+    y: parentPosition.y + storedNode.y,
+  };
+}
+
+function hasStoredRelativePositionOverride(
+  nodeId: string,
+  parentNodeId: string,
+  storedLayout: StoredMapLayout,
+  layoutKey?: string,
+) {
+  const storedNode = storedLayout[nodeId];
+  if (!storedNode || !isStoredRelativeNodeLayout(storedNode)) return false;
+  if (storedNode.parentNodeId !== parentNodeId) return false;
+
+  return !layoutKey || storedNode.layoutKey === layoutKey;
 }
 
 function getCurrentNodePosition(
   nodeId: string,
   currentNodesById: Map<string, MapNode>,
+  ignoredCurrentPositionIds?: Set<string>,
   layoutKey?: string,
 ) {
+  if (ignoredCurrentPositionIds?.has(nodeId)) {
+    return null;
+  }
+
   const currentNode = currentNodesById.get(nodeId);
   if (!currentNode) return null;
 
@@ -269,12 +309,12 @@ export function buildGraph({
   providers,
   states,
   suppressedLinkIds,
-  pinnedSubscriptionIds,
   productVisibility,
   onToggleSubscriptionLink,
-  onToggleSubscriptionPin,
+  onResetNodePosition,
   storedLayout,
   currentNodesById,
+  ignoredCurrentPositionIds,
 }: BuildGraphOptions): { nodes: MapNode[]; edges: MapEdge[] } {
   const PROVIDER_X_START = 120;
   const PROVIDER_Y = 72;
@@ -361,8 +401,8 @@ export function buildGraph({
       y: PROVIDER_Y,
     };
     const position =
-      getCurrentNodePosition(providerNodeId, currentNodesById)
-      ?? getStoredPosition(providerNodeId, storedLayout)
+      getCurrentNodePosition(providerNodeId, currentNodesById, ignoredCurrentPositionIds)
+      ?? getStoredAbsolutePosition(providerNodeId, storedLayout)
       ?? defaultPosition;
     const centerX = position.x + PROVIDER_WIDTH / 2;
 
@@ -439,17 +479,23 @@ export function buildGraph({
         x: productStartX + index * (PRODUCT_WIDTH + PRODUCT_ROW_GAP),
         y: layout.position.y + PRODUCT_OFFSET_Y,
       };
+      const hasPositionOverride = hasStoredRelativePositionOverride(
+        productNodeId,
+        providerNodeId,
+        storedLayout,
+        layoutKey,
+      );
       const position =
-        getCurrentNodePosition(productNodeId, currentNodesById, layoutKey)
+        getCurrentNodePosition(productNodeId, currentNodesById, ignoredCurrentPositionIds, layoutKey)
+        ?? getStoredRelativePosition(productNodeId, providerNodeId, layout.position, storedLayout, layoutKey)
         ?? defaultPosition;
 
       productNodes.push({
         id: productNodeId,
         type: "product",
         position,
-        draggable: false,
-        selectable: false,
-        style: { width: PRODUCT_WIDTH, minHeight: PRODUCT_MIN_HEIGHT, pointerEvents: "none", zIndex: 1 },
+        dragHandle: ".map-node-drag-handle",
+        style: { width: PRODUCT_WIDTH, minHeight: PRODUCT_MIN_HEIGHT, zIndex: 1 },
         data: {
           title: product.label,
           caption: providerNameById.get(providerId) ?? "Product",
@@ -463,6 +509,8 @@ export function buildGraph({
           isLinked: linkedSubscriptionCount > 0,
           parentProviderNodeId: providerNodeId,
           layoutKey,
+          hasPositionOverride,
+          onResetPosition: hasPositionOverride ? () => onResetNodePosition(productNodeId) : undefined,
           tone: PROVIDER_TONES[providerId],
         },
       });
@@ -500,25 +548,25 @@ export function buildGraph({
 
     groupedSubscriptions.forEach(({ subscription, visibleProductIds, matchedProductIds }, index) => {
       const tone = getSubscriptionTone(subscription.category);
-      const isPinned = Boolean(pinnedSubscriptionIds[subscription.id]);
       const subscriptionNodeId = `subscription:${subscription.id}`;
       const providerNodeId = `provider:${providerId}`;
       const row = Math.floor(index / linkedSubscriptionColumnCount);
       const column = index % linkedSubscriptionColumnCount;
-      const layoutKey = isPinned
-        ? `pinned:${providerId}:${providers.length}:${linkedSubscriptionColumnCount}:${row}:${column}`
-        : `linked:${providerId}:${providers.length}:${linkedSubscriptionColumnCount}:${row}:${column}`;
+      const layoutKey = `linked:${providerId}:${providers.length}:${linkedSubscriptionColumnCount}:${row}:${column}`;
       const defaultPosition = {
         x: linkedSubscriptionStartX + column * (SUBSCRIPTION_WIDTH + LINKED_SUBSCRIPTION_COLUMN_GAP),
         y: layout.position.y + LINKED_SUBSCRIPTION_OFFSET_Y + row * SUBSCRIPTION_ROW_GAP,
       };
-      const position = isPinned
-        ? defaultPosition
-        : (
-          getCurrentNodePosition(subscriptionNodeId, currentNodesById, layoutKey)
-          ?? getStoredPosition(subscriptionNodeId, storedLayout, layoutKey)
-          ?? defaultPosition
-        );
+      const hasPositionOverride = hasStoredRelativePositionOverride(
+        subscriptionNodeId,
+        providerNodeId,
+        storedLayout,
+        layoutKey,
+      );
+      const position =
+        getCurrentNodePosition(subscriptionNodeId, currentNodesById, ignoredCurrentPositionIds, layoutKey)
+        ?? getStoredRelativePosition(subscriptionNodeId, providerNodeId, layout.position, storedLayout, layoutKey)
+        ?? defaultPosition;
 
       if (visibleProductIds.length > 0) {
         visibleProductIds.forEach((productId) => {
@@ -561,9 +609,8 @@ export function buildGraph({
         id: subscriptionNodeId,
         type: "subscription",
         position,
-        dragHandle: isPinned ? undefined : ".map-node-drag-handle",
+        dragHandle: ".map-node-drag-handle",
         sourcePosition: Position.Top,
-        draggable: !isPinned,
         style: { width: SUBSCRIPTION_WIDTH, minHeight: SUBSCRIPTION_MIN_HEIGHT, zIndex: 2 },
         data: {
           title: subscription.name,
@@ -578,10 +625,10 @@ export function buildGraph({
           linkActionLabel: "Unlink",
           linkedProviderNodeId: providerNodeId,
           linkState: "linked",
-          isPinned,
           layoutKey,
+          hasPositionOverride,
           onToggleLink: () => onToggleSubscriptionLink(subscription.id),
-          onTogglePin: () => onToggleSubscriptionPin(subscription.id),
+          onResetPosition: hasPositionOverride ? () => onResetNodePosition(subscriptionNodeId) : undefined,
           billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
           nextBillingLabel: formatShortDate(subscription.nextBillingAt),
           statusLabel:
@@ -624,8 +671,8 @@ export function buildGraph({
       y: standaloneY + row * SUBSCRIPTION_ROW_GAP,
     };
     const position =
-      getCurrentNodePosition(subscriptionNodeId, currentNodesById, layoutKey)
-      ?? getStoredPosition(subscriptionNodeId, storedLayout, layoutKey)
+      getCurrentNodePosition(subscriptionNodeId, currentNodesById, ignoredCurrentPositionIds, layoutKey)
+      ?? getStoredAbsolutePosition(subscriptionNodeId, storedLayout, layoutKey)
       ?? defaultPosition;
 
     subscriptionNodes.push({

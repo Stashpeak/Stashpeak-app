@@ -36,6 +36,8 @@ export interface ProductNodeData extends Record<string, unknown> {
   isLinked: boolean;
   parentProviderNodeId: string;
   layoutKey: string;
+  hasPositionOverride?: boolean;
+  onResetPosition?: () => void;
   tone: MapNodeTone;
 }
 
@@ -47,10 +49,10 @@ export interface SubscriptionNodeData extends Record<string, unknown> {
   linkActionLabel?: string;
   linkState: MapLinkState;
   onToggleLink?: () => void;
-  isPinned?: boolean;
   linkedProviderNodeId?: string;
   layoutKey: string;
-  onTogglePin?: () => void;
+  hasPositionOverride?: boolean;
+  onResetPosition?: () => void;
   billingLabel: string;
   nextBillingLabel: string;
   statusLabel: string;

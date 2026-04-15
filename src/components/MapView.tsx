@@ -16,7 +16,7 @@ import { getProductVisibility, setProductVisibility } from "../lib/api/products"
 import {
   buildGraph,
   mergeNodePositions,
-  moveAnchoredNodesWithProviders,
+  moveProviderRelativeNodesWithProviders,
   type MapEdge,
   type MapNode,
 } from "../lib/mapGraph";
@@ -28,14 +28,14 @@ import {
 } from "../lib/products";
 import { formatCurrency } from "../lib/subscriptionMetrics";
 import {
-  getPinnedSubscriptionIds,
   getSuppressedLinkIds,
   listSubscriptions,
-  setSubscriptionLinkPinned,
   setSubscriptionLinkSuppressed,
   type Subscription,
 } from "../lib/subscriptions";
 import {
+  createAbsoluteNodeLayout,
+  createRelativeNodeLayout,
   loadMapLayout,
   persistMapLayout,
   type StoredMapLayout,
@@ -65,17 +65,16 @@ export function MapView() {
   const [subscriptionsLoaded, setSubscriptionsLoaded] = useState(false);
   const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
   const [suppressedLinkIds, setSuppressedLinkIds] = useState<Record<number, boolean>>({});
-  const [pinnedSubscriptionIds, setPinnedSubscriptionIds] = useState<Record<number, boolean>>({});
   const [productVisibility, setProductVisibilityState] = useState<ProductVisibilityState>(
     createDefaultProductVisibility(),
   );
+  const [layoutVersion, setLayoutVersion] = useState(0);
   const [reactFlow, setReactFlow] = useState<ReactFlowInstance<MapNode, MapEdge> | null>(null);
   const [nodes, setNodes] = useNodesState<MapNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<MapEdge>([]);
   const { loadError, states, visibleProviders } = useSpendData();
   const pendingResetIdsRef = useRef<Set<string>>(new Set());
   const suppressedLinkIdsRef = useRef<Record<number, boolean>>({});
-  const pinnedSubscriptionIdsRef = useRef<Record<number, boolean>>({});
   const nodesRef = useRef<MapNode[]>([]);
   const storedLayoutRef = useRef<StoredMapLayout>(loadMapLayout());
 
@@ -117,50 +116,99 @@ export function MapView() {
   }, [suppressedLinkIds]);
 
   useEffect(() => {
-    pinnedSubscriptionIdsRef.current = pinnedSubscriptionIds;
-  }, [pinnedSubscriptionIds]);
-
-  useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
 
-  const persistNodePositions = useCallback((nextNodes: MapNode[]) => {
-    const nextLayout = { ...storedLayoutRef.current };
-
-    nextNodes.forEach((node) => {
-      if (node.type === "provider") {
-        nextLayout[node.id] = {
-          x: node.position.x,
-          y: node.position.y,
-        };
-        return;
-      }
-
-      if (node.type === "subscription" && !node.data.isPinned) {
-        nextLayout[node.id] = {
-          x: node.position.x,
-          y: node.position.y,
-          layoutKey: node.data.layoutKey,
-        };
-      }
-    });
-
+  const writeStoredLayout = useCallback((nextLayout: StoredMapLayout) => {
     storedLayoutRef.current = nextLayout;
     persistMapLayout(nextLayout);
   }, []);
 
+  const deleteStoredNodeLayout = useCallback((nodeId: string) => {
+    if (!(nodeId in storedLayoutRef.current)) {
+      return;
+    }
+
+    const nextLayout = { ...storedLayoutRef.current };
+    delete nextLayout[nodeId];
+    writeStoredLayout(nextLayout);
+  }, [writeStoredLayout]);
+
+  const setStoredNodeLayout = useCallback((nodeId: string, layout: ReturnType<typeof createAbsoluteNodeLayout>) => {
+    writeStoredLayout({
+      ...storedLayoutRef.current,
+      [nodeId]: layout,
+    });
+  }, [writeStoredLayout]);
+
+  const persistNodePositions = useCallback((nextNodes: MapNode[], changedPositionIds: Set<string>) => {
+    if (changedPositionIds.size === 0) {
+      return;
+    }
+
+    const nextLayout = { ...storedLayoutRef.current };
+    const nextNodesById = new Map(nextNodes.map((node) => [node.id, node]));
+    const providerPositions = new Map(
+      nextNodes
+        .filter((node): node is Extract<MapNode, { type: "provider" }> => node.type === "provider")
+        .map((node) => [node.id, node.position]),
+    );
+
+    changedPositionIds.forEach((nodeId) => {
+      const node = nextNodesById.get(nodeId);
+      if (!node) {
+        return;
+      }
+
+      if (node.type === "provider") {
+        nextLayout[node.id] = createAbsoluteNodeLayout(node.position.x, node.position.y);
+        return;
+      }
+
+      const parentNodeId =
+        node.type === "product"
+          ? node.data.parentProviderNodeId
+          : node.data.linkedProviderNodeId;
+
+      if (parentNodeId) {
+        const parentPosition = providerPositions.get(parentNodeId);
+        if (!parentPosition) {
+          return;
+        }
+
+        nextLayout[node.id] = createRelativeNodeLayout(
+          parentNodeId,
+          node.position.x - parentPosition.x,
+          node.position.y - parentPosition.y,
+          node.data.layoutKey,
+        );
+        return;
+      }
+
+      nextLayout[node.id] = createAbsoluteNodeLayout(
+        node.position.x,
+        node.position.y,
+      );
+    });
+
+    writeStoredLayout(nextLayout);
+  }, [writeStoredLayout]);
+
   const toggleSubscriptionLink = useCallback((subscriptionId: Subscription["id"]) => {
     const nextSuppressed = !suppressedLinkIdsRef.current[subscriptionId];
-    pendingResetIdsRef.current.add(`subscription:${subscriptionId}`);
-    void setSubscriptionLinkSuppressed(subscriptionId, nextSuppressed).catch(() => {});
+    const nodeId = `subscription:${subscriptionId}`;
+    const currentNode = nodesRef.current.find((node) => node.id === nodeId);
 
-    if (nextSuppressed && pinnedSubscriptionIdsRef.current[subscriptionId]) {
-      setPinnedSubscriptionIds((current) => {
-        const next = { ...current };
-        delete next[subscriptionId];
-        return next;
-      });
+    if (nextSuppressed && currentNode?.type === "subscription") {
+      setStoredNodeLayout(
+        nodeId,
+        createAbsoluteNodeLayout(currentNode.position.x, currentNode.position.y),
+      );
+    } else {
+      deleteStoredNodeLayout(nodeId);
     }
+
+    void setSubscriptionLinkSuppressed(subscriptionId, nextSuppressed).catch(() => {});
 
     setSuppressedLinkIds((current) => {
       if (current[subscriptionId]) {
@@ -174,29 +222,7 @@ export function MapView() {
         [subscriptionId]: true,
       };
     });
-  }, []);
-
-  const toggleSubscriptionPin = useCallback((subscriptionId: Subscription["id"]) => {
-    const nextPinned = !pinnedSubscriptionIdsRef.current[subscriptionId];
-    if (nextPinned) {
-      pendingResetIdsRef.current.add(`subscription:${subscriptionId}`);
-    }
-
-    void setSubscriptionLinkPinned(subscriptionId, nextPinned).catch(() => {});
-
-    setPinnedSubscriptionIds((current) => {
-      if (current[subscriptionId]) {
-        const next = { ...current };
-        delete next[subscriptionId];
-        return next;
-      }
-
-      return {
-        ...current,
-        [subscriptionId]: true,
-      };
-    });
-  }, []);
+  }, [deleteStoredNodeLayout, setStoredNodeLayout]);
 
   const toggleProductVisibility = useCallback((productId: ProductId) => {
     pendingResetIdsRef.current.add(`product:${productId}`);
@@ -211,13 +237,25 @@ export function MapView() {
     });
   }, []);
 
+  const resetNodePosition = useCallback((nodeId: string) => {
+    pendingResetIdsRef.current.add(nodeId);
+    deleteStoredNodeLayout(nodeId);
+    setLayoutVersion((current) => current + 1);
+  }, [deleteStoredNodeLayout]);
+
   const handleNodesChange = useCallback((changes: NodeChange<MapNode>[]) => {
+    const changedPositionIds = new Set(
+      changes
+        .filter((change): change is Extract<NodeChange<MapNode>, { type: "position" }> => change.type === "position")
+        .map((change) => change.id),
+    );
+
     setNodes((currentNodes) => {
       const nextNodes = applyNodeChanges(changes, currentNodes);
-      const repositionedNodes = moveAnchoredNodesWithProviders(currentNodes, nextNodes);
+      const repositionedNodes = moveProviderRelativeNodesWithProviders(currentNodes, nextNodes);
 
-      if (changes.some((change) => change.type === "position")) {
-        persistNodePositions(repositionedNodes);
+      if (changedPositionIds.size > 0) {
+        persistNodePositions(repositionedNodes, changedPositionIds);
       }
 
       return repositionedNodes;
@@ -230,14 +268,12 @@ export function MapView() {
     Promise.all([
       listSubscriptions(),
       getSuppressedLinkIds(),
-      getPinnedSubscriptionIds(),
       getProductVisibility(),
     ])
-      .then(([subscriptionData, suppressedIds, pinnedIds, visibility]) => {
+      .then(([subscriptionData, suppressedIds, visibility]) => {
         if (cancelled) return;
         setSubscriptions(subscriptionData);
         setSuppressedLinkIds(Object.fromEntries(suppressedIds.map((id) => [id, true])));
-        setPinnedSubscriptionIds(Object.fromEntries(pinnedIds.map((id) => [id, true])));
         setProductVisibilityState(visibility);
         setSubscriptionsLoaded(true);
       })
@@ -260,28 +296,28 @@ export function MapView() {
       providers: mapProviders,
       states,
       suppressedLinkIds,
-      pinnedSubscriptionIds,
       productVisibility,
       onToggleSubscriptionLink: toggleSubscriptionLink,
-      onToggleSubscriptionPin: toggleSubscriptionPin,
+      onResetNodePosition: resetNodePosition,
       storedLayout: storedLayoutRef.current,
       currentNodesById,
+      ignoredCurrentPositionIds: resetPositionIds,
     });
 
     pendingResetIdsRef.current = new Set();
     setNodes((currentNodes) => mergeNodePositions(currentNodes, nextGraph.nodes, resetPositionIds));
     setEdges(nextGraph.edges);
   }, [
+    layoutVersion,
     mapProviders,
-    pinnedSubscriptionIds,
     productVisibility,
+    resetNodePosition,
     setEdges,
     setNodes,
     states,
     subscriptions,
     suppressedLinkIds,
     toggleSubscriptionLink,
-    toggleSubscriptionPin,
   ]);
 
   useEffect(() => {
@@ -356,7 +392,7 @@ export function MapView() {
             Subscription nodes
           </span>
           <span className="rounded-full border px-3 py-1.5 text-xs text-[var(--text-secondary)] border-[var(--glass-border)] bg-[var(--glass-bg)]">
-            Drag providers and subscriptions to personalize the layout
+            Drag providers and child nodes to personalize the layout
           </span>
         </div>
 
