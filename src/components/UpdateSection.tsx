@@ -17,7 +17,7 @@ export function UpdateSection({
 }: UpdateSectionProps) {
   const [appVersion, setAppVersion] = useState("");
   const [checkState, setCheckState] = useState<CheckState>("idle");
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string | null } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null);
   const updateRef = useRef<Update | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadTotal, setDownloadTotal] = useState<number | null>(null);
@@ -37,7 +37,7 @@ export function UpdateSection({
       void checkForUpdate().then((result) => {
         if (result) {
           updateRef.current = result.update;
-          setUpdateInfo({ version: result.info.version, body: result.info.body });
+          setUpdateInfo({ version: result.info.version });
         }
       });
     }
@@ -50,7 +50,7 @@ export function UpdateSection({
       const result = await checkForUpdate();
       if (result) {
         updateRef.current = result.update;
-        setUpdateInfo({ version: result.info.version, body: result.info.body });
+        setUpdateInfo({ version: result.info.version });
         setCheckState("available");
         return;
       }
@@ -112,14 +112,10 @@ export function UpdateSection({
 
       {checkState === "available" && (
         <div className="space-y-2">
-          {updateInfo && (
-            <p className="text-xs text-secondary">
-              v{updateInfo.version} is available.
-              {updateInfo.body && (
-                <span className="mt-1 block whitespace-pre-wrap text-ink/70">{updateInfo.body}</span>
-              )}
-            </p>
-          )}
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-medium text-ink">A new version is ready</h3>
+            {updateInfo && <p className="text-xs text-secondary">v{updateInfo.version}</p>}
+          </div>
           <button
             onClick={() => void handleInstall()}
             className="cursor-pointer rounded-full bg-primary px-4 py-1.5 text-sm text-white transition-all hover:bg-primary/90"
