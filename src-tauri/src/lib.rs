@@ -3,6 +3,7 @@ mod currency;
 mod db;
 mod logging;
 mod notifications;
+mod products;
 mod providers;
 mod secrets;
 mod settings;
@@ -143,6 +144,14 @@ async fn get_pinned_subscription_ids() -> Result<Vec<i64>, String> {
 }
 
 #[tauri::command]
+async fn get_product_visibility() -> Result<Vec<products::ProductVisibility>, String> {
+    run_blocking("get_product_visibility", move || {
+        products::get_product_visibility().map_err(|err| err.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
 async fn set_subscription_link_suppressed(id: i64, suppressed: bool) -> Result<(), String> {
     run_blocking("set_subscription_link_suppressed", move || {
         subscriptions::set_subscription_link_suppressed(id, suppressed)
@@ -155,6 +164,14 @@ async fn set_subscription_link_suppressed(id: i64, suppressed: bool) -> Result<(
 async fn set_subscription_link_pinned(id: i64, pinned: bool) -> Result<(), String> {
     run_blocking("set_subscription_link_pinned", move || {
         subscriptions::set_subscription_link_pinned(id, pinned).map_err(|err| err.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn set_product_visibility(product_id: String, enabled: bool) -> Result<(), String> {
+    run_blocking("set_product_visibility", move || {
+        products::set_product_visibility(product_id, enabled).map_err(|err| err.to_string())
     })
     .await
 }
@@ -316,8 +333,10 @@ pub fn run() {
             delete_subscription,
             get_suppressed_link_ids,
             get_pinned_subscription_ids,
+            get_product_visibility,
             set_subscription_link_suppressed,
             set_subscription_link_pinned,
+            set_product_visibility,
             get_notification_settings,
             set_notification_days,
             set_notifications_enabled,

@@ -1,0 +1,52 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, reopened, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  defaults:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply default labels and milestone
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const issueNumber = issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = (issue.title || "").toLowerCase();
+            const existingLabels = (issue.labels || []).map((label) => label.name);
+
+            if (existingLabels.length === 0) {
+              const defaultLabel = title.startsWith("bug:") ? "bug" : "enhancement";
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                labels: [defaultLabel]
+              });
+            }
+
+            if (!issue.milestone) {
+              const milestones = await github.paginate(github.rest.issues.listMilestones, {
+                owner,
+                repo,
+                state: "open",
+                per_page: 100
+              });
+              const backlog = milestones.find((milestone) => milestone.title === "Backlog");
+              if (backlog) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                  milestone: backlog.number
+                });
+              }
+            }

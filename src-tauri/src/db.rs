@@ -46,5 +46,6 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/004_provider_enabled.sql")),
         M::up(include_str!("migrations/005_subscription_link_overrides.sql")),
         M::up(include_str!("migrations/006_subscription_link_pins.sql")),
+        M::up(include_str!("migrations/007_product_visibility.sql")),
     ])
 }
