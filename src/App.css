@@ -369,10 +369,10 @@
   }
 
   .stashpeak-map {
-    --xy-controls-button-background-color: rgba(255, 255, 255, 0.08);
-    --xy-controls-button-background-color-hover: rgba(255, 255, 255, 0.14);
-    --xy-controls-button-color: rgba(255, 255, 255, 0.96);
-    --xy-controls-button-color-hover: rgba(255, 255, 255, 1);
+    --xy-controls-button-background-color: var(--map-control-button-bg);
+    --xy-controls-button-background-color-hover: var(--map-control-button-bg-hover);
+    --xy-controls-button-color: var(--map-control-button-color);
+    --xy-controls-button-color-hover: var(--map-control-button-color);
     --xy-controls-button-border-color: transparent;
   }
 
