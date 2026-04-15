@@ -74,6 +74,10 @@
     --map-control-button-bg: transparent;
     --map-control-button-bg-hover: rgba(0, 0, 0, 0.07);
     --map-control-button-color: rgba(0, 0, 0, 0.78);
+    --xy-controls-button-background-color: transparent;
+    --xy-controls-button-background-color-hover: rgba(0, 0, 0, 0.07);
+    --xy-controls-button-color: rgba(0, 0, 0, 0.78);
+    --xy-controls-button-border-color: rgba(0, 0, 0, 0.12);
     --map-control-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
     --map-minimap-mask: rgba(173, 70, 255, 0.06);
     --map-panel-shadow: 0 18px 40px rgba(15, 23, 42, 0.1);
@@ -129,6 +133,10 @@
     --map-control-button-bg: transparent;
     --map-control-button-bg-hover: rgba(255, 255, 255, 0.12);
     --map-control-button-color: rgba(255, 255, 255, 0.96);
+    --xy-controls-button-background-color: transparent;
+    --xy-controls-button-background-color-hover: rgba(255, 255, 255, 0.12);
+    --xy-controls-button-color: rgba(255, 255, 255, 0.96);
+    --xy-controls-button-border-color: rgba(255, 255, 255, 0.25);
     --map-control-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
     --map-minimap-mask: rgba(173, 70, 255, 0.12);
     --map-panel-shadow: 0 22px 54px rgba(0, 0, 0, 0.36);
@@ -200,8 +208,8 @@
     position: relative;
     isolation: isolate;
     border: 1px solid transparent;
-    backdrop-filter: blur(5px);
     -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(5px);
   }
 
   .glass-surface,
@@ -380,8 +388,8 @@
     border: 1px solid var(--glass-border);
     border-radius: 9999px;
     background: var(--map-control-bg);
-    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     box-shadow: var(--map-control-shadow);
   }
 
@@ -411,8 +419,8 @@
     border: 1px solid var(--glass-border);
     border-radius: 1.25rem;
     background: var(--map-control-bg);
-    backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     box-shadow: var(--map-panel-shadow);
     overflow: hidden;
   }
