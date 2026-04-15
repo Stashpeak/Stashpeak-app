@@ -15,7 +15,7 @@ export interface UpdateInfo {
  */
 export async function checkForUpdate(): Promise<{ info: UpdateInfo; update: Update } | null> {
   const update = await check();
-  if (!update?.available) return null;
+  if (!update) return null;
   return {
     info: {
       version: update.version,
@@ -50,6 +50,4 @@ export async function downloadAndInstall(
         break;
     }
   });
-
-  await update.relaunch();
 }
