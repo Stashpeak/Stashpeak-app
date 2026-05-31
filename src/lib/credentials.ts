@@ -9,14 +9,6 @@ export async function storeProviderApiKey(provider: ProviderId, value: string): 
   }
 }
 
-export async function getProviderApiKey(provider: ProviderId): Promise<string | null> {
-  try {
-    return await invoke<string | null>("get_provider_api_key", { provider });
-  } catch (e) {
-    throw new Error(`Failed to get API key for ${provider}: ${e}`);
-  }
-}
-
 export async function deleteProviderApiKey(provider: ProviderId): Promise<void> {
   try {
     await invoke("delete_provider_api_key", { provider });

@@ -49,16 +49,6 @@ async fn store_provider_api_key(provider: String, value: String) -> Result<(), S
 }
 
 #[tauri::command]
-async fn get_provider_api_key(provider: String) -> Result<Option<String>, String> {
-    run_blocking("get_provider_api_key", move || {
-        secrets::get_provider_api_key(&provider)
-            .map(|opt| opt.map(|z| (*z).clone()))
-            .map_err(|err| err.to_string())
-    })
-    .await
-}
-
-#[tauri::command]
 async fn delete_provider_api_key(provider: String) -> Result<(), String> {
     run_blocking("delete_provider_api_key", move || {
         secrets::delete_provider_api_key(&provider).map_err(|err| err.to_string())
@@ -322,7 +312,6 @@ pub fn run() {
             get_upcoming_renewals,
             db_path,
             store_provider_api_key,
-            get_provider_api_key,
             delete_provider_api_key,
             has_provider_api_key,
             set_provider_enabled,
