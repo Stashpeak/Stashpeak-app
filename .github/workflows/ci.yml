@@ -1,0 +1,89 @@
+name: CI
+
+# First functional CI on pull requests: typecheck + frontend build + vitest
+# (frontend job) and cargo test (rust job). Before this, the only PR check was
+# validate-pr-body.
+#
+# NOTE: these jobs report pass/fail but are ADVISORY for now — branch protection
+# / required status checks are unavailable on this repo's current plan (private
+# repo without GitHub Pro/Team; the API returns 403, the same constraint noted
+# in codeql.yml). Once the repo is public or the org upgrades, mark the
+# "Frontend (typecheck + vitest)" and "Rust (cargo test)" checks as required in
+# branch protection so a red run actually blocks merges. See #118.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. successive pushes to a PR).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (typecheck + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` = `tsc && vite build` — doubles as the typecheck gate.
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+  rust:
+    name: Rust (cargo test)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libdbus-1-dev \
+            patchelf
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # tauri::generate_context!() embeds frontendDist (../dist) at compile time,
+      # so the frontend must be built before the Rust crate will compile.
+      - name: Build frontend (provides dist/ for generate_context!)
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
