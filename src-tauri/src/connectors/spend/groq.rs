@@ -45,3 +45,24 @@ impl SpendConnector for GroqConnector {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Pins the deliberate "no public billing API yet" contract so the registry
+    // migration (#123) cannot silently change Groq's behavior. fetch() makes no
+    // network or keychain call, so it is fully offline.
+    #[tokio::test]
+    async fn fetch_reports_no_billing_api() {
+        let connector = GroqConnector::new(Client::new());
+        let err = connector.fetch().await.unwrap_err();
+        match err {
+            ConnectorError::ApiError { status, body } => {
+                assert_eq!(status, 0);
+                assert!(body.contains("Groq does not currently expose a public billing API"));
+            }
+            other => panic!("expected ApiError, got {other:?}"),
+        }
+    }
+}

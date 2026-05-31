@@ -115,51 +115,90 @@ impl GcpConnector {
             .await
             .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
-        let status = res.status();
-        if !status.is_success() {
-            let body = res.text().await.unwrap_or_default();
+        let status = res.status().as_u16();
+        // Read failure-tolerantly so a non-2xx status (incl. the "Not found:
+        // Table" body check) is classified correctly even if the body read
+        // fails, and a 2xx with an unreadable body fails to parse → ApiError,
+        // matching the original `.json()` semantics.
+        let bytes = res.bytes().await.unwrap_or_default();
 
-            // Check if the table was not found
-            if body.contains("Not found: Table") {
-                return Err(ConnectorError::Config("BigQuery export not yet populated — allow up to 48h after initial setup".into()));
-            }
-
-            if status.as_u16() == 401 || status.as_u16() == 403 {
-                return Err(ConnectorError::Unauthorized);
-            }
-            return Err(ConnectorError::ApiError { status: status.as_u16(), body });
+        if let Some(err) = classify_bq_status(status, &String::from_utf8_lossy(&bytes)) {
+            return Err(err);
         }
 
-        #[derive(Deserialize)]
-        struct QueryResponse {
-            rows: Option<Vec<Row>>,
-        }
-        #[derive(Deserialize)]
-        struct Row {
-            f: Vec<Cell>,
-        }
-        #[derive(Deserialize)]
-        struct Cell {
-            v: Option<String>,
-        }
+        parse_bq_total(status, &bytes)
+    }
+}
 
-        let resp: QueryResponse = res.json().await.map_err(|e| ConnectorError::ApiError {
-            status: status.as_u16(),
+// ── BigQuery response shapes ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct QueryResponse {
+    rows: Option<Vec<Row>>,
+}
+
+#[derive(Deserialize)]
+struct Row {
+    f: Vec<Cell>,
+}
+
+#[derive(Deserialize)]
+struct Cell {
+    v: Option<String>,
+}
+
+// ── Pure response handling (offline-testable; see #118 parity harness) ────────
+
+/// Map a non-success BigQuery HTTP status (and body) to a [`ConnectorError`], or
+/// `None` to proceed to parsing. A "Not found: Table" body means the billing
+/// export is not populated yet (config issue) regardless of status code. This is
+/// the response→error contract the registry inversion (#123) must preserve.
+fn classify_bq_status(status: u16, body: &str) -> Option<ConnectorError> {
+    if (200..300).contains(&status) {
+        return None;
+    }
+
+    if body.contains("Not found: Table") {
+        return Some(ConnectorError::Config(
+            "BigQuery export not yet populated — allow up to 48h after initial setup".into(),
+        ));
+    }
+
+    if status == 401 || status == 403 {
+        return Some(ConnectorError::Unauthorized);
+    }
+
+    Some(ConnectorError::ApiError {
+        status,
+        body: body.to_string(),
+    })
+}
+
+/// Parse a BigQuery `queries` response body into the summed cost (USD).
+fn parse_bq_total(status: u16, body: &[u8]) -> Result<f64, ConnectorError> {
+    let resp: QueryResponse =
+        serde_json::from_slice(body).map_err(|e| ConnectorError::ApiError {
+            status,
             body: format!("Failed to parse BQ response: {e}"),
         })?;
+    Ok(extract_bq_total(&resp))
+}
 
-        if let Some(rows) = resp.rows {
-            if let Some(first_row) = rows.first() {
-                if let Some(first_cell) = first_row.f.first() {
-                    if let Some(val_str) = &first_cell.v {
-                        return Ok(val_str.parse::<f64>().unwrap_or(0.0));
-                    }
-                }
-            }
-        }
+/// Extract `rows[0].f[0].v` as f64; missing rows or a null sum mean 0 spend.
+fn extract_bq_total(resp: &QueryResponse) -> f64 {
+    resp.rows
+        .as_ref()
+        .and_then(|rows| rows.first())
+        .and_then(|row| row.f.first())
+        .and_then(|cell| cell.v.as_ref())
+        .and_then(|val| val.parse::<f64>().ok())
+        .unwrap_or(0.0)
+}
 
-        Ok(0.0) // No rows or null sum means 0 spend
-    }
+/// Parse the composite GCP keychain blob (service-account key + BQ coordinates).
+fn parse_keychain_payload(raw: &str) -> Result<KeychainPayload, ConnectorError> {
+    serde_json::from_str(raw)
+        .map_err(|e| ConnectorError::Config(format!("Failed to parse GCP keychain payload: {e}")))
 }
 
 fn validate_bq_identifier(field_name: &str, value: &str) -> Result<(), ConnectorError> {
@@ -226,8 +265,7 @@ impl SpendConnector for GcpConnector {
         .await
         .map_err(|e| ConnectorError::Config(format!("keychain task failed: {e}")))??;
 
-        let payload: KeychainPayload = serde_json::from_str(&payload_str)
-            .map_err(|e| ConnectorError::Config(format!("Failed to parse GCP keychain payload: {e}")))?;
+        let payload = parse_keychain_payload(&payload_str)?;
 
         // Ensure private key is scrubbed from logs
         crate::logging::remember_secret(&payload.service_account_key.private_key);
@@ -322,5 +360,74 @@ mod tests {
             err.to_string(),
             "configuration error: Invalid invoice month: month must be between 01 and 12"
         );
+    }
+
+    #[test]
+    fn extracts_bq_total_from_first_cell() {
+        let body = br#"{"rows": [{"f": [{"v": "123.45"}]}]}"#;
+        assert_eq!(parse_bq_total(200, body).unwrap(), 123.45);
+    }
+
+    #[test]
+    fn null_or_missing_rows_mean_zero_spend() {
+        assert_eq!(parse_bq_total(200, br#"{"rows": null}"#).unwrap(), 0.0);
+        assert_eq!(parse_bq_total(200, br#"{}"#).unwrap(), 0.0);
+        assert_eq!(
+            parse_bq_total(200, br#"{"rows": [{"f": [{"v": null}]}]}"#).unwrap(),
+            0.0
+        );
+    }
+
+    #[test]
+    fn bq_parse_failure_surfaces_as_api_error() {
+        let err = parse_bq_total(200, b"not json").unwrap_err();
+        assert!(matches!(err, ConnectorError::ApiError { status: 200, .. }));
+    }
+
+    #[test]
+    fn classifies_missing_table_as_config_error() {
+        let body = "Error: Not found: Table my-project:billing.export";
+        assert!(matches!(
+            classify_bq_status(404, body),
+            Some(ConnectorError::Config(_))
+        ));
+    }
+
+    #[test]
+    fn classifies_auth_and_server_errors() {
+        assert!(matches!(classify_bq_status(401, ""), Some(ConnectorError::Unauthorized)));
+        assert!(matches!(classify_bq_status(403, ""), Some(ConnectorError::Unauthorized)));
+        assert!(matches!(
+            classify_bq_status(500, "boom"),
+            Some(ConnectorError::ApiError { status: 500, .. })
+        ));
+        assert!(classify_bq_status(200, "").is_none());
+    }
+
+    #[test]
+    fn parses_composite_keychain_blob() {
+        let raw = r#"{
+            "service_account_key": {
+                "client_email": "svc@proj.iam.gserviceaccount.com",
+                "private_key": "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n"
+            },
+            "project_id": "my-proj",
+            "dataset_id": "billing_export",
+            "table_name": "gcp_billing_v1"
+        }"#;
+        let payload = parse_keychain_payload(raw).unwrap();
+        assert_eq!(payload.project_id, "my-proj");
+        assert_eq!(payload.dataset_id, "billing_export");
+        assert_eq!(payload.table_name, "gcp_billing_v1");
+        assert_eq!(
+            payload.service_account_key.client_email,
+            "svc@proj.iam.gserviceaccount.com"
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_keychain_blob() {
+        let result = parse_keychain_payload("{ not valid");
+        assert!(matches!(result, Err(ConnectorError::Config(_))));
     }
 }
