@@ -3,6 +3,8 @@ pub mod http;
 pub mod registry;
 pub mod spend;
 
+pub use http::{Auth, ConnectorCtx, ConnectorRequest};
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -50,21 +52,24 @@ impl std::fmt::Display for ConnectorError {
 
 /// Common interface for all spend-tracking provider connectors.
 ///
-/// Implementors load their own API key from the OS keychain (via `crate::secrets`)
-/// and make HTTP requests through the shared client from `crate::connectors::http`.
-/// All outbound calls are logged with `tracing::` macros so the global
-/// `SecretScrubbingLayer` in `crate::logging` automatically redacts any key values.
+/// Implementors do **not** touch `reqwest` or `secrets` directly: they build a
+/// credential-free [`ConnectorRequest`] and call [`ConnectorCtx::send`], which
+/// reads the keychain, injects the connector's identity-bound credential, and
+/// performs the egress. All outbound calls are logged with `tracing::` macros so
+/// the global `SecretScrubbingLayer` in `crate::logging` redacts any key values.
+/// (GCP is the one connector not yet on the broker — see `spend::gcp`; #121.)
 #[async_trait]
 pub trait SpendConnector: Send + Sync {
     /// Stable provider identifier (e.g. `"openrouter"`). Must match the keychain key.
     fn provider_id(&self) -> &'static str;
 
-    /// Fetch current spend data from the provider API.
+    /// Fetch current spend data from the provider API, using `ctx` for all
+    /// credential access and network egress.
     ///
     /// Returns `Err(ConnectorError::Unauthorized)` if the key is missing or rejected.
     /// Returns `Err(ConnectorError::Network(_))` on transient failures — these are
     /// eligible for retry via `with_retry`.
-    async fn fetch(&self) -> Result<SpendData, ConnectorError>;
+    async fn fetch(&self, ctx: &ConnectorCtx) -> Result<SpendData, ConnectorError>;
 }
 
 /// Retry policy for connector calls.
@@ -96,8 +101,10 @@ where
         match f().await {
             Ok(val) => return Ok(val),
             Err(err) => {
-                let retryable =
-                    matches!(err, ConnectorError::Network(_) | ConnectorError::RateLimited);
+                let retryable = matches!(
+                    err,
+                    ConnectorError::Network(_) | ConnectorError::RateLimited
+                );
 
                 if !retryable {
                     return Err(err);

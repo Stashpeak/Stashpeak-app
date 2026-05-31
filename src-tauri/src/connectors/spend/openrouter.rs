@@ -1,24 +1,16 @@
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 
-use crate::connectors::{ConnectorError, SpendConnector, SpendData};
-use crate::secrets;
+use crate::connectors::{
+    Auth, ConnectorCtx, ConnectorError, ConnectorRequest, SpendConnector, SpendData,
+};
 
 /// Connector for the OpenRouter provider.
 ///
 /// Endpoint: `GET https://openrouter.ai/api/v1/auth/key`
 /// Returns current-period usage in USD. Previous-month data is not available
 /// via the public API and defaults to 0.0 until OpenRouter exposes it.
-pub struct OpenRouterConnector {
-    client: Client,
-}
-
-impl OpenRouterConnector {
-    pub fn new(client: Client) -> Self {
-        Self { client }
-    }
-}
+pub struct OpenRouterConnector;
 
 // ── Response shapes ──────────────────────────────────────────────────────────
 
@@ -68,32 +60,16 @@ impl SpendConnector for OpenRouterConnector {
         "openrouter"
     }
 
-    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
-        // Keychain access is a blocking OS call — run it on the thread pool.
-        let api_key = tauri::async_runtime::spawn_blocking(|| {
-            secrets::get_provider_api_key("openrouter")
-                .map_err(|e| ConnectorError::Config(e.to_string()))
-                .and_then(|opt| opt.ok_or(ConnectorError::Unauthorized))
-        })
-        .await
-        .map_err(|e| ConnectorError::Config(format!("keychain task failed: {e}")))??;
+    async fn fetch(&self, ctx: &ConnectorCtx) -> Result<SpendData, ConnectorError> {
+        tracing::debug!(
+            provider = "openrouter",
+            endpoint = "/api/v1/auth/key",
+            "fetching spend"
+        );
 
-        tracing::debug!(provider = "openrouter", endpoint = "/api/v1/auth/key", "fetching spend");
-
-        let response = self
-            .client
-            .get("https://openrouter.ai/api/v1/auth/key")
-            .header("Authorization", format!("Bearer {}", &*api_key))
-            .send()
-            .await
-            .map_err(|e| ConnectorError::Network(e.to_string()))?;
-
-        let status = response.status().as_u16();
-        // Read the body failure-tolerantly: terminal statuses (401/403/429) are
-        // decided from the status code alone, so a mid-body transport failure
-        // must not flip them into a retryable error; on 2xx an empty body then
-        // fails to parse → ApiError, matching the original `.json()` semantics.
-        let bytes = response.bytes().await.unwrap_or_default();
+        let (status, bytes) = ctx
+            .send(ConnectorRequest::get("https://openrouter.ai/api/v1/auth/key").auth(Auth::Bearer))
+            .await?;
 
         if let Some(err) = classify_status(status, &String::from_utf8_lossy(&bytes)) {
             return Err(err);
@@ -135,9 +111,18 @@ mod tests {
 
     #[test]
     fn classifies_auth_and_rate_limit_statuses() {
-        assert!(matches!(classify_status(401, ""), Some(ConnectorError::Unauthorized)));
-        assert!(matches!(classify_status(403, ""), Some(ConnectorError::Unauthorized)));
-        assert!(matches!(classify_status(429, ""), Some(ConnectorError::RateLimited)));
+        assert!(matches!(
+            classify_status(401, ""),
+            Some(ConnectorError::Unauthorized)
+        ));
+        assert!(matches!(
+            classify_status(403, ""),
+            Some(ConnectorError::Unauthorized)
+        ));
+        assert!(matches!(
+            classify_status(429, ""),
+            Some(ConnectorError::RateLimited)
+        ));
     }
 
     #[test]
@@ -154,5 +139,63 @@ mod tests {
     #[test]
     fn success_status_proceeds_to_parsing() {
         assert!(classify_status(200, "").is_none());
+    }
+
+    // ── Broker integration (design choice #1: with_retry wraps the WHOLE fetch) ──
+
+    use crate::connectors::http::{test_descriptor, FakeTransport, RawResponse};
+    use crate::connectors::{with_retry, RetryConfig};
+    use std::sync::Arc;
+
+    fn instant_retry() -> RetryConfig {
+        RetryConfig {
+            max_attempts: 3,
+            initial_delay_ms: 0,
+        }
+    }
+
+    /// A `Network` from `ctx.send` must retry the WHOLE `fetch`, not just the
+    /// round-trip: the connector's `fetch` runs again and succeeds.
+    #[tokio::test]
+    async fn network_from_send_retries_the_whole_fetch() {
+        let transport = Arc::new(FakeTransport::new(vec![
+            Err("connection reset".to_string()),
+            Ok(RawResponse {
+                status: 200,
+                body: Ok(br#"{"data": {"usage": 1.0}}"#.to_vec()),
+            }),
+        ]));
+        let ctx = ConnectorCtx::with_transport(test_descriptor("openrouter"), transport.clone());
+        ctx.seed_credential("sk-test");
+
+        let connector = OpenRouterConnector;
+        let result = with_retry(&instant_retry(), || connector.fetch(&ctx)).await;
+
+        assert!((result.unwrap().current_month_usd - 1.0).abs() < 1e-9);
+        assert_eq!(
+            transport.captured.lock().unwrap().len(),
+            2,
+            "a Network from ctx.send should drive a whole-fetch retry"
+        );
+    }
+
+    /// A terminal status (401 → Unauthorized) is NOT retried: the whole fetch
+    /// runs exactly once.
+    #[tokio::test]
+    async fn unauthorized_from_send_is_not_retried() {
+        let transport = Arc::new(FakeTransport::new(vec![Ok(RawResponse {
+            status: 401,
+            body: Ok(Vec::new()),
+        })]));
+        let ctx = ConnectorCtx::with_transport(test_descriptor("openrouter"), transport.clone());
+        ctx.seed_credential("sk-test");
+
+        let connector = OpenRouterConnector;
+        let err = with_retry(&instant_retry(), || connector.fetch(&ctx))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectorError::Unauthorized));
+        assert_eq!(transport.captured.lock().unwrap().len(), 1);
     }
 }

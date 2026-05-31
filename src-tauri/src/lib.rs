@@ -168,7 +168,11 @@ async fn set_product_visibility(product_id: String, enabled: bool) -> Result<(),
 
 #[tauri::command]
 async fn get_notification_settings() -> Result<settings::NotificationSettings, String> {
-    run_blocking("get_notification_settings", settings::get_notification_settings).await
+    run_blocking(
+        "get_notification_settings",
+        settings::get_notification_settings,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -216,7 +220,7 @@ async fn upsert_exchange_rate(from: String, to: String, rate: f64) -> Result<(),
 #[tauri::command]
 async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
     use connectors::registry::spend_connector_registry;
-    use connectors::{http, SpendConnector, DEFAULT_RETRY};
+    use connectors::{http, ConnectorCtx, SpendConnector, DEFAULT_RETRY};
 
     let registry = spend_connector_registry();
 
@@ -226,15 +230,27 @@ async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData,
     let registration = registry
         .get(&provider)
         .ok_or_else(|| format!("unknown provider '{provider}'"))?;
-    let connector: Box<dyn SpendConnector> = (registration.factory)(http::build_client());
+
+    let client = http::build_client();
+    let connector: Box<dyn SpendConnector> = (registration.factory)(client.clone());
 
     if !providers::is_provider_enabled(&provider)? {
-        tracing::debug!(provider = connector.provider_id(), "provider is disabled, skipping fetch");
+        tracing::debug!(
+            provider = connector.provider_id(),
+            "provider is disabled, skipping fetch"
+        );
         return Err(format!("Provider {} is disabled", provider));
     }
 
+    // The host broker, bound to THIS connector's descriptor — the connector's
+    // only path to its identity-bound credential and to network egress.
+    let ctx = ConnectorCtx::new(registration.descriptor.clone(), client);
+
+    // with_retry still wraps the whole fetch as one unit: a connector that issues
+    // several `ctx.send`s (pagination, multi-period) retries together, exactly as
+    // before the broker. ctx.send itself does a single round-trip.
     tracing::debug!(provider = connector.provider_id(), "spend fetch requested");
-    connectors::with_retry(&DEFAULT_RETRY, || connector.fetch())
+    connectors::with_retry(&DEFAULT_RETRY, || connector.fetch(&ctx))
         .await
         .map_err(|e| e.to_string())
 }
@@ -254,8 +270,8 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             {
-                use tauri::Manager;
                 use tauri::tray::TrayIconBuilder;
+                use tauri::Manager;
 
                 if let Some(window) = app.get_webview_window("main") {
                     #[cfg(target_os = "macos")]
@@ -287,8 +303,7 @@ pub fn run() {
             // mid-session, not only at startup.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let mut interval =
-                    tokio::time::interval(std::time::Duration::from_secs(30 * 60));
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
                 interval.tick().await; // skip first tick — startup already ran
                 loop {
                     interval.tick().await;

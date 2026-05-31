@@ -4,7 +4,7 @@ use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::connectors::{ConnectorError, SpendConnector, SpendData};
+use crate::connectors::{ConnectorCtx, ConnectorError, SpendConnector, SpendData};
 use crate::secrets;
 
 const BQ_SCOPE: &str = "https://www.googleapis.com/auth/bigquery.readonly";
@@ -19,7 +19,11 @@ impl GcpConnector {
         Self { client }
     }
 
-    async fn get_access_token(&self, email: &str, private_key: &str) -> Result<String, ConnectorError> {
+    async fn get_access_token(
+        &self,
+        email: &str,
+        private_key: &str,
+    ) -> Result<String, ConnectorError> {
         #[derive(Serialize)]
         struct Claims {
             iss: String,
@@ -51,7 +55,9 @@ impl GcpConnector {
             assertion: &'a str,
         }
 
-        let res = self.client.post(TOKEN_URL)
+        let res = self
+            .client
+            .post(TOKEN_URL)
             .form(&TokenRequest {
                 grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
                 assertion: &jwt,
@@ -71,8 +77,9 @@ impl GcpConnector {
             access_token: String,
         }
 
-        let parsed: TokenResponse = res.json().await.map_err(|e| {
-            ConnectorError::ApiError { status: 200, body: format!("Failed to parse token response: {e}") }
+        let parsed: TokenResponse = res.json().await.map_err(|e| ConnectorError::ApiError {
+            status: 200,
+            body: format!("Failed to parse token response: {e}"),
         })?;
 
         Ok(parsed.access_token)
@@ -107,10 +114,18 @@ impl GcpConnector {
             use_legacy_sql: bool,
         }
 
-        let url = format!("https://bigquery.googleapis.com/bigquery/v2/projects/{}/queries", project_id);
-        let res = self.client.post(&url)
+        let url = format!(
+            "https://bigquery.googleapis.com/bigquery/v2/projects/{}/queries",
+            project_id
+        );
+        let res = self
+            .client
+            .post(&url)
             .header("Authorization", format!("Bearer {token}"))
-            .json(&QueryRequest { query, use_legacy_sql: false })
+            .json(&QueryRequest {
+                query,
+                use_legacy_sql: false,
+            })
             .send()
             .await
             .map_err(|e| ConnectorError::Network(e.to_string()))?;
@@ -256,7 +271,11 @@ impl SpendConnector for GcpConnector {
         "gcp"
     }
 
-    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
+    // GCP is not yet routed through the host broker — it keeps its own reqwest
+    // client, composite-credential read, and RS256 signing in #120. Its migration
+    // onto `ctx` (+ `ctx.sign` / composite credential_schema) lands in #121, so it
+    // ignores the broker handle for now. See `docs/EXTENSIONS_SPEC.md` §9.
+    async fn fetch(&self, _ctx: &ConnectorCtx) -> Result<SpendData, ConnectorError> {
         let payload_str = tauri::async_runtime::spawn_blocking(|| {
             secrets::get_provider_api_key("gcp")
                 .map_err(|e| ConnectorError::Config(e.to_string()))
@@ -277,11 +296,12 @@ impl SpendConnector for GcpConnector {
             "fetching token for GCP"
         );
 
-        let token = self.get_access_token(
-            &payload.service_account_key.client_email,
-            &payload.service_account_key.private_key,
-        )
-        .await?;
+        let token = self
+            .get_access_token(
+                &payload.service_account_key.client_email,
+                &payload.service_account_key.private_key,
+            )
+            .await?;
 
         let now = Utc::now();
         let (prev_year, prev_month) = if now.month() == 1 {
@@ -290,23 +310,27 @@ impl SpendConnector for GcpConnector {
             (now.year(), now.month() - 1)
         };
 
-        let current_month_usd = self.fetch_month_spend(
-            &token,
-            &payload.project_id,
-            &payload.dataset_id,
-            &payload.table_name,
-            now.year(),
-            now.month()
-        ).await?;
+        let current_month_usd = self
+            .fetch_month_spend(
+                &token,
+                &payload.project_id,
+                &payload.dataset_id,
+                &payload.table_name,
+                now.year(),
+                now.month(),
+            )
+            .await?;
 
-        let previous_month_usd = self.fetch_month_spend(
-            &token,
-            &payload.project_id,
-            &payload.dataset_id,
-            &payload.table_name,
-            prev_year,
-            prev_month
-        ).await?;
+        let previous_month_usd = self
+            .fetch_month_spend(
+                &token,
+                &payload.project_id,
+                &payload.dataset_id,
+                &payload.table_name,
+                prev_year,
+                prev_month,
+            )
+            .await?;
 
         Ok(SpendData {
             current_month_usd,
@@ -395,8 +419,14 @@ mod tests {
 
     #[test]
     fn classifies_auth_and_server_errors() {
-        assert!(matches!(classify_bq_status(401, ""), Some(ConnectorError::Unauthorized)));
-        assert!(matches!(classify_bq_status(403, ""), Some(ConnectorError::Unauthorized)));
+        assert!(matches!(
+            classify_bq_status(401, ""),
+            Some(ConnectorError::Unauthorized)
+        ));
+        assert!(matches!(
+            classify_bq_status(403, ""),
+            Some(ConnectorError::Unauthorized)
+        ));
         assert!(matches!(
             classify_bq_status(500, "boom"),
             Some(ConnectorError::ApiError { status: 500, .. })
