@@ -215,23 +215,18 @@ async fn upsert_exchange_rate(from: String, to: String, rate: f64) -> Result<(),
 
 #[tauri::command]
 async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData, String> {
-    use connectors::spend::anthropic::AnthropicConnector;
-    use connectors::spend::gcp::GcpConnector;
-    use connectors::spend::groq::GroqConnector;
-    use connectors::spend::openai::OpenAiConnector;
-    use connectors::spend::openrouter::OpenRouterConnector;
+    use connectors::registry::spend_connector_registry;
     use connectors::{http, SpendConnector, DEFAULT_RETRY};
 
-    let client = http::build_client();
+    let registry = spend_connector_registry();
 
-    let connector: Box<dyn SpendConnector> = match provider.as_str() {
-        "anthropic" => Box::new(AnthropicConnector::new(client)),
-        "openai" => Box::new(OpenAiConnector::new(client)),
-        "openrouter" => Box::new(OpenRouterConnector::new(client)),
-        "groq" => Box::new(GroqConnector::new(client)),
-        "gcp" => Box::new(GcpConnector::new(client)),
-        other => return Err(format!("unknown provider '{other}'")),
-    };
+    // The registry is the dispatch whitelist gate: an unregistered id is
+    // rejected here, before any keychain or network I/O. This moves (does not
+    // delete) the ProviderId::parse boundary that still guards the keychain/DB.
+    let registration = registry
+        .get(&provider)
+        .ok_or_else(|| format!("unknown provider '{provider}'"))?;
+    let connector: Box<dyn SpendConnector> = (registration.factory)(http::build_client());
 
     if !providers::is_provider_enabled(&provider)? {
         tracing::debug!(provider = connector.provider_id(), "provider is disabled, skipping fetch");

@@ -1,4 +1,6 @@
+pub mod descriptor;
 pub mod http;
+pub mod registry;
 pub mod spend;
 
 use async_trait::async_trait;
