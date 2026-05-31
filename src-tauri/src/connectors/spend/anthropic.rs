@@ -76,16 +76,19 @@ impl AnthropicConnector {
                 .await
                 .map_err(|e| ConnectorError::Network(e.to_string()))?;
 
-            let status = response.status();
-            match status.as_u16() {
-                401 | 403 => {
-                    return Err(ConnectorError::Config(
-                        "Requires an Admin API key (sk-ant-admin-…), not a regular user key. \
-                         Generate one in Anthropic Console → Settings → API Keys → Create Key → Role: Admin."
-                            .to_string(),
-                    ))
+            let status = response.status().as_u16();
+
+            // Preserve the original per-arm body handling exactly: 401/403/429
+            // are terminal and decided from the status code alone (never read
+            // the body, so a body-read failure cannot turn an admin-key
+            // rejection into a retry); the generic >=400 arm reads the body
+            // failure-tolerantly for its ApiError message; only a 2xx response
+            // reads the body fallibly (a transport failure there is Network).
+            match status {
+                401 | 403 | 429 => {
+                    return Err(classify_status(status, "")
+                        .expect("401/403/429 always classify to a terminal error"));
                 }
-                429 => return Err(ConnectorError::RateLimited),
                 s if s >= 400 => {
                     let body = response.text().await.unwrap_or_default();
                     return Err(ConnectorError::ApiError { status: s, body });
@@ -105,32 +108,22 @@ impl AnthropicConnector {
                 "cost report page"
             );
 
-            let parsed: CostReportResponse =
-                serde_json::from_slice(&bytes).map_err(|e| ConnectorError::ApiError {
-                    status: status.as_u16(),
-                    body: format!("failed to parse cost report wrapper: {e}"),
-                })?;
-
-            let page_results: Vec<&serde_json::Value> =
-                parsed.data.iter().flat_map(|p| p.results.iter()).collect();
+            let parsed = deserialize_cost_report(status, &bytes)?;
 
             if !first_nonempty_checked {
-                if let Some(first) = page_results.first() {
-                    if extract_cost(first).is_none() {
-                        let keys: Vec<&str> = first
-                            .as_object()
-                            .map(|o| o.keys().map(String::as_str).collect())
-                            .unwrap_or_default();
+                match first_result_cost_check(&parsed) {
+                    FirstResultCheck::MissingCost(keys) => {
                         return Err(ConnectorError::ApiError {
                             status: 200,
                             body: format!("no cost field found. Result entry keys: {keys:?}"),
                         });
                     }
-                    first_nonempty_checked = true;
+                    FirstResultCheck::HasCost => first_nonempty_checked = true,
+                    FirstResultCheck::NoResults => {}
                 }
             }
 
-            total_usd += page_results.iter().filter_map(|e| extract_cost(e)).sum::<f64>();
+            total_usd += page_total_usd(&parsed);
 
             if parsed.has_more {
                 next_page = parsed.next_page;
@@ -181,6 +174,66 @@ fn extract_cost_cents(entry: &serde_json::Value) -> Option<f64> {
         return Some(input + output);
     }
     None
+}
+
+// ── Pure response handling (offline-testable; see #118 parity harness) ────────
+
+/// Map an HTTP status to a terminal [`ConnectorError`], or `None` to proceed to
+/// body parsing. Anthropic maps 401/403 to a `Config` error (admin-key guidance)
+/// rather than `Unauthorized`. This is the response→error contract the registry
+/// inversion (#123) must preserve unchanged.
+fn classify_status(status: u16, body: &str) -> Option<ConnectorError> {
+    match status {
+        401 | 403 => Some(ConnectorError::Config(
+            "Requires an Admin API key (sk-ant-admin-…), not a regular user key. \
+             Generate one in Anthropic Console → Settings → API Keys → Create Key → Role: Admin."
+                .to_string(),
+        )),
+        429 => Some(ConnectorError::RateLimited),
+        s if s >= 400 => Some(ConnectorError::ApiError {
+            status: s,
+            body: body.to_string(),
+        }),
+        _ => None,
+    }
+}
+
+/// Deserialize one cost-report page body.
+fn deserialize_cost_report(status: u16, body: &[u8]) -> Result<CostReportResponse, ConnectorError> {
+    serde_json::from_slice(body).map_err(|e| ConnectorError::ApiError {
+        status,
+        body: format!("failed to parse cost report wrapper: {e}"),
+    })
+}
+
+/// Sum the per-result costs (USD) across one page.
+fn page_total_usd(page: &CostReportResponse) -> f64 {
+    page.data
+        .iter()
+        .flat_map(|p| p.results.iter())
+        .filter_map(extract_cost)
+        .sum()
+}
+
+/// Outcome of inspecting the first result of the first non-empty page — used to
+/// reject a response whose result shape has no recognizable cost field.
+enum FirstResultCheck {
+    NoResults,
+    HasCost,
+    MissingCost(Vec<String>),
+}
+
+fn first_result_cost_check(page: &CostReportResponse) -> FirstResultCheck {
+    match page.data.iter().flat_map(|p| p.results.iter()).next() {
+        None => FirstResultCheck::NoResults,
+        Some(entry) if extract_cost(entry).is_some() => FirstResultCheck::HasCost,
+        Some(entry) => FirstResultCheck::MissingCost(
+            entry
+                .as_object()
+                .map(|o| o.keys().cloned().collect())
+                .unwrap_or_default(),
+        ),
+    }
 }
 
 // ── SpendConnector impl ──────────────────────────────────────────────────────
@@ -276,20 +329,67 @@ mod tests {
     #[test]
     fn sums_across_nested_results() {
         // 1000 + 500 + 250.5 cents = 1750.5 cents → $17.505
-        let json = r#"{"data": [
+        let body = br#"{"data": [
             {"starting_at": "2026-04-01", "ending_at": "2026-04-11", "results": [{"cost": 1000.0}, {"cost": 500.0}]},
             {"starting_at": "2026-03-01", "ending_at": "2026-03-31", "results": [{"cost": 250.5}]}
         ], "has_more": false}"#;
-        let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.data.iter().flat_map(|p| p.results.iter()).filter_map(extract_cost).sum();
-        assert!((total - 17.505).abs() < 0.001, "got {total}");
+        let page = deserialize_cost_report(200, body).unwrap();
+        assert!((page_total_usd(&page) - 17.505).abs() < 0.001);
+        assert!(matches!(first_result_cost_check(&page), FirstResultCheck::HasCost));
     }
 
     #[test]
     fn handles_empty_cost_report() {
-        let json = r#"{"data": []}"#;
-        let parsed: CostReportResponse = serde_json::from_str(json).unwrap();
-        let total: f64 = parsed.data.iter().flat_map(|p| p.results.iter()).filter_map(extract_cost).sum();
-        assert_eq!(total, 0.0);
+        let page = deserialize_cost_report(200, br#"{"data": []}"#).unwrap();
+        assert_eq!(page_total_usd(&page), 0.0);
+        assert!(matches!(first_result_cost_check(&page), FirstResultCheck::NoResults));
+    }
+
+    #[test]
+    fn preserves_pagination_signals() {
+        let page = deserialize_cost_report(
+            200,
+            br#"{"data": [{"results": [{"cost": 100.0}]}], "has_more": true, "next_page": "page-2"}"#,
+        )
+        .unwrap();
+        assert!(page.has_more);
+        assert_eq!(page.next_page.as_deref(), Some("page-2"));
+    }
+
+    #[test]
+    fn flags_first_result_with_no_cost_field() {
+        let page = deserialize_cost_report(
+            200,
+            br#"{"data": [{"results": [{"model": "claude", "tokens": 1000}]}]}"#,
+        )
+        .unwrap();
+        match first_result_cost_check(&page) {
+            FirstResultCheck::MissingCost(keys) => {
+                assert!(keys.contains(&"model".to_string()));
+                assert!(keys.contains(&"tokens".to_string()));
+            }
+            _ => panic!("expected MissingCost"),
+        }
+    }
+
+    #[test]
+    fn deserialize_failure_surfaces_as_api_error() {
+        let result = deserialize_cost_report(200, b"not json");
+        assert!(matches!(
+            result,
+            Err(ConnectorError::ApiError { status: 200, .. })
+        ));
+    }
+
+    #[test]
+    fn maps_admin_key_rejection_to_config_not_unauthorized() {
+        assert!(matches!(classify_status(401, ""), Some(ConnectorError::Config(_))));
+        assert!(matches!(classify_status(403, ""), Some(ConnectorError::Config(_))));
+        assert!(matches!(classify_status(429, ""), Some(ConnectorError::RateLimited)));
+        assert!(matches!(
+            classify_status(500, "boom"),
+            Some(ConnectorError::ApiError { status: 500, .. })
+        ));
+        assert!(classify_status(200, "").is_none());
     }
 }
