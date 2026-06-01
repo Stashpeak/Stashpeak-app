@@ -10,8 +10,6 @@
 //! `fetch_provider_spend`. Migrating the connectors' internals onto the
 //! host-broker is #123; this issue (#119) only inverts dispatch.
 
-use reqwest::Client;
-
 use super::descriptor::{
     is_abi_compatible, ConnectorDescriptor, ConnectorPermissions, CredentialSchema,
     CONNECTOR_ABI_VERSION,
@@ -22,8 +20,10 @@ use super::spend::{
 };
 use super::SpendConnector;
 
-/// Builds a connector instance from the shared HTTP client.
-pub type SpendConnectorFactory = Box<dyn Fn(Client) -> Box<dyn SpendConnector> + Send + Sync>;
+/// Builds a connector instance. Takes no arguments: connectors are credential-
+/// free and perform all egress through the broker `ctx` (which owns the HTTP
+/// client), so they no longer hold a `reqwest::Client` themselves.
+pub type SpendConnectorFactory = Box<dyn Fn() -> Box<dyn SpendConnector> + Send + Sync>;
 
 /// A registered connector: its descriptor plus the factory that builds it.
 pub struct SpendConnectorRegistration {
@@ -106,7 +106,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
-        Box::new(|_client| Box::new(AnthropicConnector)),
+        Box::new(|| Box::new(AnthropicConnector)),
     );
 
     registry.register(
@@ -123,7 +123,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
-        Box::new(|_client| Box::new(OpenAiConnector)),
+        Box::new(|| Box::new(OpenAiConnector)),
     );
 
     registry.register(
@@ -140,7 +140,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
-        Box::new(|_client| Box::new(OpenRouterConnector)),
+        Box::new(|| Box::new(OpenRouterConnector)),
     );
 
     registry.register(
@@ -162,7 +162,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             // informative error); surface it as not-yet-available.
             available: false,
         },
-        Box::new(|_client| Box::new(GroqConnector)),
+        Box::new(|| Box::new(GroqConnector)),
     );
 
     registry.register(
@@ -183,7 +183,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             credential_schema: CredentialSchema::gcp_service_account(),
             available: true,
         },
-        Box::new(|_client| Box::new(GcpConnector)),
+        Box::new(|| Box::new(GcpConnector)),
     );
 
     registry
@@ -221,7 +221,7 @@ mod tests {
         let registry = spend_connector_registry();
         for registration in registry.descriptors().map(|d| d.id) {
             let reg = registry.get(registration).unwrap();
-            let connector = (reg.factory)(Client::new());
+            let connector = (reg.factory)();
             assert_eq!(
                 connector.provider_id(),
                 reg.descriptor.id,
@@ -302,7 +302,7 @@ mod tests {
                     credential_schema: CredentialSchema::single_api_key(),
                     available: true,
                 },
-                Box::new(|_client| Box::new(GroqConnector)),
+                Box::new(|| Box::new(GroqConnector)),
             );
         });
         std::panic::set_hook(prev);
