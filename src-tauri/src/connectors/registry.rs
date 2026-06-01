@@ -78,9 +78,8 @@ impl SpendConnectorRegistry {
         self.registrations.iter().find(|r| r.descriptor.id == id)
     }
 
-    /// All descriptors in registration order — the spec's `list()` API,
-    /// consumed by `list_connectors()` in #124.
-    #[allow(dead_code)]
+    /// All descriptors in registration order — the spec's `list()` API, consumed
+    /// by the `list_connectors()` command (#124).
     pub fn descriptors(&self) -> impl Iterator<Item = &ConnectorDescriptor> {
         self.registrations.iter().map(|r| &r.descriptor)
     }
@@ -193,6 +192,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connectors::descriptor::ConnectorInfo;
     use crate::providers::ProviderId;
 
     /// The canonical provider set — mirrors the `ProviderId` variants. The
@@ -351,5 +351,58 @@ mod tests {
             vec!["oauth2.googleapis.com", "bigquery.googleapis.com"]
         );
         assert!(hosts("groq").is_empty(), "groq has no egress");
+    }
+
+    // ── list_connectors() projection (#124) ───────────────────────────────────
+
+    /// `ConnectorInfo::from` faithfully projects every descriptor, preserving the
+    /// registry's dispatch order (the `list()` contract).
+    #[test]
+    fn connector_info_projects_every_descriptor_in_order() {
+        let infos: Vec<ConnectorInfo> = spend_connector_registry()
+            .descriptors()
+            .map(ConnectorInfo::from)
+            .collect();
+        assert_eq!(
+            infos.iter().map(|i| i.id).collect::<Vec<_>>(),
+            ["anthropic", "openai", "openrouter", "groq", "gcp"]
+        );
+
+        let anthropic = infos.iter().find(|i| i.id == "anthropic").unwrap();
+        assert_eq!(anthropic.display_name, "Anthropic");
+        assert_eq!(anthropic.kind, "spend");
+        assert_eq!(anthropic.abi_version, CONNECTOR_ABI_VERSION);
+        assert!(anthropic.available);
+        assert_eq!(anthropic.network, vec!["api.anthropic.com"]);
+        assert_eq!(anthropic.credential_fields.len(), 1);
+        assert!(anthropic.credential_fields[0].required);
+        assert!(anthropic.credential_fields[0].secret);
+
+        // groq = coming-soon (available:false) with no declared egress.
+        let groq = infos.iter().find(|i| i.id == "groq").unwrap();
+        assert!(!groq.available);
+        assert!(groq.network.is_empty());
+
+        // gcp = composite credential (4 fields, exactly 1 secret) + 2 egress hosts.
+        let gcp = infos.iter().find(|i| i.id == "gcp").unwrap();
+        assert_eq!(gcp.credential_fields.len(), 4);
+        assert_eq!(gcp.credential_fields.iter().filter(|f| f.secret).count(), 1);
+        assert!(gcp.network.contains(&"oauth2.googleapis.com"));
+        assert!(gcp.network.contains(&"bigquery.googleapis.com"));
+    }
+
+    /// Pins the JSON contract the frontend will consume: camelCase keys.
+    #[test]
+    fn connector_info_serializes_camel_case() {
+        let registry = spend_connector_registry();
+        let info = ConnectorInfo::from(&registry.get("anthropic").unwrap().descriptor);
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["id"], "anthropic");
+        assert_eq!(json["displayName"], "Anthropic");
+        assert_eq!(json["abiVersion"], CONNECTOR_ABI_VERSION);
+        assert_eq!(json["available"], true);
+        assert_eq!(json["network"][0], "api.anthropic.com");
+        assert_eq!(json["credentialFields"][0]["name"], "api_key");
+        assert_eq!(json["credentialFields"][0]["secret"], true);
     }
 }

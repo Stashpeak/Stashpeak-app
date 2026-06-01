@@ -16,6 +16,8 @@
 // schema.
 #![allow(dead_code)]
 
+use serde::Serialize;
+
 /// Current connector ABI version. Bumped when the descriptor/dispatch contract
 /// changes in a way a v2 (WASM) guest must check at load time. The load-time
 /// compatibility gate is enforced at registration (see
@@ -144,4 +146,58 @@ pub struct ConnectorDescriptor {
     pub credential_schema: CredentialSchema,
     /// `false` = coming soon / not yet usable (e.g. Groq exposes no billing API).
     pub available: bool,
+}
+
+// ── Serializable projection (the registry's `list()` surface, spec §5/§9) ──────
+
+/// A serializable view of a [`ConnectorDescriptor`] returned by the
+/// `list_connectors()` command (#124). Faithful projection of the declared
+/// manifest minus the in-binary factory. Additive: the frontend stays on its
+/// static provider list during the strangler and migrates to this in a later step.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorInfo {
+    pub id: &'static str,
+    pub display_name: &'static str,
+    pub kind: &'static str,
+    pub abi_version: u32,
+    pub available: bool,
+    /// Declared egress allowlist (enforced host-side in v1 — see [`ConnectorPermissions`]).
+    pub network: Vec<&'static str>,
+    pub credential_fields: Vec<CredentialFieldInfo>,
+}
+
+/// A serializable view of one [`CredentialField`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialFieldInfo {
+    pub name: &'static str,
+    pub required: bool,
+    /// `true` = consumed host-side only; its value is never returned to the
+    /// connector or the UI (an API key injected via `Auth`, or an RS256 key signed
+    /// via `ctx.sign`). `false` = a readable non-secret coordinate.
+    pub secret: bool,
+}
+
+impl From<&ConnectorDescriptor> for ConnectorInfo {
+    fn from(d: &ConnectorDescriptor) -> Self {
+        Self {
+            id: d.id,
+            display_name: d.display_name,
+            kind: d.kind,
+            abi_version: d.abi_version,
+            available: d.available,
+            network: d.permissions.network.clone(),
+            credential_fields: d
+                .credential_schema
+                .fields
+                .iter()
+                .map(|f| CredentialFieldInfo {
+                    name: f.name,
+                    required: f.required,
+                    secret: f.secret,
+                })
+                .collect(),
+        }
+    }
 }

@@ -287,6 +287,18 @@ async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData,
         .map_err(|e| e.to_string())
 }
 
+/// List the registered spend connectors as their declared descriptors (#124).
+/// Additive and read-only — the frontend stays on its static provider list during
+/// the strangler; migrating the list source to this command is a separate later
+/// step (spec §5/§9). Mirrors the registry's dispatch order.
+#[tauri::command]
+fn list_connectors() -> Vec<connectors::descriptor::ConnectorInfo> {
+    connectors::registry::spend_connector_registry()
+        .descriptors()
+        .map(connectors::descriptor::ConnectorInfo::from)
+        .collect()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // WebView2 on Windows reports navigator.language as en-US regardless of the OS
@@ -392,6 +404,7 @@ pub fn run() {
             set_notification_days,
             set_notifications_enabled,
             fetch_provider_spend,
+            list_connectors,
             get_home_currency,
             set_home_currency,
             get_exchange_rates,
