@@ -229,6 +229,23 @@ describe("buildGraph behavioral invariants", () => {
     expect(graph.edges.filter((edge) => edge.source === "subscription:1")).toHaveLength(0);
   });
 
+  it("surfaces trimmed subscription notes on the node and omits the key when blank", () => {
+    const graph = buildGraph(
+      options({
+        subscriptions: [
+          makeSub({ id: 1, name: "ChatGPT Work", provider: "OpenAI", notes: "  499 CZK work account  " }),
+          makeSub({ id: 2, name: "ChatGPT Personal", provider: "OpenAI", notes: "   " }),
+        ],
+      }),
+    );
+
+    const withNote = graph.nodes.find((node) => node.id === "subscription:1");
+    const withoutNote = graph.nodes.find((node) => node.id === "subscription:2");
+
+    expect(withNote?.type === "subscription" && withNote.data.note).toBe("499 CZK work account");
+    expect(withoutNote?.type === "subscription" && "note" in withoutNote.data).toBe(false);
+  });
+
   it("emits a single 'uses' edge (not covers-edges) when all matched products are hidden", () => {
     const graph = buildGraph(
       options({

@@ -40,6 +40,38 @@ async fn db_path() -> String {
         .to_string()
 }
 
+/// The OS *regional format* locale (e.g. "cs-CZ"), read via GetUserDefaultLocaleName.
+/// We must use the regional format, NOT the UI language: a machine with an English
+/// display language but Czech regional settings should still format dates the Czech
+/// way. (sys-locale returns the UI language, "en-US" here, which is wrong for this.)
+#[cfg(target_os = "windows")]
+fn windows_regional_locale() -> Option<String> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+
+    // LOCALE_NAME_MAX_LENGTH is 85 wide chars.
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetUserDefaultLocaleName(lp_locale_name: *mut u16, cch_locale_name: i32) -> i32;
+    }
+
+    let mut buf = [0u16; 85];
+    // Returns the length including the terminating null, or 0 on failure.
+    let len = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
+    if len <= 1 {
+        return None;
+    }
+    let locale = OsString::from_wide(&buf[..(len as usize - 1)])
+        .into_string()
+        .ok()?;
+    // Only accept a well-formed locale tag (ASCII letters/digits/hyphen) so the value
+    // can never inject extra arguments into WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS.
+    if locale.is_empty() || !locale.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    Some(locale)
+}
+
 #[tauri::command]
 async fn store_provider_api_key(provider: String, value: String) -> Result<(), String> {
     run_blocking("store_provider_api_key", move || {
@@ -257,6 +289,26 @@ async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData,
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // WebView2 on Windows reports navigator.language as en-US regardless of the OS
+    // regional format, so every Intl default and the native date input render in
+    // English. Seed the WebView2 UI language from the regional-format locale before
+    // the window is created; Chromium honours --lang for navigator.language and
+    // locale-dependent rendering.
+    #[cfg(target_os = "windows")]
+    if let Some(locale) = windows_regional_locale() {
+        // --lang sets the UI locale (drives the native date input and, verified by
+        // smoke, navigator.language); --accept-lang sets Accept-Language /
+        // navigator.languages per the WebView2 browser-flag docs. Append both to any
+        // args the caller already set (e.g. --remote-debugging-port) rather than
+        // overwriting them.
+        let locale_args = format!("--lang={locale} --accept-lang={locale}");
+        let args = match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+            Ok(existing) if !existing.trim().is_empty() => format!("{existing} {locale_args}"),
+            _ => locale_args,
+        };
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", args);
+    }
+
     logging::init().expect("failed to initialize logging");
 
     // Open (and migrate) the database before the window opens.

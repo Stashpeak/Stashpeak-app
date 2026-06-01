@@ -51,6 +51,7 @@ export interface SubscriptionNodeData extends Record<string, unknown> {
   billingLabel: string;
   nextBillingLabel: string;
   statusLabel: string;
+  note?: string;
   tone: MapNodeTone;
 }
 

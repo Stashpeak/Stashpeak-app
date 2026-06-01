@@ -618,6 +618,7 @@ export function buildGraph({
         });
       }
 
+      const note = subscription.notes.trim();
       subscriptionNodes.push({
         id: subscriptionNodeId,
         type: "subscription",
@@ -650,6 +651,7 @@ export function buildGraph({
               : matchedProductIds.length > 0
                 ? "Filtered"
                 : "Linked",
+          ...(note ? { note } : {}),
           tone,
         },
       });
@@ -688,6 +690,7 @@ export function buildGraph({
       ?? getStoredAbsolutePosition(subscriptionNodeId, storedLayout, layoutKey)
       ?? defaultPosition;
 
+    const note = subscription.notes.trim();
     subscriptionNodes.push({
       id: subscriptionNodeId,
       type: "subscription",
@@ -707,6 +710,7 @@ export function buildGraph({
         billingLabel: `${formatCurrency(monthlyEquivalent(subscription), subscription.currency)}/mo`,
         nextBillingLabel: formatShortDate(subscription.nextBillingAt),
         statusLabel: inferredProviderId ? "Unlinked" : "Standalone",
+        ...(note ? { note } : {}),
         tone,
       },
     });

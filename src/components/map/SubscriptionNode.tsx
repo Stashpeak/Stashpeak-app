@@ -82,6 +82,15 @@ export function SubscriptionNode({ data }: NodeProps<SubscriptionGraphNode>) {
             <p className="mt-1 text-sm font-medium text-[var(--text-primary)]">{data.nextBillingLabel}</p>
           </div>
         </div>
+
+        {data.note ? (
+          <p
+            className="mt-3 truncate text-xs italic leading-relaxed text-[var(--text-muted)]"
+            title={data.note}
+          >
+            {data.note}
+          </p>
+        ) : null}
       </div>
     </div>
   );
