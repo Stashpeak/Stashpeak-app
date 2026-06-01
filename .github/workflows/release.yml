@@ -59,7 +59,11 @@ jobs:
           releaseName: "Stashpeak ${{ github.ref_name }}"
           releaseBody: ""
           releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          # Pre-1.0 / pre-public: mark every release a pre-release so it never
+          # surfaces as "Latest" or reads as production-ready. Revisit at 1.0 GA.
+          # (Note: GitHub's /releases/latest excludes pre-releases — the auto-
+          # updater endpoint must account for that when real auto-update lands.)
+          prerelease: true
           args: ${{ matrix.args }}
 
       - name: Generate release notes
