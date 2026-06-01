@@ -5,7 +5,7 @@
 //! Per `docs/EXTENSIONS_SPEC.md` §5 the descriptor carries a real,
 //! forward-compatible schema now; sibling 0.4.0 issues fill it in:
 //!   - `permissions.network` hosts + `abi_version` enforcement → #122
-//!   - composite `credential_schema` (GCP)                     → #121
+//!   - composite `credential_schema` (GCP service-account)     ✅ #121
 //!
 //! There is intentionally **no** `products[]` (spec E6): products are a frontend
 //! taxonomy and are not 1:1 with connectors.
@@ -37,12 +37,18 @@ pub struct ConnectorPermissions {
 pub struct CredentialField {
     pub name: &'static str,
     pub required: bool,
+    /// `true` = the host NEVER hands this field's value to the connector via
+    /// `ctx.credentials`; it is consumed only host-side (an API key via `Auth`
+    /// injection, or an RS256 private key via `ctx.sign`). `false` = a non-secret
+    /// coordinate (e.g. a BigQuery project id) the connector may read.
+    /// Deliberately has no `Default` so every (esp. composite) schema must state it.
+    pub secret: bool,
 }
 
 /// The credential a connector needs. The schema is **composite-capable** (n
 /// input fields → one keychain blob); most connectors need a single API key,
-/// while GCP needs a composite blob. The composite GCP schema + its handling
-/// land in #121.
+/// while GCP needs a composite blob (see [`CredentialSchema::gcp_service_account`],
+/// landed in #121).
 #[derive(Debug, Clone, Default)]
 pub struct CredentialSchema {
     pub fields: Vec<CredentialField>,
@@ -50,13 +56,49 @@ pub struct CredentialSchema {
 
 impl CredentialSchema {
     /// A single required API-key field — the shape for every connector except
-    /// GCP (whose composite schema is defined in #121).
+    /// GCP. The key is `secret`: it is injected host-side via `Auth` and never
+    /// returned to the connector through `ctx.credentials`.
     pub fn single_api_key() -> Self {
         Self {
             fields: vec![CredentialField {
                 name: "api_key",
                 required: true,
+                secret: true,
             }],
+        }
+    }
+
+    /// GCP composite credential: four logical input fields collapsing to one
+    /// keychain JSON blob. `service_account_key` is the secret object (it holds
+    /// the RS256 private key, consumed host-side via `ctx.sign`); the three
+    /// BigQuery coordinates are non-secret and readable via `ctx.credentials`.
+    /// Field names mirror the keychain blob's JSON keys, but this list does NOT
+    /// drive parsing — `connectors::spend::gcp::parse_keychain_payload` stays the
+    /// parse oracle (#118).
+    pub fn gcp_service_account() -> Self {
+        Self {
+            fields: vec![
+                CredentialField {
+                    name: "service_account_key",
+                    required: true,
+                    secret: true,
+                },
+                CredentialField {
+                    name: "project_id",
+                    required: true,
+                    secret: false,
+                },
+                CredentialField {
+                    name: "dataset_id",
+                    required: true,
+                    secret: false,
+                },
+                CredentialField {
+                    name: "table_name",
+                    required: true,
+                    secret: false,
+                },
+            ],
         }
     }
 
@@ -80,7 +122,7 @@ pub struct ConnectorDescriptor {
     pub abi_version: u32,
     /// Declared capability manifest (network hosts filled in #122).
     pub permissions: ConnectorPermissions,
-    /// Credential shape (composite GCP handling in #121).
+    /// Credential shape (GCP composite handling landed in #121).
     pub credential_schema: CredentialSchema,
     /// `false` = coming soon / not yet usable (e.g. Groq exposes no billing API).
     pub available: bool,

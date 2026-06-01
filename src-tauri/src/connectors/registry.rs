@@ -139,12 +139,12 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             kind: "spend",
             abi_version: CONNECTOR_ABI_VERSION,
             permissions: ConnectorPermissions::default(),
-            // GCP needs a composite credential (service-account key + BigQuery
-            // coordinates); its composite schema + handling land in #121.
-            credential_schema: CredentialSchema::single_api_key(),
+            // Composite credential: service-account key (secret, signed host-side
+            // via ctx.sign) + BigQuery coordinates (non-secret). Brokered in #121.
+            credential_schema: CredentialSchema::gcp_service_account(),
             available: true,
         },
-        Box::new(|client| Box::new(GcpConnector::new(client))),
+        Box::new(|_client| Box::new(GcpConnector)),
     );
 
     registry

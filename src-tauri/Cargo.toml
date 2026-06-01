@@ -45,3 +45,9 @@ keyring = { version = "3.6.3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", features = ["linux-native-sync-persistent"] }
+
+[dev-dependencies]
+# Test-only: generate a throwaway RSA key at runtime so the GCP host-side signer
+# (RS256 / from_rsa_pem) can be exercised offline WITHOUT committing a private key.
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
