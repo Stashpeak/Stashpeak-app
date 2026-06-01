@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use reqwest::Client;
 
-use crate::connectors::{ConnectorError, SpendConnector, SpendData};
+use crate::connectors::{ConnectorCtx, ConnectorError, SpendConnector, SpendData};
 
 /// Connector for the Groq provider.
 ///
@@ -11,19 +10,10 @@ use crate::connectors::{ConnectorError, SpendConnector, SpendData};
 /// API were open as of early 2026.
 ///
 /// This connector returns an informative `ApiError` so the framework and stale
-/// indicator in the UI still function correctly. Update `fetch()` when Groq
-/// ships the endpoint — the rest of the framework requires no changes.
-pub struct GroqConnector {
-    // Retained for when the API becomes available.
-    #[allow(dead_code)]
-    client: Client,
-}
-
-impl GroqConnector {
-    pub fn new(client: Client) -> Self {
-        Self { client }
-    }
-}
+/// indicator in the UI still function correctly. Update `fetch()` to build a
+/// `ConnectorRequest` and call `ctx.send` when Groq ships the endpoint — the rest
+/// of the framework requires no changes.
+pub struct GroqConnector;
 
 #[async_trait]
 impl SpendConnector for GroqConnector {
@@ -31,7 +21,7 @@ impl SpendConnector for GroqConnector {
         "groq"
     }
 
-    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
+    async fn fetch(&self, _ctx: &ConnectorCtx) -> Result<SpendData, ConnectorError> {
         tracing::info!(
             provider = "groq",
             "fetch called but Groq has no public billing API yet"
@@ -52,11 +42,12 @@ mod tests {
 
     // Pins the deliberate "no public billing API yet" contract so the registry
     // migration (#123) cannot silently change Groq's behavior. fetch() makes no
-    // network or keychain call, so it is fully offline.
+    // network or keychain call (it ignores ctx), so it is fully offline.
     #[tokio::test]
     async fn fetch_reports_no_billing_api() {
-        let connector = GroqConnector::new(Client::new());
-        let err = connector.fetch().await.unwrap_err();
+        let ctx = ConnectorCtx::test_unused("groq");
+        let connector = GroqConnector;
+        let err = connector.fetch(&ctx).await.unwrap_err();
         match err {
             ConnectorError::ApiError { status, body } => {
                 assert_eq!(status, 0);

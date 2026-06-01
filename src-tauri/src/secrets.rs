@@ -95,7 +95,14 @@ pub fn store_provider_api_key(provider: &str, value: &str) -> Result<(), SecretE
     store_provider_api_key_with_store(&KeyringStore, provider, value)
 }
 
-pub fn get_provider_api_key(provider: &str) -> Result<Option<Zeroizing<String>>, SecretError> {
+/// Read a provider's API key from the OS keychain.
+///
+/// Crate-private (#120): the only callers are the host broker
+/// (`connectors::http::ConnectorCtx`) and the not-yet-brokered GCP connector. No
+/// Tauri command returns a key to the JS frontend.
+pub(crate) fn get_provider_api_key(
+    provider: &str,
+) -> Result<Option<Zeroizing<String>>, SecretError> {
     get_provider_api_key_with_store(&KeyringStore, provider)
 }
 

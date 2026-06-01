@@ -16,8 +16,8 @@ use super::descriptor::{
     ConnectorDescriptor, ConnectorPermissions, CredentialSchema, CONNECTOR_ABI_VERSION,
 };
 use super::spend::{
-    anthropic::AnthropicConnector, gcp::GcpConnector, groq::GroqConnector,
-    openai::OpenAiConnector, openrouter::OpenRouterConnector,
+    anthropic::AnthropicConnector, gcp::GcpConnector, groq::GroqConnector, openai::OpenAiConnector,
+    openrouter::OpenRouterConnector,
 };
 use super::SpendConnector;
 
@@ -51,8 +51,10 @@ impl SpendConnectorRegistry {
             "duplicate connector id registered: {}",
             descriptor.id
         );
-        self.registrations
-            .push(SpendConnectorRegistration { descriptor, factory });
+        self.registrations.push(SpendConnectorRegistration {
+            descriptor,
+            factory,
+        });
     }
 
     /// Look up a registration by id. `None` means an unknown connector — the
@@ -86,7 +88,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
-        Box::new(|client| Box::new(AnthropicConnector::new(client))),
+        Box::new(|_client| Box::new(AnthropicConnector)),
     );
 
     registry.register(
@@ -99,7 +101,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
-        Box::new(|client| Box::new(OpenAiConnector::new(client))),
+        Box::new(|_client| Box::new(OpenAiConnector)),
     );
 
     registry.register(
@@ -112,7 +114,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
-        Box::new(|client| Box::new(OpenRouterConnector::new(client))),
+        Box::new(|_client| Box::new(OpenRouterConnector)),
     );
 
     registry.register(
@@ -127,7 +129,7 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             // informative error); surface it as not-yet-available.
             available: false,
         },
-        Box::new(|client| Box::new(GroqConnector::new(client))),
+        Box::new(|_client| Box::new(GroqConnector)),
     );
 
     registry.register(

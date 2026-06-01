@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use chrono::{Datelike, Duration, TimeZone, Utc};
-use reqwest::Client;
 use serde::Deserialize;
 
-use crate::connectors::{ConnectorError, SpendConnector, SpendData};
-use crate::secrets;
+use crate::connectors::{
+    Auth, ConnectorCtx, ConnectorError, ConnectorRequest, SpendConnector, SpendData,
+};
 
 const COST_REPORT_URL: &str = "https://api.anthropic.com/v1/organizations/cost_report";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -19,18 +19,12 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// Two requests are made per fetch: one for the current month and one for
 /// the previous month. Response uses `results` (not `data`) with per-entry
 /// cost fields extracted via extract_cost().
-pub struct AnthropicConnector {
-    client: Client,
-}
+pub struct AnthropicConnector;
 
 impl AnthropicConnector {
-    pub fn new(client: Client) -> Self {
-        Self { client }
-    }
-
     async fn fetch_period_cost(
         &self,
-        api_key: &str,
+        ctx: &ConnectorCtx,
         starting_at: &str,
         ending_at: &str,
     ) -> Result<f64, ConnectorError> {
@@ -58,56 +52,47 @@ impl AnthropicConnector {
                 break;
             }
             page_count += 1;
-            let mut query: Vec<(&str, &str)> =
-                vec![("starting_at", starting_at), ("ending_at", ending_at)];
-            let page_val; // keep owned string alive for the borrow
+
+            let mut request = ConnectorRequest::get(COST_REPORT_URL)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .auth(Auth::Header { name: "x-api-key" })
+                .query_pair("starting_at", starting_at)
+                .query_pair("ending_at", ending_at);
             if let Some(ref p) = next_page {
-                page_val = p.clone();
-                query.push(("page", &page_val));
+                request = request.query_pair("page", p.clone());
             }
 
-            let response = self
-                .client
-                .get(COST_REPORT_URL)
-                .header("x-api-key", api_key)
-                .header("anthropic-version", ANTHROPIC_VERSION)
-                .query(&query)
-                .send()
-                .await
-                .map_err(|e| ConnectorError::Network(e.to_string()))?;
+            let resp = ctx.send(request).await?;
+            let status = resp.status();
 
-            let status = response.status().as_u16();
-
-            // Preserve the original per-arm body handling exactly: 401/403/429
-            // are terminal and decided from the status code alone (never read
-            // the body, so a body-read failure cannot turn an admin-key
-            // rejection into a retry); the generic >=400 arm reads the body
-            // failure-tolerantly for its ApiError message; only a 2xx response
-            // reads the body fallibly (a transport failure there is Network).
+            // Preserve the original per-arm handling exactly: 401/403/429 are
+            // terminal and decided from the status code ALONE — the body is never
+            // read (no buffering on a rejection/rate-limit, and a body-read
+            // failure cannot turn an admin-key rejection into a retry). The
+            // generic >=400 arm reads the body for its ApiError message; a 2xx
+            // reads it to parse. (A 2xx body-read failure maps to a retryable
+            // Network inside BrokeredResponse::bytes.)
             match status {
                 401 | 403 | 429 => {
                     return Err(classify_status(status, "")
                         .expect("401/403/429 always classify to a terminal error"));
                 }
                 s if s >= 400 => {
-                    let body = response.text().await.unwrap_or_default();
-                    return Err(ConnectorError::ApiError { status: s, body });
+                    return Err(ConnectorError::ApiError {
+                        status: s,
+                        body: String::from_utf8_lossy(&resp.bytes().await?).into_owned(),
+                    });
                 }
                 _ => {}
             }
 
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(|e| ConnectorError::Network(e.to_string()))?;
-
             tracing::debug!(
                 provider = "anthropic",
                 page = next_page.as_deref().unwrap_or("first"),
-                body = %String::from_utf8_lossy(&bytes),
                 "cost report page"
             );
 
+            let bytes = resp.bytes().await?;
             let parsed = deserialize_cost_report(status, &bytes)?;
 
             if !first_nonempty_checked {
@@ -168,8 +153,14 @@ fn extract_cost_cents(entry: &serde_json::Value) -> Option<f64> {
             }
         }
     }
-    let input = entry.get("input_cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let output = entry.get("output_cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let input = entry
+        .get("input_cost")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let output = entry
+        .get("output_cost")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     if input > 0.0 || output > 0.0 {
         return Some(input + output);
     }
@@ -244,23 +235,14 @@ impl SpendConnector for AnthropicConnector {
         "anthropic"
     }
 
-    async fn fetch(&self) -> Result<SpendData, ConnectorError> {
-        // Keychain access is a blocking OS call — run it on the thread pool.
-        let api_key = tauri::async_runtime::spawn_blocking(|| {
-            secrets::get_provider_api_key("anthropic")
-                .map_err(|e| ConnectorError::Config(e.to_string()))
-                .and_then(|opt| opt.ok_or(ConnectorError::Unauthorized))
-        })
-        .await
-        .map_err(|e| ConnectorError::Config(format!("keychain task failed: {e}")))??;
-
+    async fn fetch(&self, ctx: &ConnectorCtx) -> Result<SpendData, ConnectorError> {
         let now = Utc::now();
 
         let current_start = Utc
             .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
             .unwrap();
         let current_month_usd = self
-            .fetch_period_cost(&*api_key, &current_start.to_rfc3339(), &now.to_rfc3339())
+            .fetch_period_cost(ctx, &current_start.to_rfc3339(), &now.to_rfc3339())
             .await?;
 
         let (prev_year, prev_month) = if now.month() == 1 {
@@ -273,7 +255,7 @@ impl SpendConnector for AnthropicConnector {
             .unwrap();
         let prev_end = current_start - Duration::seconds(1);
         let previous_month_usd = self
-            .fetch_period_cost(&*api_key, &prev_start.to_rfc3339(), &prev_end.to_rfc3339())
+            .fetch_period_cost(ctx, &prev_start.to_rfc3339(), &prev_end.to_rfc3339())
             .await?;
 
         tracing::debug!(
@@ -302,7 +284,8 @@ mod tests {
     #[test]
     fn extracts_amount_as_string() {
         // 0.315 cents → $0.00315
-        let entry = serde_json::json!({"amount": "0.315", "currency": "USD", "token_type": "input"});
+        let entry =
+            serde_json::json!({"amount": "0.315", "currency": "USD", "token_type": "input"});
         assert!((extract_cost(&entry).unwrap() - 0.00315).abs() < 1e-9);
     }
 
@@ -335,14 +318,20 @@ mod tests {
         ], "has_more": false}"#;
         let page = deserialize_cost_report(200, body).unwrap();
         assert!((page_total_usd(&page) - 17.505).abs() < 0.001);
-        assert!(matches!(first_result_cost_check(&page), FirstResultCheck::HasCost));
+        assert!(matches!(
+            first_result_cost_check(&page),
+            FirstResultCheck::HasCost
+        ));
     }
 
     #[test]
     fn handles_empty_cost_report() {
         let page = deserialize_cost_report(200, br#"{"data": []}"#).unwrap();
         assert_eq!(page_total_usd(&page), 0.0);
-        assert!(matches!(first_result_cost_check(&page), FirstResultCheck::NoResults));
+        assert!(matches!(
+            first_result_cost_check(&page),
+            FirstResultCheck::NoResults
+        ));
     }
 
     #[test]
@@ -383,13 +372,69 @@ mod tests {
 
     #[test]
     fn maps_admin_key_rejection_to_config_not_unauthorized() {
-        assert!(matches!(classify_status(401, ""), Some(ConnectorError::Config(_))));
-        assert!(matches!(classify_status(403, ""), Some(ConnectorError::Config(_))));
-        assert!(matches!(classify_status(429, ""), Some(ConnectorError::RateLimited)));
+        assert!(matches!(
+            classify_status(401, ""),
+            Some(ConnectorError::Config(_))
+        ));
+        assert!(matches!(
+            classify_status(403, ""),
+            Some(ConnectorError::Config(_))
+        ));
+        assert!(matches!(
+            classify_status(429, ""),
+            Some(ConnectorError::RateLimited)
+        ));
         assert!(matches!(
             classify_status(500, "boom"),
             Some(ConnectorError::ApiError { status: 500, .. })
         ));
         assert!(classify_status(200, "").is_none());
+    }
+
+    // ── Broker integration (the variable-N pagination loop end-to-end) ──
+
+    /// Drives the multi-page loop over the broker: page 1 reports `has_more` with
+    /// a `next_page`, which must be threaded into page 2's `page` query; costs sum
+    /// across both pages, and the host injects `x-api-key` on every page.
+    #[tokio::test]
+    async fn paginates_via_the_broker_and_threads_the_page_cursor() {
+        use crate::connectors::http::{test_descriptor, FakeTransport};
+        use std::sync::Arc;
+
+        let page1 =
+            br#"{"data": [{"results": [{"cost": 1000.0}]}], "has_more": true, "next_page": "p2"}"#
+                .to_vec();
+        let page2 = br#"{"data": [{"results": [{"cost": 500.0}]}], "has_more": false}"#.to_vec();
+        let transport = Arc::new(FakeTransport::new(vec![
+            Ok((200, Ok(page1))),
+            Ok((200, Ok(page2))),
+        ]));
+        let ctx = ConnectorCtx::with_transport(test_descriptor("anthropic"), transport.clone());
+        ctx.seed_credential("sk-ant-admin-test");
+
+        let connector = AnthropicConnector;
+        let total = connector
+            .fetch_period_cost(&ctx, "2026-06-01T00:00:00Z", "2026-06-30T00:00:00Z")
+            .await
+            .unwrap();
+
+        // 1000 + 500 cents = 1500 cents → $15.00
+        assert!((total - 15.0).abs() < 1e-9);
+
+        let captured = transport.captured.lock().unwrap();
+        assert_eq!(captured.len(), 2, "should issue exactly two pages");
+        assert!(!captured[0].query.iter().any(|(k, _)| k == "page"));
+        assert!(captured[1]
+            .query
+            .iter()
+            .any(|(k, v)| k == "page" && v == "p2"));
+        assert!(captured[1]
+            .headers
+            .iter()
+            .any(|(k, v)| k == "x-api-key" && v == "sk-ant-admin-test"));
+        assert!(captured[0]
+            .headers
+            .iter()
+            .any(|(k, _)| k == "anthropic-version"));
     }
 }
