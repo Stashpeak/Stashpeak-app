@@ -34,7 +34,7 @@ impl OpenAiConnector {
             "fetching costs via primary endpoint"
         );
 
-        let (status, bytes) = ctx
+        let resp = ctx
             .send(
                 ConnectorRequest::get(COSTS_URL)
                     .auth(Auth::Bearer)
@@ -43,11 +43,12 @@ impl OpenAiConnector {
                     .query_pair("bucket_width", "1d"),
             )
             .await?;
+        let status = resp.status();
 
         // 404 means the org does not have access to the new costs endpoint yet;
         // fall back to the legacy endpoint gracefully rather than surfacing an
-        // error. Decided from the raw status before any classification, exactly
-        // as before — ctx.send returns 404 as Ok((404, _)), not an error.
+        // error. Decided from the raw status BEFORE reading the body, exactly as
+        // before — the broker does not buffer the body for the fallback path.
         if status == 404 {
             tracing::warn!(
                 provider = "openai",
@@ -56,6 +57,7 @@ impl OpenAiConnector {
             return self.fetch_legacy_period(ctx, start_time).await;
         }
 
+        let bytes = resp.bytes().await?;
         if let Some(err) = classify_status(status, &String::from_utf8_lossy(&bytes)) {
             return Err(err);
         }
@@ -80,13 +82,15 @@ impl OpenAiConnector {
 
         tracing::debug!(provider = "openai", date, "fetching legacy usage");
 
-        let (status, bytes) = ctx
+        let resp = ctx
             .send(
                 ConnectorRequest::get(LEGACY_USAGE_URL)
                     .auth(Auth::Bearer)
                     .query_pair("date", date),
             )
             .await?;
+        let status = resp.status();
+        let bytes = resp.bytes().await?;
 
         // The legacy endpoint exposes no cost data, so a successful response
         // still reports 0.0; reuse the shared status classifier for errors.

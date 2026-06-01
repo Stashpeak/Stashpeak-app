@@ -62,14 +62,16 @@ impl AnthropicConnector {
                 request = request.query_pair("page", p.clone());
             }
 
-            let (status, bytes) = ctx.send(request).await?;
+            let resp = ctx.send(request).await?;
+            let status = resp.status();
 
             // Preserve the original per-arm handling exactly: 401/403/429 are
-            // terminal and decided from the status code alone (so a body-read
-            // failure cannot turn an admin-key rejection into a retry); the
-            // generic >=400 arm carries the body into ApiError. A 2xx body-read
-            // failure is already mapped to a retryable Network inside ctx.send,
-            // so a truncated 2xx never reaches here.
+            // terminal and decided from the status code ALONE — the body is never
+            // read (no buffering on a rejection/rate-limit, and a body-read
+            // failure cannot turn an admin-key rejection into a retry). The
+            // generic >=400 arm reads the body for its ApiError message; a 2xx
+            // reads it to parse. (A 2xx body-read failure maps to a retryable
+            // Network inside BrokeredResponse::bytes.)
             match status {
                 401 | 403 | 429 => {
                     return Err(classify_status(status, "")
@@ -78,7 +80,7 @@ impl AnthropicConnector {
                 s if s >= 400 => {
                     return Err(ConnectorError::ApiError {
                         status: s,
-                        body: String::from_utf8_lossy(&bytes).into_owned(),
+                        body: String::from_utf8_lossy(&resp.bytes().await?).into_owned(),
                     });
                 }
                 _ => {}
@@ -90,6 +92,7 @@ impl AnthropicConnector {
                 "cost report page"
             );
 
+            let bytes = resp.bytes().await?;
             let parsed = deserialize_cost_report(status, &bytes)?;
 
             if !first_nonempty_checked {
@@ -395,7 +398,7 @@ mod tests {
     /// across both pages, and the host injects `x-api-key` on every page.
     #[tokio::test]
     async fn paginates_via_the_broker_and_threads_the_page_cursor() {
-        use crate::connectors::http::{test_descriptor, FakeTransport, RawResponse};
+        use crate::connectors::http::{test_descriptor, FakeTransport};
         use std::sync::Arc;
 
         let page1 =
@@ -403,14 +406,8 @@ mod tests {
                 .to_vec();
         let page2 = br#"{"data": [{"results": [{"cost": 500.0}]}], "has_more": false}"#.to_vec();
         let transport = Arc::new(FakeTransport::new(vec![
-            Ok(RawResponse {
-                status: 200,
-                body: Ok(page1),
-            }),
-            Ok(RawResponse {
-                status: 200,
-                body: Ok(page2),
-            }),
+            Ok((200, Ok(page1))),
+            Ok((200, Ok(page2))),
         ]));
         let ctx = ConnectorCtx::with_transport(test_descriptor("anthropic"), transport.clone());
         ctx.seed_credential("sk-ant-admin-test");

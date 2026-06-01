@@ -67,9 +67,11 @@ impl SpendConnector for OpenRouterConnector {
             "fetching spend"
         );
 
-        let (status, bytes) = ctx
+        let resp = ctx
             .send(ConnectorRequest::get("https://openrouter.ai/api/v1/auth/key").auth(Auth::Bearer))
             .await?;
+        let status = resp.status();
+        let bytes = resp.bytes().await?;
 
         if let Some(err) = classify_status(status, &String::from_utf8_lossy(&bytes)) {
             return Err(err);
@@ -143,7 +145,7 @@ mod tests {
 
     // ── Broker integration (design choice #1: with_retry wraps the WHOLE fetch) ──
 
-    use crate::connectors::http::{test_descriptor, FakeTransport, RawResponse};
+    use crate::connectors::http::{test_descriptor, FakeTransport};
     use crate::connectors::{with_retry, RetryConfig};
     use std::sync::Arc;
 
@@ -160,10 +162,7 @@ mod tests {
     async fn network_from_send_retries_the_whole_fetch() {
         let transport = Arc::new(FakeTransport::new(vec![
             Err("connection reset".to_string()),
-            Ok(RawResponse {
-                status: 200,
-                body: Ok(br#"{"data": {"usage": 1.0}}"#.to_vec()),
-            }),
+            Ok((200, Ok(br#"{"data": {"usage": 1.0}}"#.to_vec()))),
         ]));
         let ctx = ConnectorCtx::with_transport(test_descriptor("openrouter"), transport.clone());
         ctx.seed_credential("sk-test");
@@ -183,10 +182,7 @@ mod tests {
     /// runs exactly once.
     #[tokio::test]
     async fn unauthorized_from_send_is_not_retried() {
-        let transport = Arc::new(FakeTransport::new(vec![Ok(RawResponse {
-            status: 401,
-            body: Ok(Vec::new()),
-        })]));
+        let transport = Arc::new(FakeTransport::new(vec![Ok((401, Ok(Vec::new())))]));
         let ctx = ConnectorCtx::with_transport(test_descriptor("openrouter"), transport.clone());
         ctx.seed_credential("sk-test");
 

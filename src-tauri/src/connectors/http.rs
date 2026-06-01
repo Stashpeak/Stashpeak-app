@@ -123,21 +123,66 @@ pub(crate) struct PreparedRequest {
     pub(crate) query: Vec<(String, String)>,
 }
 
-/// One round-trip outcome, mirroring reqwest's two phases (status, then body) so
-/// [`ConnectorCtx::send`] can apply the status-dependent body-read discipline.
-pub(crate) struct RawResponse {
-    pub(crate) status: u16,
-    /// `Ok(bytes)` if the body read fully; `Err(msg)` on a mid-body failure.
-    pub(crate) body: Result<Vec<u8>, String>,
+/// A brokered response whose body has NOT yet been read. The connector inspects
+/// [`status`](BrokeredResponse::status) first and calls
+/// [`bytes`](BrokeredResponse::bytes) only when it actually needs the body — so a
+/// terminal status (401/403/429, or OpenAI's 404 fallback) is produced
+/// immediately after the response headers, without buffering the body (matching
+/// the per-status behaviour the connectors had before the broker).
+#[derive(Debug)]
+pub struct BrokeredResponse {
+    status: u16,
+    body: BodySource,
+}
+
+/// Where a response body is read from: the live reqwest response in production,
+/// or a canned result in tests.
+#[derive(Debug)]
+enum BodySource {
+    Live(reqwest::Response),
+    #[cfg(test)]
+    Canned(Result<Vec<u8>, String>),
+}
+
+impl BrokeredResponse {
+    /// The HTTP status — available immediately after the response headers.
+    pub fn status(&self) -> u16 {
+        self.status
+    }
+
+    /// Read and buffer the response body. A body-read failure on a 2xx is a
+    /// genuine transient truncation → retryable `Network` (preserves Anthropic's
+    /// truncated-page behaviour); on a non-2xx the status is already terminal, so
+    /// it falls back to an empty body and lets the connector classify by status
+    /// (matches the old `bytes().unwrap_or_default()`).
+    pub async fn bytes(self) -> Result<Vec<u8>, ConnectorError> {
+        let status = self.status;
+        let read = match self.body {
+            BodySource::Live(response) => response
+                .bytes()
+                .await
+                .map(|b| b.to_vec())
+                .map_err(|e| e.to_string()),
+            #[cfg(test)]
+            BodySource::Canned(result) => result,
+        };
+        match read {
+            Ok(bytes) => Ok(bytes),
+            Err(msg) if (200..300).contains(&status) => Err(ConnectorError::Network(msg)),
+            Err(_) => Ok(Vec::new()),
+        }
+    }
 }
 
 /// The single egress primitive. Production uses reqwest; tests inject a fake so
 /// the broker's credential injection + status/body discipline run offline.
+/// `execute` returns once the response headers (status) are known; the body is
+/// read lazily through [`BrokeredResponse::bytes`].
 #[async_trait]
 pub(crate) trait Transport: Send + Sync {
-    /// Execute `request`. `Err(msg)` = a pre-response transport failure
-    /// (connect/DNS/TLS/timeout); `Ok(resp)` once the status is known.
-    async fn execute(&self, request: PreparedRequest) -> Result<RawResponse, String>;
+    /// `Err(msg)` = a pre-response transport failure (connect/DNS/TLS/timeout);
+    /// `Ok(resp)` once the status is known (body unread).
+    async fn execute(&self, request: PreparedRequest) -> Result<BrokeredResponse, String>;
 }
 
 struct ReqwestTransport {
@@ -146,7 +191,7 @@ struct ReqwestTransport {
 
 #[async_trait]
 impl Transport for ReqwestTransport {
-    async fn execute(&self, request: PreparedRequest) -> Result<RawResponse, String> {
+    async fn execute(&self, request: PreparedRequest) -> Result<BrokeredResponse, String> {
         let mut builder = self.client.get(&request.url);
         for (name, value) in &request.headers {
             builder = builder.header(name, value);
@@ -156,13 +201,10 @@ impl Transport for ReqwestTransport {
         }
 
         let response = builder.send().await.map_err(|e| e.to_string())?;
-        let status = response.status().as_u16();
-        let body = response
-            .bytes()
-            .await
-            .map(|b| b.to_vec())
-            .map_err(|e| e.to_string());
-        Ok(RawResponse { status, body })
+        Ok(BrokeredResponse {
+            status: response.status().as_u16(),
+            body: BodySource::Live(response),
+        })
     }
 }
 
@@ -217,9 +259,14 @@ impl ConnectorCtx {
     }
 
     /// Perform one brokered round-trip: enforce https, advisory-log the egress
-    /// host, resolve + inject the credential per `auth`, execute, and return raw
-    /// `(status, bytes)` for the connector's own status classification.
-    pub async fn send(&self, request: ConnectorRequest) -> Result<(u16, Vec<u8>), ConnectorError> {
+    /// host, resolve + inject the credential per `auth`, and return the response
+    /// once headers arrive. The connector reads the body via
+    /// [`BrokeredResponse::bytes`] only when it needs it — so a terminal status is
+    /// produced without buffering the body.
+    pub async fn send(
+        &self,
+        request: ConnectorRequest,
+    ) -> Result<BrokeredResponse, ConnectorError> {
         let url = Url::parse(&request.url)
             .map_err(|e| ConnectorError::Config(format!("invalid request url: {e}")))?;
         if url.scheme() != "https" {
@@ -263,27 +310,13 @@ impl ConnectorCtx {
             query: request.query,
         };
 
-        match self.transport.execute(prepared).await {
-            Err(msg) => Err(ConnectorError::Network(msg)),
-            Ok(RawResponse { status, body }) => {
-                let bytes = match body {
-                    Ok(bytes) => bytes,
-                    Err(msg) => {
-                        // A body-read failure on a 2xx is a genuine transient
-                        // truncation → retryable Network (preserves Anthropic's
-                        // truncated-page behaviour). On a non-2xx the status is
-                        // already terminal, so fall back to an empty body and let
-                        // the connector classify by status (matches the old
-                        // `bytes().unwrap_or_default()`).
-                        if (200..300).contains(&status) {
-                            return Err(ConnectorError::Network(msg));
-                        }
-                        Vec::new()
-                    }
-                };
-                Ok((status, bytes))
-            }
-        }
+        // A pre-response transport failure (connect/DNS/TLS/timeout) is a
+        // retryable Network; the body-read discipline lives in
+        // BrokeredResponse::bytes so a terminal status need not buffer the body.
+        self.transport
+            .execute(prepared)
+            .await
+            .map_err(ConnectorError::Network)
     }
 }
 
@@ -333,17 +366,23 @@ pub(crate) fn test_descriptor(id: &'static str) -> ConnectorDescriptor {
     }
 }
 
+/// One queued fake round-trip: `Err(msg)` = a pre-response transport failure;
+/// `Ok((status, body))` = a response with that status whose body reads as
+/// `Ok(bytes)` or fails with `Err(msg)` (only observed if the connector reads it).
+#[cfg(test)]
+pub(crate) type FakeOutcome = Result<(u16, Result<Vec<u8>, String>), String>;
+
 /// Fake transport: returns queued outcomes in order and records every prepared
 /// request so tests can assert on the credential the host injected.
 #[cfg(test)]
 pub(crate) struct FakeTransport {
-    outcomes: Mutex<Vec<Result<RawResponse, String>>>,
+    outcomes: Mutex<Vec<FakeOutcome>>,
     pub(crate) captured: Mutex<Vec<PreparedRequest>>,
 }
 
 #[cfg(test)]
 impl FakeTransport {
-    pub(crate) fn new(outcomes: Vec<Result<RawResponse, String>>) -> Self {
+    pub(crate) fn new(outcomes: Vec<FakeOutcome>) -> Self {
         Self {
             outcomes: Mutex::new(outcomes),
             captured: Mutex::new(Vec::new()),
@@ -354,11 +393,17 @@ impl FakeTransport {
 #[cfg(test)]
 #[async_trait]
 impl Transport for FakeTransport {
-    async fn execute(&self, request: PreparedRequest) -> Result<RawResponse, String> {
+    async fn execute(&self, request: PreparedRequest) -> Result<BrokeredResponse, String> {
         self.captured.lock().unwrap().push(request);
-        let mut queue = self.outcomes.lock().unwrap();
-        assert!(!queue.is_empty(), "FakeTransport: no more outcomes queued");
-        queue.remove(0)
+        let outcome = {
+            let mut queue = self.outcomes.lock().unwrap();
+            assert!(!queue.is_empty(), "FakeTransport: no more outcomes queued");
+            queue.remove(0)
+        };
+        outcome.map(|(status, body)| BrokeredResponse {
+            status,
+            body: BodySource::Canned(body),
+        })
     }
 }
 
@@ -366,17 +411,14 @@ impl Transport for FakeTransport {
 mod tests {
     use super::*;
 
-    fn ctx_with(outcomes: Vec<Result<RawResponse, String>>) -> (ConnectorCtx, Arc<FakeTransport>) {
+    fn ctx_with(outcomes: Vec<FakeOutcome>) -> (ConnectorCtx, Arc<FakeTransport>) {
         let transport = Arc::new(FakeTransport::new(outcomes));
         let ctx = ConnectorCtx::with_transport(test_descriptor("openai"), transport.clone());
         (ctx, transport)
     }
 
-    fn ok_200() -> Result<RawResponse, String> {
-        Ok(RawResponse {
-            status: 200,
-            body: Ok(b"{}".to_vec()),
-        })
+    fn ok_200() -> FakeOutcome {
+        Ok((200, Ok(b"{}".to_vec())))
     }
 
     #[tokio::test]
@@ -384,12 +426,12 @@ mod tests {
         let (ctx, transport) = ctx_with(vec![ok_200()]);
         ctx.seed_credential("sk-secret");
 
-        let (status, _) = ctx
+        let resp = ctx
             .send(ConnectorRequest::get("https://api.example.com/v1").auth(Auth::Bearer))
             .await
             .unwrap();
 
-        assert_eq!(status, 200);
+        assert_eq!(resp.status(), 200);
         let captured = transport.captured.lock().unwrap();
         assert!(captured[0]
             .headers
@@ -472,43 +514,56 @@ mod tests {
 
     #[tokio::test]
     async fn non_2xx_status_is_returned_with_body_for_connector_classification() {
-        let (ctx, _t) = ctx_with(vec![Ok(RawResponse {
-            status: 404,
-            body: Ok(b"nope".to_vec()),
-        })]);
-        let (status, bytes) = ctx
+        let (ctx, _t) = ctx_with(vec![Ok((404, Ok(b"nope".to_vec())))]);
+        let resp = ctx
             .send(ConnectorRequest::get("https://api.example.com"))
             .await
             .unwrap();
-        assert_eq!(status, 404);
-        assert_eq!(bytes, b"nope");
+        assert_eq!(resp.status(), 404);
+        assert_eq!(resp.bytes().await.unwrap(), b"nope");
+    }
+
+    /// The headline of the redirect/buffering fix: `send` returns once headers
+    /// arrive and does NOT eagerly read the body — a connector classifying a
+    /// terminal status from the code alone never pays to buffer the body. Here the
+    /// body read would fail; because the test never calls `bytes()`, it never
+    /// surfaces (an eager broker would have buffered it inside `send`).
+    #[tokio::test]
+    async fn terminal_status_is_available_without_reading_the_body() {
+        let (ctx, _t) = ctx_with(vec![Ok((401, Err("body must not be read".to_string())))]);
+        let resp = ctx
+            .send(ConnectorRequest::get("https://api.example.com"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 401);
+        // Intentionally no resp.bytes(): the terminal status is decided without it.
     }
 
     #[tokio::test]
     async fn body_read_failure_on_2xx_is_retryable_network() {
-        let (ctx, _t) = ctx_with(vec![Ok(RawResponse {
-            status: 200,
-            body: Err("truncated".to_string()),
-        })]);
-        let err = ctx
+        let (ctx, _t) = ctx_with(vec![Ok((200, Err("truncated".to_string())))]);
+        // send() returns once headers arrive — it does NOT eagerly read the body...
+        let resp = ctx
             .send(ConnectorRequest::get("https://api.example.com"))
             .await
-            .unwrap_err();
-        assert!(matches!(err, ConnectorError::Network(_)));
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        // ...the 2xx body-read failure surfaces only when the connector asks.
+        assert!(matches!(
+            resp.bytes().await,
+            Err(ConnectorError::Network(_))
+        ));
     }
 
     #[tokio::test]
     async fn body_read_failure_on_non_2xx_yields_empty_body() {
-        let (ctx, _t) = ctx_with(vec![Ok(RawResponse {
-            status: 500,
-            body: Err("truncated".to_string()),
-        })]);
-        let (status, bytes) = ctx
+        let (ctx, _t) = ctx_with(vec![Ok((500, Err("truncated".to_string())))]);
+        let resp = ctx
             .send(ConnectorRequest::get("https://api.example.com"))
             .await
             .unwrap();
-        assert_eq!(status, 500);
-        assert!(bytes.is_empty());
+        assert_eq!(resp.status(), 500);
+        assert!(resp.bytes().await.unwrap().is_empty());
     }
 
     #[tokio::test]
