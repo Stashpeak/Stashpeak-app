@@ -3,7 +3,10 @@ pub mod http;
 pub mod registry;
 pub mod spend;
 
-pub use http::{Auth, ConnectorCtx, ConnectorRequest};
+pub use http::{
+    Auth, ConnectorCtx, ConnectorRequest, CredentialView, Credentials, GcpBigQueryCoords,
+    SignIntent,
+};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -57,7 +60,8 @@ impl std::fmt::Display for ConnectorError {
 /// reads the keychain, injects the connector's identity-bound credential, and
 /// performs the egress. All outbound calls are logged with `tracing::` macros so
 /// the global `SecretScrubbingLayer` in `crate::logging` redacts any key values.
-/// (GCP is the one connector not yet on the broker — see `spend::gcp`; #121.)
+/// (All connectors are on the broker as of #121 — GCP via `ctx.sign` for its
+/// service-account key and `ctx.credentials` for its BigQuery coordinates.)
 #[async_trait]
 pub trait SpendConnector: Send + Sync {
     /// Stable provider identifier (e.g. `"openrouter"`). Must match the keychain key.

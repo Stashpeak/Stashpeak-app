@@ -159,6 +159,7 @@ Functional identity (validated against the KB research): **portability + control
 | E12 | Split 0.4.0 into 0.4/0.5/0.6 + Vault as 0.7 | one "Extensions Foundation" milestone | it's 3 disjoint systems; each ships independently; Vault on hardened primitives |
 | E13 | Test harness = blocking prerequisite; leak fix standalone now | harness parallel | the refactor's safety rests on it; zero tests exist today |
 | E14 | Build foundation now, with corrections (validation in parallel) | validate-first / hybrid | founder's informed call after the dissent in §11 |
+| E15 | #121 GCP sign path: de-interpolate the RS256 + token-parse error messages (drop `{e}`) and map a token 2xx body-read failure to `Network` | keep `{e}` interpolation / blanket `ApiError{status:200}` | a `ConnectorError` value is NOT scrubbed (the scrub layer runs only at log emission), so a `from_rsa_pem`/token `{e}` could leak PEM or access-token bytes; the read-vs-parse split also makes a truncated 2xx retryable (strictly safer). The `Config` / `ApiError{200}` variants are preserved and no frozen test asserts the text |
 
 ## 11. Risks & acknowledged dissent
 

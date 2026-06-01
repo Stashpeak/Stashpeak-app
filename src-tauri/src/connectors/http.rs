@@ -10,9 +10,10 @@
 //! [`super::with_retry`] in dispatch, so a connector that issues several `send`s
 //! retries as a single unit exactly as it did before the broker existed.
 //!
-//! GCP is the one connector not yet routed through this broker (it keeps its own
-//! `reqwest`/signing in #120); its migration + `ctx.sign` / composite-credential
-//! handling land in #121.
+//! As of #121 ALL connectors route egress through this broker — including GCP,
+//! whose RS256 service-account key is signed host-side via `ctx.sign` and whose
+//! BigQuery coordinates come back non-secret via `ctx.credentials`. No connector
+//! touches `reqwest` or `secrets` directly.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -56,8 +57,8 @@ pub fn build_client() -> Client {
 ///
 /// The connector declares the *scheme* only and never places the secret itself —
 /// the host (the sole keychain reader) attaches the key in [`ConnectorCtx::send`].
-/// `#[non_exhaustive]` so #121 can add variants (e.g. a brokered GCP token)
-/// without breaking existing connectors.
+/// `#[non_exhaustive]` so future variants (e.g. a v2 host-minted token) are
+/// additive without breaking existing connectors.
 #[non_exhaustive]
 pub enum Auth {
     /// No host credential injection (an unauthenticated endpoint).
@@ -68,28 +69,64 @@ pub enum Auth {
     Header { name: &'static str },
 }
 
+/// HTTP method for a brokered request. Crate-internal — only the `get`/`post`
+/// constructors set it, so it is not part of the connector-facing API surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Method {
+    Get,
+    Post,
+}
+
+/// An optional request body. `#[non_exhaustive]` so future body kinds are additive.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum RequestBody {
+    /// `application/x-www-form-urlencoded` (e.g. GCP's OAuth token exchange).
+    Form(Vec<(String, String)>),
+    /// `application/json`, pre-serialized so the broker stays serde-free with
+    /// respect to connector body types.
+    Json(String),
+}
+
 /// A credential-free outbound request a connector hands to the broker.
 ///
 /// Fields are private: connectors build it through the chained builder
-/// (`get`/`header`/`query_pair`/`auth`) and the broker (this module) reads it.
-/// New transport features (POST bodies, other methods) land in #121 by adding
-/// private fields + builder methods here — existing call-sites stay unchanged.
+/// (`get`/`post`/`header`/`query_pair`/`auth`/`form_body`/`json_body`) and the
+/// broker (this module) reads it. New transport features land here by adding
+/// private fields + builder methods (defaulted by the constructors) — existing
+/// call-sites stay unchanged.
 pub struct ConnectorRequest {
     url: String,
+    method: Method,
     /// Connector-set NON-SECRET headers (e.g. `anthropic-version`). The
     /// identity-bound credential is never placed here — see [`Auth`].
     headers: Vec<(String, String)>,
     query: Vec<(String, String)>,
+    body: Option<RequestBody>,
     auth: Auth,
 }
 
 impl ConnectorRequest {
-    /// Begin a `GET` request to `url` with no auth, headers, or query.
+    /// Begin a `GET` request to `url` with no auth, headers, query, or body.
     pub fn get(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
+            method: Method::Get,
             headers: Vec::new(),
             query: Vec::new(),
+            body: None,
+            auth: Auth::None,
+        }
+    }
+
+    /// Begin a `POST` request to `url`.
+    pub fn post(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            method: Method::Post,
+            headers: Vec::new(),
+            query: Vec::new(),
+            body: None,
             auth: Auth::None,
         }
     }
@@ -106,6 +143,18 @@ impl ConnectorRequest {
         self
     }
 
+    /// Attach an `application/x-www-form-urlencoded` body.
+    pub fn form_body(mut self, pairs: Vec<(String, String)>) -> Self {
+        self.body = Some(RequestBody::Form(pairs));
+        self
+    }
+
+    /// Attach a pre-serialized `application/json` body.
+    pub fn json_body(mut self, json: impl Into<String>) -> Self {
+        self.body = Some(RequestBody::Json(json.into()));
+        self
+    }
+
     /// Declare how the host should inject the identity-bound credential.
     pub fn auth(mut self, auth: Auth) -> Self {
         self.auth = auth;
@@ -116,11 +165,14 @@ impl ConnectorRequest {
 // ── Transport seam ────────────────────────────────────────────────────────────
 
 /// A fully-prepared outbound request: the host has already injected the
-/// identity-bound credential into `headers`. NEVER logged verbatim.
+/// identity-bound credential into `headers`. NEVER logged verbatim (the body may
+/// carry a bearer-equivalent JWT assertion or a SQL query).
 pub(crate) struct PreparedRequest {
     pub(crate) url: String,
+    pub(crate) method: Method,
     pub(crate) headers: Vec<(String, String)>,
     pub(crate) query: Vec<(String, String)>,
+    pub(crate) body: Option<RequestBody>,
 }
 
 /// A brokered response whose body has NOT yet been read. The connector inspects
@@ -192,13 +244,23 @@ struct ReqwestTransport {
 #[async_trait]
 impl Transport for ReqwestTransport {
     async fn execute(&self, request: PreparedRequest) -> Result<BrokeredResponse, String> {
-        let mut builder = self.client.get(&request.url);
+        let mut builder = match request.method {
+            Method::Get => self.client.get(&request.url),
+            Method::Post => self.client.post(&request.url),
+        };
         for (name, value) in &request.headers {
             builder = builder.header(name, value);
         }
         if !request.query.is_empty() {
             builder = builder.query(&request.query);
         }
+        builder = match request.body {
+            None => builder,
+            Some(RequestBody::Form(pairs)) => builder.form(&pairs),
+            Some(RequestBody::Json(json)) => builder
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(json),
+        };
 
         let response = builder.send().await.map_err(|e| e.to_string())?;
         Ok(BrokeredResponse {
@@ -206,6 +268,44 @@ impl Transport for ReqwestTransport {
             body: BodySource::Live(response),
         })
     }
+}
+
+// ── Host capabilities (sign / credentials) ─────────────────────────────────────
+
+/// A signing operation the host performs on the connector's behalf WITHOUT
+/// exposing the private key — the connector receives only the signed assertion.
+/// `#[non_exhaustive]` so future intents are additive. The broker dispatches the
+/// intent to a provider-specific signer in `connectors::spend`; it knows nothing
+/// about any provider's key format or signing scheme.
+#[non_exhaustive]
+pub enum SignIntent {
+    /// RS256 service-account JWT for Google's OAuth token exchange. All JWT
+    /// parameters (scope/audience/ttl/algorithm/issuer) are fixed inside the GCP
+    /// signer, so a connector cannot widen scope or change the audience.
+    GcpServiceAccountJwt,
+}
+
+/// A request for the NON-SECRET coordinates of a composite credential.
+/// `#[non_exhaustive]` so future composite connectors are additive.
+#[non_exhaustive]
+pub enum CredentialView {
+    /// GCP BigQuery coordinates (project/dataset/table) — never the private key.
+    GcpBigQueryCoords,
+}
+
+/// GCP BigQuery coordinates extracted host-side from the composite credential.
+#[derive(Debug, Clone)]
+pub struct GcpBigQueryCoords {
+    pub project_id: String,
+    pub dataset_id: String,
+    pub table_name: String,
+}
+
+/// The non-secret credential coordinates returned by [`ConnectorCtx::credentials`].
+/// `#[non_exhaustive]` so future views are additive.
+#[non_exhaustive]
+pub enum Credentials {
+    GcpBigQueryCoords(GcpBigQueryCoords),
 }
 
 // ── Host broker ───────────────────────────────────────────────────────────────
@@ -306,8 +406,10 @@ impl ConnectorCtx {
 
         let prepared = PreparedRequest {
             url: request.url,
+            method: request.method,
             headers,
             query: request.query,
+            body: request.body,
         };
 
         // A pre-response transport failure (connect/DNS/TLS/timeout) is a
@@ -317,6 +419,24 @@ impl ConnectorCtx {
             .execute(prepared)
             .await
             .map_err(ConnectorError::Network)
+    }
+
+    /// Sign on the connector's behalf WITHOUT exposing the private key. The host
+    /// resolves THIS descriptor's credential (resolve-once cache) and dispatches
+    /// the raw blob to the provider-specific signer in `connectors::spend`; only
+    /// the signed assertion (a `String`) is returned. The broker knows nothing
+    /// about the key format, the signing scheme, or any provider URL.
+    pub async fn sign(&self, intent: SignIntent) -> Result<String, ConnectorError> {
+        let blob = self.credential().await?;
+        crate::connectors::spend::sign_with(self.descriptor.id, intent, blob.as_str())
+    }
+
+    /// Return the NON-SECRET coordinates of this descriptor's composite credential.
+    /// The provider-specific extractor (in `connectors::spend`) parses the blob and
+    /// yields only fields the descriptor marks non-secret — never the private key.
+    pub async fn credentials(&self, view: CredentialView) -> Result<Credentials, ConnectorError> {
+        let blob = self.credential().await?;
+        crate::connectors::spend::credentials_for(self.descriptor.id, view, blob.as_str())
     }
 }
 
