@@ -3,32 +3,48 @@
 //! source of truth for a connector's identity and declared capabilities.
 //!
 //! Per `docs/EXTENSIONS_SPEC.md` §5 the descriptor carries a real,
-//! forward-compatible schema now; sibling 0.4.0 issues fill it in:
-//!   - `permissions.network` hosts + `abi_version` enforcement → #122
-//!   - composite `credential_schema` (GCP service-account)     ✅ #121
+//! forward-compatible schema; sibling 0.4.0 issues fill it in:
+//!   - `permissions.network` hosts + `abi_version` load-time gate   ✅ #122
+//!   - composite `credential_schema` (GCP service-account)          ✅ #121
 //!
 //! There is intentionally **no** `products[]` (spec E6): products are a frontend
 //! taxonomy and are not 1:1 with connectors.
 
 // Several descriptor fields are declared now for forward-compatibility (spec
-// §13) but are not consumed until sibling 0.4.0 issues (#120/#121/#122/#124).
-// Allow the not-yet-read fields rather than understating the schema.
+// §13) but are not all consumed yet (e.g. `permissions.storage`, which awaits a
+// storage broker). Allow the not-yet-read fields rather than understating the
+// schema.
 #![allow(dead_code)]
 
 /// Current connector ABI version. Bumped when the descriptor/dispatch contract
-/// changes in a way a v2 (WASM) guest must check at load time. Enforcement of
-/// this check is wired in #122.
+/// changes in a way a v2 (WASM) guest must check at load time. The load-time
+/// compatibility gate is enforced at registration (see
+/// [`is_abi_compatible`] and `SpendConnectorRegistry::register`).
 pub const CONNECTOR_ABI_VERSION: u32 = 1;
 
-/// Declared capability manifest for a connector. Hosts/scopes are advisory in
-/// v1 and become a hard sandbox boundary at v2/WASM (spec §4). Network hosts are
-/// populated in #122; left empty here so the schema is present without
-/// overstating coverage.
+/// Whether the host (running [`CONNECTOR_ABI_VERSION`]) can speak a connector's
+/// declared `abi_version`. v1 supports exactly one ABI; when v2 admits untrusted
+/// guests over a supported range this widens to a `min..=max` check. Consulted by
+/// the registry's load-time gate before a connector becomes dispatchable.
+pub fn is_abi_compatible(abi_version: u32) -> bool {
+    abi_version == CONNECTOR_ABI_VERSION
+}
+
+/// Declared capability manifest for a connector.
+///
+/// `network` is an **enforced** allowlist in v1: the broker (`ConnectorCtx::send`)
+/// rejects egress to any host not listed, and an **empty list denies all egress**
+/// (fail-closed). Matching is host-granularity (no port/path) in v1; v2/WASM
+/// extends the same check to the full sandbox boundary. `storage` scopes remain
+/// advisory until a storage broker exists (the first storage-touching connector —
+/// the Vault folder reader, 0.7.0 — populates them).
 #[derive(Debug, Clone, Default)]
 pub struct ConnectorPermissions {
-    /// Network hosts the connector may reach (e.g. `"api.anthropic.com"`).
+    /// Network hosts the connector may reach (e.g. `"api.anthropic.com"`). An
+    /// empty list denies all egress (fail-closed).
     pub network: Vec<&'static str>,
-    /// Storage scopes the connector may touch.
+    /// Storage scopes the connector may touch. Forward-compat schema; not yet
+    /// enforced (no storage broker). Populated by the first storage connector.
     pub storage: Vec<&'static str>,
 }
 
@@ -118,9 +134,11 @@ pub struct ConnectorDescriptor {
     /// Capability label only (e.g. `"spend"`) — NOT a dispatch axis; capability
     /// is expressed by the registry's connector trait.
     pub kind: &'static str,
-    /// ABI version for v2 load-time compatibility checks (enforced in #122).
+    /// ABI version, checked at registration against [`CONNECTOR_ABI_VERSION`]
+    /// (load-time compatibility gate; see [`is_abi_compatible`]).
     pub abi_version: u32,
-    /// Declared capability manifest (network hosts filled in #122).
+    /// Declared capability manifest; `permissions.network` is an enforced egress
+    /// allowlist in v1 (fail-closed — an empty list denies all egress).
     pub permissions: ConnectorPermissions,
     /// Credential shape (GCP composite handling landed in #121).
     pub credential_schema: CredentialSchema,

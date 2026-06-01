@@ -358,11 +358,12 @@ impl ConnectorCtx {
         Ok(guard.get_or_insert(key).clone())
     }
 
-    /// Perform one brokered round-trip: enforce https, advisory-log the egress
-    /// host, resolve + inject the credential per `auth`, and return the response
-    /// once headers arrive. The connector reads the body via
-    /// [`BrokeredResponse::bytes`] only when it needs it — so a terminal status is
-    /// produced without buffering the body.
+    /// Perform one brokered round-trip: enforce https, enforce the network
+    /// allowlist (reject egress to an undeclared host — fail-closed — before any
+    /// credential read), advisory-log the egress host, resolve + inject the
+    /// credential per `auth`, and return the response once headers arrive. The
+    /// connector reads the body via [`BrokeredResponse::bytes`] only when it needs
+    /// it — so a terminal status is produced without buffering the body.
     pub async fn send(
         &self,
         request: ConnectorRequest,
@@ -375,14 +376,56 @@ impl ConnectorCtx {
             ));
         }
 
-        // Advisory egress log: provider id + host + path + the declared network
-        // allowlist ONLY. NEVER the headers or query — they carry the injected
-        // credential. The allowlist is empty in v1 (populated #122, enforced
-        // v2/WASM); this is a log of where egress actually went, not a violation
-        // comparison.
+        // Network allowlist gate (spec E16): reject egress to any host not in this
+        // connector's declared `permissions.network`. Fail-closed — an empty list
+        // denies all egress. This runs BEFORE the advisory log and BEFORE any
+        // credential resolution/injection, so a blocked egress never reads the
+        // keychain and never puts the identity-bound secret on the wire — the
+        // credential is host-injected based on the URL the connector chose, so the
+        // allowlist is the boundary that constrains where it can go. Host-
+        // granularity in v1; v2/WASM extends the same check to the full sandbox.
+        //
+        // Match on `host_str()` (never the raw url / authority): a userinfo smuggle
+        // like `https://api.host.com@evil.com` resolves to host `evil.com` and is
+        // blocked. Normalize a trailing root dot + ASCII case so `api.host.com.`
+        // and `API.HOST.COM` still match a declared lowercase host.
+        let host = match url.host_str() {
+            Some(h) => h.strip_suffix('.').unwrap_or(h),
+            None => {
+                return Err(ConnectorError::Config(
+                    "connector egress url has no host".to_string(),
+                ))
+            }
+        };
+        let host_allowed = self.descriptor.permissions.network.iter().any(|declared| {
+            declared
+                .strip_suffix('.')
+                .unwrap_or(declared)
+                .eq_ignore_ascii_case(host)
+        });
+        if !host_allowed {
+            // Security event. Host + path + declared allowlist ONLY — never the
+            // headers/query (which carry the injected credential) and never the raw
+            // url (a spoofed userinfo prefix). No keychain read happened; no secret
+            // was injected.
+            tracing::warn!(
+                provider = self.descriptor.id,
+                host = host,
+                path = url.path(),
+                declared = ?self.descriptor.permissions.network,
+                "connector egress BLOCKED: host not in declared network allowlist"
+            );
+            return Err(ConnectorError::Config(format!(
+                "connector egress to host '{host}' not in declared network allowlist"
+            )));
+        }
+
+        // Advisory egress log (allowed hosts only — the gate above rejected the
+        // rest): provider id + host + path + the declared allowlist ONLY. NEVER the
+        // headers or query — they carry the injected credential.
         tracing::debug!(
             provider = self.descriptor.id,
-            host = url.host_str().unwrap_or(""),
+            host = host,
             path = url.path(),
             declared = ?self.descriptor.permissions.network,
             "connector egress"
@@ -472,15 +515,40 @@ impl ConnectorCtx {
     }
 }
 
+/// A descriptor for the broker's own tests. Its `permissions.network` mirrors the
+/// connector's REAL egress host(s) by id so the existing FakeTransport tests pass
+/// under the fail-closed network gate (each sends to the host below). The generic
+/// broker tests use id `"openai"` but exercise egress against the neutral host
+/// `api.example.com` (openai has no broker-loop test of its own), so that id maps
+/// to `api.example.com`, not the production `api.openai.com`.
 #[cfg(test)]
 pub(crate) fn test_descriptor(id: &'static str) -> ConnectorDescriptor {
-    use super::descriptor::{CredentialSchema, CONNECTOR_ABI_VERSION};
+    let network = match id {
+        "anthropic" => vec!["api.anthropic.com"],
+        "openrouter" => vec!["openrouter.ai"],
+        "gcp" => vec!["oauth2.googleapis.com", "bigquery.googleapis.com"],
+        _ => vec!["api.example.com"],
+    };
+    test_descriptor_with_network(id, network)
+}
+
+/// Like [`test_descriptor`] but with an explicit network allowlist — for the
+/// enforcement tests (allow / deny / fail-closed-on-empty).
+#[cfg(test)]
+pub(crate) fn test_descriptor_with_network(
+    id: &'static str,
+    network: Vec<&'static str>,
+) -> ConnectorDescriptor {
+    use super::descriptor::{ConnectorPermissions, CredentialSchema, CONNECTOR_ABI_VERSION};
     ConnectorDescriptor {
         id,
         display_name: id,
         kind: "spend",
         abi_version: CONNECTOR_ABI_VERSION,
-        permissions: Default::default(),
+        permissions: ConnectorPermissions {
+            network,
+            storage: vec![],
+        },
         credential_schema: CredentialSchema::single_api_key(),
         available: true,
     }
@@ -723,5 +791,99 @@ mod tests {
                 .iter()
                 .any(|(k, v)| k == "Authorization" && v == "Bearer sk-secret"));
         }
+    }
+
+    // ── Network allowlist enforcement (#122 / spec E16) ───────────────────────
+
+    /// A host IN the connector's declared allowlist reaches the transport.
+    /// (`test_descriptor("openai")` declares `api.example.com`.)
+    #[tokio::test]
+    async fn send_allows_declared_host() {
+        let (ctx, transport) = ctx_with(vec![ok_200()]);
+        let resp = ctx
+            .send(ConnectorRequest::get("https://api.example.com/v1"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(transport.captured.lock().unwrap().len(), 1);
+    }
+
+    /// A host NOT in the allowlist is blocked BEFORE any egress or credential
+    /// injection: Config error, transport never hit, secret never on the wire.
+    #[tokio::test]
+    async fn send_denies_undeclared_host_before_any_egress() {
+        let (ctx, transport) = ctx_with(Vec::new());
+        ctx.seed_credential("sk-secret");
+
+        let err = ctx
+            .send(ConnectorRequest::get("https://evil.example.com").auth(Auth::Bearer))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectorError::Config(_)));
+        assert!(
+            transport.captured.lock().unwrap().is_empty(),
+            "an undeclared host must not reach the transport (no egress, no injected credential)"
+        );
+    }
+
+    /// The gate keys on `host_str()`, so a userinfo smuggle resolves to the host
+    /// AFTER the `@` (`evil.com`) and is blocked even though the declared host
+    /// appears in the userinfo prefix.
+    #[tokio::test]
+    async fn send_denies_userinfo_smuggled_host() {
+        let (ctx, transport) = ctx_with(Vec::new());
+        ctx.seed_credential("sk-secret");
+
+        let err = ctx
+            .send(ConnectorRequest::get("https://api.example.com@evil.com/").auth(Auth::Bearer))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ConnectorError::Config(_)));
+        assert!(transport.captured.lock().unwrap().is_empty());
+    }
+
+    /// A trailing root dot and uppercase canonicalize to the declared lowercase
+    /// host, so a legitimate request is NOT false-blocked.
+    #[tokio::test]
+    async fn send_allows_trailing_dot_and_uppercase_host() {
+        let (ctx, transport) = ctx_with(vec![ok_200(), ok_200()]);
+        ctx.send(ConnectorRequest::get("https://api.example.com./v1"))
+            .await
+            .unwrap();
+        ctx.send(ConnectorRequest::get("https://API.EXAMPLE.COM/v1"))
+            .await
+            .unwrap();
+        assert_eq!(transport.captured.lock().unwrap().len(), 2);
+    }
+
+    /// The gate is auth-agnostic: an `Auth::None` egress to an undeclared host is
+    /// still blocked (gcp's BigQuery leg is `Auth::None` + a connector-set Bearer).
+    #[tokio::test]
+    async fn send_denies_undeclared_host_even_for_auth_none() {
+        let (ctx, transport) = ctx_with(Vec::new());
+        let err = ctx
+            .send(ConnectorRequest::get("https://evil.example.com"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ConnectorError::Config(_)));
+        assert!(transport.captured.lock().unwrap().is_empty());
+    }
+
+    /// Fail-closed: an EMPTY allowlist denies all egress.
+    #[tokio::test]
+    async fn empty_allowlist_denies_all_egress() {
+        let transport = Arc::new(FakeTransport::new(Vec::new()));
+        let ctx = ConnectorCtx::with_transport(
+            test_descriptor_with_network("openai", Vec::new()),
+            transport.clone(),
+        );
+        let err = ctx
+            .send(ConnectorRequest::get("https://api.example.com"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ConnectorError::Config(_)));
+        assert!(transport.captured.lock().unwrap().is_empty());
     }
 }
