@@ -183,8 +183,8 @@ Functional identity (validated against the KB research): **portability + control
 - [x] `abi_version` on every Descriptor. *(present on all 5; load-time compatibility gate wired in #122.)*
 - [x] Capability manifests name **network hosts** + read/write scopes (not just budgets/booleans). *(network hosts populated + enforced in #122; storage scopes await a storage broker.)*
 - [x] All I/O host-brokered; handlers never touch fs/net/secrets; **keys never enter handlers**. *(connector I/O fully brokered via `ctx` — no connector imports reqwest/secrets and the key never enters a connector (#120/#121); View/Action handlers uphold the same when they land in 0.5/0.6.)*
-- [x] Dispatch via a registry with a `Native | Wasm` arm (WASM is additive). *(registry dispatch + Native arm + the abi load-time gate as the WASM forward-seam (#119/#122); the Wasm arm is the additive v2 bolt-on.)*
-- [x] Connector invocation is a **serializable, multi-step** host-call loop (GCP proves re-entrancy). *(GCP's OAuth→BigQuery 3-leg loop (#121); `ConnectorRequest` carries plain serializable fields.)*
+- [ ] Dispatch via a registry with a `Native | Wasm` arm (WASM is additive). *(the native factory registry exists (#119) and the abi load-time gate is the forward-seam (#122) — but there is **no `Native | Wasm` dispatch enum yet**; the registry stores only a native `Fn() -> Box<dyn SpendConnector>`. The Wasm arm is v2.)*
+- [ ] Connector invocation is a **serializable, multi-step** host-call loop (GCP proves re-entrancy). *(the **multi-step** loop is proven by GCP's OAuth→BigQuery flow (#121), but the **serializable** boundary is NOT done — `ConnectorRequest`/`Auth`/`RequestBody` are private-field in-process builders with no serde impl; the serialized host-call boundary is deferred to the v2/WASM seam.)*
 - [ ] View data is **host-fed serialized props**; declarative interactions are **declared intents**, not callbacks.
 - [ ] Progress/cancel are **cooperative broker calls**, not closures/future-drop.
 - [ ] Node/contribution ids are **namespaced** (`${sourceId}:${localId}`).
