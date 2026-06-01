@@ -64,14 +64,24 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux system dependencies
+        # apt-get occasionally hangs on a slow Azure mirror (a ~14-min stall on the
+        # update step blocked the Rust gate on PR #145, #146). Retry update+install
+        # up to 3x with a per-attempt timeout so a hung mirror is killed and retried
+        # rather than stalling the whole job. The `if` keeps this safe under set -e.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            libdbus-1-dev \
-            patchelf
+          for attempt in 1 2 3; do
+            if timeout 200 sudo apt-get update && timeout 300 sudo apt-get install -y \
+              libwebkit2gtk-4.1-dev \
+              libappindicator3-dev \
+              librsvg2-dev \
+              libdbus-1-dev \
+              patchelf; then
+              exit 0
+            fi
+            echo "::warning::apt attempt $attempt failed or timed out; retrying in 15s"
+            sleep 15
+          done
+          exit 1
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
