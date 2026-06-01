@@ -264,7 +264,7 @@ async fn fetch_provider_spend(provider: String) -> Result<connectors::SpendData,
         .ok_or_else(|| format!("unknown provider '{provider}'"))?;
 
     let client = http::build_client();
-    let connector: Box<dyn SpendConnector> = (registration.factory)(client.clone());
+    let connector: Box<dyn SpendConnector> = (registration.factory)();
 
     if !providers::is_provider_enabled(&provider)? {
         tracing::debug!(
