@@ -13,7 +13,8 @@
 use reqwest::Client;
 
 use super::descriptor::{
-    ConnectorDescriptor, ConnectorPermissions, CredentialSchema, CONNECTOR_ABI_VERSION,
+    is_abi_compatible, ConnectorDescriptor, ConnectorPermissions, CredentialSchema,
+    CONNECTOR_ABI_VERSION,
 };
 use super::spend::{
     anthropic::AnthropicConnector, gcp::GcpConnector, groq::GroqConnector, openai::OpenAiConnector,
@@ -43,9 +44,23 @@ impl SpendConnectorRegistry {
         Self::default()
     }
 
-    /// Register a connector. This is the seam where a v2 host would check
-    /// `descriptor.abi_version` before accepting the connector (wired in #122).
+    /// Register a connector. Enforces the load-time ABI compatibility gate (spec
+    /// E5): a descriptor whose `abi_version` the host cannot speak must not become
+    /// dispatchable.
+    ///
+    /// In v1 every connector is first-party and compiled against
+    /// [`CONNECTOR_ABI_VERSION`], so a mismatch can only be a programming mistake;
+    /// a `debug_assert!` makes it a hard CI failure while staying panic-free in
+    /// release. When the v2 `Native | Wasm` loader admits untrusted guests this
+    /// gate hardens into a runtime reject — the same seam, a stricter failure mode.
     pub fn register(&mut self, descriptor: ConnectorDescriptor, factory: SpendConnectorFactory) {
+        debug_assert!(
+            is_abi_compatible(descriptor.abi_version),
+            "connector '{}' declares abi_version {} but the host supports {}",
+            descriptor.id,
+            descriptor.abi_version,
+            CONNECTOR_ABI_VERSION
+        );
         debug_assert!(
             self.get(descriptor.id).is_none(),
             "duplicate connector id registered: {}",
@@ -84,7 +99,11 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             display_name: "Anthropic",
             kind: "spend",
             abi_version: CONNECTOR_ABI_VERSION,
-            permissions: ConnectorPermissions::default(),
+            // Cost Report API — the only egress host.
+            permissions: ConnectorPermissions {
+                network: vec!["api.anthropic.com"],
+                storage: vec![],
+            },
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
@@ -97,7 +116,11 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             display_name: "OpenAI",
             kind: "spend",
             abi_version: CONNECTOR_ABI_VERSION,
-            permissions: ConnectorPermissions::default(),
+            // /organization/costs + the legacy /v1/usage fallback share this host.
+            permissions: ConnectorPermissions {
+                network: vec!["api.openai.com"],
+                storage: vec![],
+            },
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
@@ -110,7 +133,11 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             display_name: "OpenRouter",
             kind: "spend",
             abi_version: CONNECTOR_ABI_VERSION,
-            permissions: ConnectorPermissions::default(),
+            // /api/v1/auth/key — the only egress host.
+            permissions: ConnectorPermissions {
+                network: vec!["openrouter.ai"],
+                storage: vec![],
+            },
             credential_schema: CredentialSchema::single_api_key(),
             available: true,
         },
@@ -123,7 +150,14 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             display_name: "Groq",
             kind: "spend",
             abi_version: CONNECTOR_ABI_VERSION,
-            permissions: ConnectorPermissions::default(),
+            // No egress: Groq exposes no billing API, so the connector never calls
+            // ctx.send. An empty allowlist denies all egress (fail-closed) — safe
+            // here, and it would block any accidental future send until a host is
+            // declared.
+            permissions: ConnectorPermissions {
+                network: vec![],
+                storage: vec![],
+            },
             credential_schema: CredentialSchema::single_api_key(),
             // Groq exposes no public billing API yet (the connector returns an
             // informative error); surface it as not-yet-available.
@@ -138,7 +172,13 @@ pub fn spend_connector_registry() -> SpendConnectorRegistry {
             display_name: "Google Cloud",
             kind: "spend",
             abi_version: CONNECTOR_ABI_VERSION,
-            permissions: ConnectorPermissions::default(),
+            // OAuth token exchange + BigQuery query — two distinct egress hosts.
+            // NOT www.googleapis.com: that is only the bigquery.readonly *scope*
+            // URI inside the signed JWT claims, never a request target.
+            permissions: ConnectorPermissions {
+                network: vec!["oauth2.googleapis.com", "bigquery.googleapis.com"],
+                storage: vec![],
+            },
             // Composite credential: service-account key (secret, signed host-side
             // via ctx.sign) + BigQuery coordinates (non-secret). Brokered in #121.
             credential_schema: CredentialSchema::gcp_service_account(),
@@ -229,5 +269,87 @@ mod tests {
             );
         }
         assert_eq!(registry.descriptors().count(), PROVIDER_IDS.len());
+    }
+
+    // ── ABI gate + network allowlist (#122) ───────────────────────────────────
+
+    /// Every built-in declares the host ABI, so the load-time gate is a no-op for
+    /// them (and stays that way until the ABI is bumped).
+    #[test]
+    fn all_builtins_register_at_host_abi() {
+        for d in spend_connector_registry().descriptors() {
+            assert_eq!(d.abi_version, CONNECTOR_ABI_VERSION, "{} abi", d.id);
+            assert!(is_abi_compatible(d.abi_version));
+        }
+    }
+
+    /// The load-time ABI gate refuses a descriptor the host cannot speak. The gate
+    /// is a `debug_assert!`, so this only fires in debug builds.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn register_rejects_incompatible_abi() {
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {})); // silence the expected panic backtrace
+        let result = std::panic::catch_unwind(|| {
+            let mut registry = SpendConnectorRegistry::new();
+            registry.register(
+                ConnectorDescriptor {
+                    id: "future",
+                    display_name: "Future",
+                    kind: "spend",
+                    abi_version: CONNECTOR_ABI_VERSION + 1,
+                    permissions: ConnectorPermissions::default(),
+                    credential_schema: CredentialSchema::single_api_key(),
+                    available: true,
+                },
+                Box::new(|_client| Box::new(GroqConnector)),
+            );
+        });
+        std::panic::set_hook(prev);
+        assert!(
+            result.is_err(),
+            "a descriptor declaring an incompatible abi_version must trip the gate"
+        );
+    }
+
+    /// Fail-closed safety net: every AVAILABLE connector declares at least one
+    /// egress host (an empty allowlist denies all egress at runtime, which would
+    /// brick an available connector that actually calls `ctx.send`).
+    #[test]
+    fn every_available_connector_declares_a_network_host() {
+        for d in spend_connector_registry().descriptors() {
+            if d.available {
+                assert!(
+                    !d.permissions.network.is_empty(),
+                    "available connector {} declares no network host",
+                    d.id
+                );
+            }
+        }
+    }
+
+    /// Pin each connector's declared egress hosts to its real `send()` targets, so
+    /// a URL change without a manifest update is caught (a missing host would brick
+    /// that connector under the fail-closed gate; an extra host over-grants).
+    #[test]
+    fn registry_declares_real_egress_hosts() {
+        let registry = spend_connector_registry();
+        let hosts = |id: &str| {
+            registry
+                .get(id)
+                .unwrap()
+                .descriptor
+                .permissions
+                .network
+                .clone()
+        };
+        assert_eq!(hosts("anthropic"), vec!["api.anthropic.com"]);
+        assert_eq!(hosts("openai"), vec!["api.openai.com"]);
+        assert_eq!(hosts("openrouter"), vec!["openrouter.ai"]);
+        assert_eq!(
+            hosts("gcp"),
+            vec!["oauth2.googleapis.com", "bigquery.googleapis.com"]
+        );
+        assert!(hosts("groq").is_empty(), "groq has no egress");
     }
 }
