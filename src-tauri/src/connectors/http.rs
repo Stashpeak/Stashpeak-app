@@ -37,6 +37,14 @@ pub fn build_client() -> Client {
     Client::builder()
         .use_rustls_tls()
         .timeout(Duration::from_secs(30))
+        // Do NOT follow redirects. The broker validates (https) + advisory-logs +
+        // injects the identity-bound credential for the ORIGINAL url only.
+        // Following a 30x would re-issue the request — including injected secrets
+        // such as Anthropic's `x-api-key`, which reqwest does NOT strip on
+        // cross-host redirects — to a target the broker never validated, and would
+        // make the egress log (original host) wrong. A 3xx is instead returned
+        // as-is for the connector to classify. (Codex P2, PR #138.)
+        .redirect(reqwest::redirect::Policy::none())
         .user_agent(concat!("Stashpeak/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("failed to build HTTP client")
