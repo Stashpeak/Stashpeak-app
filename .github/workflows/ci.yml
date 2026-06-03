@@ -1,15 +1,15 @@
 name: CI
 
-# First functional CI on pull requests: typecheck + frontend build + vitest
-# (frontend job) and cargo test (rust job). Before this, the only PR check was
-# validate-pr-body.
+# CI on pull requests. The frontend job runs format:check, ESLint, the
+# typecheck+build, vitest, and `npm audit --omit=dev`; the rust job runs
+# cargo fmt --check, clippy (-D warnings), and cargo test.
 #
 # NOTE: these jobs report pass/fail but are ADVISORY for now — branch protection
 # / required status checks are unavailable on this repo's current plan (private
 # repo without GitHub Pro/Team; the API returns 403, the same constraint noted
 # in codeql.yml). Once the repo is public or the org upgrades, mark the
-# "Frontend (typecheck + vitest)" and "Rust (cargo test)" checks as required in
-# branch protection so a red run actually blocks merges. See #118.
+# "Frontend (lint, typecheck, test)" and "Rust (fmt, clippy, test)" checks as
+# required in branch protection so a red run actually blocks merges. See #118.
 on:
   pull_request:
   push:
@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   frontend:
-    name: Frontend (typecheck + vitest)
+    name: Frontend (lint, typecheck, test)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,11 +34,17 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
 
       # `npm run build` = `tsc && vite build` — doubles as the typecheck gate.
       - name: Typecheck and build
@@ -47,8 +53,11 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
   rust:
-    name: Rust (cargo test)
+    name: Rust (fmt, clippy, test)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -57,11 +66,18 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Cheap, source-only gate — runs before the apt install + compile so a
+      # formatting miss fails fast without paying for the toolchain build.
+      - name: Rust format check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
       - name: Install Linux system dependencies
         # apt-get occasionally hangs on a slow Azure mirror (a ~14-min stall on the
@@ -94,6 +110,11 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      # clippy compiles the crate (and tests/examples via --all-targets), so it
+      # needs dist/ from the step above.
+      - name: Clippy (deny warnings)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
