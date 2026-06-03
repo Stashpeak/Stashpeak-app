@@ -82,9 +82,7 @@ export function MapView() {
 
   const mapProviders = useMemo(() => {
     const providerIds = new Set(
-      visibleProviders
-        .filter(({ id }) => states[id].tag !== "unconfigured")
-        .map(({ id }) => id),
+      visibleProviders.filter(({ id }) => states[id].tag !== "unconfigured").map(({ id }) => id),
     );
     const knownProviderIds = new Set(SPEND_PROVIDERS.map(({ id }) => id));
 
@@ -95,21 +93,17 @@ export function MapView() {
       }
     });
 
-    return SPEND_PROVIDERS.filter(
-      ({ id, comingSoon }) => !comingSoon && providerIds.has(id),
-    );
+    return SPEND_PROVIDERS.filter(({ id, comingSoon }) => !comingSoon && providerIds.has(id));
   }, [states, subscriptions, visibleProviders]);
 
-  const providerIds = useMemo(
-    () => mapProviders.map(({ id }) => id),
-    [mapProviders],
-  );
+  const providerIds = useMemo(() => mapProviders.map(({ id }) => id), [mapProviders]);
 
   const productGroups = useMemo(
-    () => mapProviders.map((provider) => ({
-      provider,
-      products: getProductsForProvider(provider.id),
-    })),
+    () =>
+      mapProviders.map((provider) => ({
+        provider,
+        products: getProductsForProvider(provider.id),
+      })),
     [mapProviders],
   );
 
@@ -141,105 +135,114 @@ export function MapView() {
     persistMapLayout(nextLayout);
   }, []);
 
-  const deleteStoredNodeLayout = useCallback((nodeId: string) => {
-    if (!(nodeId in storedLayoutRef.current)) {
-      return;
-    }
-
-    const nextLayout = { ...storedLayoutRef.current };
-    delete nextLayout[nodeId];
-    writeStoredLayout(nextLayout);
-  }, [writeStoredLayout]);
-
-  const setStoredNodeLayout = useCallback((nodeId: string, layout: ReturnType<typeof createAbsoluteNodeLayout>) => {
-    writeStoredLayout({
-      ...storedLayoutRef.current,
-      [nodeId]: layout,
-    });
-  }, [writeStoredLayout]);
-
-  const persistNodePositions = useCallback((nextNodes: MapNode[], changedPositionIds: Set<string>) => {
-    if (changedPositionIds.size === 0) {
-      return;
-    }
-
-    const nextLayout = { ...storedLayoutRef.current };
-    const nextNodesById = new Map(nextNodes.map((node) => [node.id, node]));
-    const providerPositions = new Map(
-      nextNodes
-        .filter((node): node is Extract<MapNode, { type: "provider" }> => node.type === "provider")
-        .map((node) => [node.id, node.position]),
-    );
-
-    changedPositionIds.forEach((nodeId) => {
-      const node = nextNodesById.get(nodeId);
-      if (!node) {
+  const deleteStoredNodeLayout = useCallback(
+    (nodeId: string) => {
+      if (!(nodeId in storedLayoutRef.current)) {
         return;
       }
 
-      if (node.type === "provider") {
-        nextLayout[node.id] = createAbsoluteNodeLayout(node.position.x, node.position.y);
+      const nextLayout = { ...storedLayoutRef.current };
+      delete nextLayout[nodeId];
+      writeStoredLayout(nextLayout);
+    },
+    [writeStoredLayout],
+  );
+
+  const setStoredNodeLayout = useCallback(
+    (nodeId: string, layout: ReturnType<typeof createAbsoluteNodeLayout>) => {
+      writeStoredLayout({
+        ...storedLayoutRef.current,
+        [nodeId]: layout,
+      });
+    },
+    [writeStoredLayout],
+  );
+
+  const persistNodePositions = useCallback(
+    (nextNodes: MapNode[], changedPositionIds: Set<string>) => {
+      if (changedPositionIds.size === 0) {
         return;
       }
 
-      const parentNodeId =
-        node.type === "product"
-          ? node.data.parentProviderNodeId
-          : node.data.linkedProviderNodeId;
+      const nextLayout = { ...storedLayoutRef.current };
+      const nextNodesById = new Map(nextNodes.map((node) => [node.id, node]));
+      const providerPositions = new Map(
+        nextNodes
+          .filter(
+            (node): node is Extract<MapNode, { type: "provider" }> => node.type === "provider",
+          )
+          .map((node) => [node.id, node.position]),
+      );
 
-      if (parentNodeId) {
-        const parentPosition = providerPositions.get(parentNodeId);
-        if (!parentPosition) {
+      changedPositionIds.forEach((nodeId) => {
+        const node = nextNodesById.get(nodeId);
+        if (!node) {
           return;
         }
 
-        nextLayout[node.id] = createRelativeNodeLayout(
-          parentNodeId,
-          node.position.x - parentPosition.x,
-          node.position.y - parentPosition.y,
-          node.data.layoutKey,
+        if (node.type === "provider") {
+          nextLayout[node.id] = createAbsoluteNodeLayout(node.position.x, node.position.y);
+          return;
+        }
+
+        const parentNodeId =
+          node.type === "product" ? node.data.parentProviderNodeId : node.data.linkedProviderNodeId;
+
+        if (parentNodeId) {
+          const parentPosition = providerPositions.get(parentNodeId);
+          if (!parentPosition) {
+            return;
+          }
+
+          nextLayout[node.id] = createRelativeNodeLayout(
+            parentNodeId,
+            node.position.x - parentPosition.x,
+            node.position.y - parentPosition.y,
+            node.data.layoutKey,
+          );
+          return;
+        }
+
+        nextLayout[node.id] = createAbsoluteNodeLayout(node.position.x, node.position.y);
+      });
+
+      writeStoredLayout(nextLayout);
+    },
+    [writeStoredLayout],
+  );
+
+  const toggleSubscriptionLink = useCallback(
+    (subscriptionId: Subscription["id"]) => {
+      const nextSuppressed = !suppressedLinkIdsRef.current[subscriptionId];
+      const nodeId = `subscription:${subscriptionId}`;
+      const currentNode = nodesRef.current.find((node) => node.id === nodeId);
+
+      if (nextSuppressed && currentNode?.type === "subscription") {
+        setStoredNodeLayout(
+          nodeId,
+          createAbsoluteNodeLayout(currentNode.position.x, currentNode.position.y),
         );
-        return;
+      } else {
+        deleteStoredNodeLayout(nodeId);
       }
 
-      nextLayout[node.id] = createAbsoluteNodeLayout(
-        node.position.x,
-        node.position.y,
-      );
-    });
+      void setSubscriptionLinkSuppressed(subscriptionId, nextSuppressed).catch(() => {});
 
-    writeStoredLayout(nextLayout);
-  }, [writeStoredLayout]);
+      setSuppressedLinkIds((current) => {
+        if (current[subscriptionId]) {
+          const next = { ...current };
+          delete next[subscriptionId];
+          return next;
+        }
 
-  const toggleSubscriptionLink = useCallback((subscriptionId: Subscription["id"]) => {
-    const nextSuppressed = !suppressedLinkIdsRef.current[subscriptionId];
-    const nodeId = `subscription:${subscriptionId}`;
-    const currentNode = nodesRef.current.find((node) => node.id === nodeId);
-
-    if (nextSuppressed && currentNode?.type === "subscription") {
-      setStoredNodeLayout(
-        nodeId,
-        createAbsoluteNodeLayout(currentNode.position.x, currentNode.position.y),
-      );
-    } else {
-      deleteStoredNodeLayout(nodeId);
-    }
-
-    void setSubscriptionLinkSuppressed(subscriptionId, nextSuppressed).catch(() => {});
-
-    setSuppressedLinkIds((current) => {
-      if (current[subscriptionId]) {
-        const next = { ...current };
-        delete next[subscriptionId];
-        return next;
-      }
-
-      return {
-        ...current,
-        [subscriptionId]: true,
-      };
-    });
-  }, [deleteStoredNodeLayout, setStoredNodeLayout]);
+        return {
+          ...current,
+          [subscriptionId]: true,
+        };
+      });
+    },
+    [deleteStoredNodeLayout, setStoredNodeLayout],
+  );
 
   const toggleProductVisibility = useCallback((productId: ProductId) => {
     pendingResetIdsRef.current.add(`product:${productId}`);
@@ -254,16 +257,19 @@ export function MapView() {
     });
   }, []);
 
-  const resetNodePosition = useCallback((nodeId: string) => {
-    pendingResetIdsRef.current.add(nodeId);
-    deleteStoredNodeLayout(nodeId);
-    setLayoutVersion((current) => current + 1);
-  }, [deleteStoredNodeLayout]);
+  const resetNodePosition = useCallback(
+    (nodeId: string) => {
+      pendingResetIdsRef.current.add(nodeId);
+      deleteStoredNodeLayout(nodeId);
+      setLayoutVersion((current) => current + 1);
+    },
+    [deleteStoredNodeLayout],
+  );
 
   const handleNodeDragStop = useCallback((_event: unknown, node: MapNode) => {
     const isProviderLinkedChild =
-      node.type === "product"
-      || (node.type === "subscription" && Boolean(node.data.linkedProviderNodeId));
+      node.type === "product" ||
+      (node.type === "subscription" && Boolean(node.data.linkedProviderNodeId));
 
     if (!isProviderLinkedChild) {
       return;
@@ -272,33 +278,35 @@ export function MapView() {
     setLayoutVersion((current) => current + 1);
   }, []);
 
-  const handleNodesChange = useCallback((changes: NodeChange<MapNode>[]) => {
-    const changedPositionIds = new Set(
-      changes
-        .filter((change): change is Extract<NodeChange<MapNode>, { type: "position" }> => change.type === "position")
-        .map((change) => change.id),
-    );
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<MapNode>[]) => {
+      const changedPositionIds = new Set(
+        changes
+          .filter(
+            (change): change is Extract<NodeChange<MapNode>, { type: "position" }> =>
+              change.type === "position",
+          )
+          .map((change) => change.id),
+      );
 
-    setNodes((currentNodes) => {
-      const nextNodes = applyNodeChanges(changes, currentNodes);
-      const repositionedNodes = moveProviderRelativeNodesWithProviders(currentNodes, nextNodes);
+      setNodes((currentNodes) => {
+        const nextNodes = applyNodeChanges(changes, currentNodes);
+        const repositionedNodes = moveProviderRelativeNodesWithProviders(currentNodes, nextNodes);
 
-      if (changedPositionIds.size > 0) {
-        persistNodePositions(repositionedNodes, changedPositionIds);
-      }
+        if (changedPositionIds.size > 0) {
+          persistNodePositions(repositionedNodes, changedPositionIds);
+        }
 
-      return repositionedNodes;
-    });
-  }, [persistNodePositions, setNodes]);
+        return repositionedNodes;
+      });
+    },
+    [persistNodePositions, setNodes],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      listSubscriptions(),
-      getSuppressedLinkIds(),
-      getProductVisibility(),
-    ])
+    Promise.all([listSubscriptions(), getSuppressedLinkIds(), getProductVisibility()])
       .then(([subscriptionData, suppressedIds, visibility]) => {
         if (cancelled) return;
         setSubscriptions(subscriptionData);
@@ -377,35 +385,55 @@ export function MapView() {
       <div className="border-b px-8 py-6 border-[var(--border-subtle)]">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">Visual graph</p>
-            <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">Ecosystem map</h2>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
+              Visual graph
+            </p>
+            <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">
+              Ecosystem map
+            </h2>
             <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-[var(--text-secondary)]">
-              Configured providers, their product tiers, and linked subscriptions rendered as a single map. Product
-              visibility is adjustable inline so you can keep the hierarchy detailed without turning the canvas into
-              noise.
+              Configured providers, their product tiers, and linked subscriptions rendered as a
+              single map. Product visibility is adjustable inline so you can keep the hierarchy
+              detailed without turning the canvas into noise.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2.5">
             <div className={PILL_SURFACE}>
-              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Providers</span>
-              <span className="text-sm font-medium text-[var(--text-primary)]">{providerCount}</span>
+              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                Providers
+              </span>
+              <span className="text-sm font-medium text-[var(--text-primary)]">
+                {providerCount}
+              </span>
             </div>
             <div className={PILL_SURFACE}>
-              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Products</span>
+              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                Products
+              </span>
               <span className="text-sm font-medium text-[var(--text-primary)]">{productCount}</span>
             </div>
             <div className={PILL_SURFACE}>
-              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Subscriptions</span>
-              <span className="text-sm font-medium text-[var(--text-primary)]">{subscriptionCount}</span>
+              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                Subscriptions
+              </span>
+              <span className="text-sm font-medium text-[var(--text-primary)]">
+                {subscriptionCount}
+              </span>
             </div>
             <div className={PILL_SURFACE}>
-              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Links</span>
+              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                Links
+              </span>
               <span className="text-sm font-medium text-[var(--text-primary)]">{edges.length}</span>
             </div>
             <div className={PILL_SURFACE}>
-              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">API month</span>
-              <span className="text-sm font-medium text-[var(--text-primary)]">{formatCurrency(apiTotal, "USD")}</span>
+              <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                API month
+              </span>
+              <span className="text-sm font-medium text-[var(--text-primary)]">
+                {formatCurrency(apiTotal, "USD")}
+              </span>
             </div>
           </div>
         </div>
@@ -429,14 +457,18 @@ export function MapView() {
           <div className="mt-4 rounded-[24px] border border-[var(--glass-border)] bg-[var(--glass-bg)] px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-muted)]">Product visibility</p>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-muted)]">
+                  Product visibility
+                </p>
                 <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
-                  Hide product tiers you do not want rendered. Linked subscriptions stay attached to the provider even
-                  when an intermediate product node is filtered out.
+                  Hide product tiers you do not want rendered. Linked subscriptions stay attached to
+                  the provider even when an intermediate product node is filtered out.
                 </p>
               </div>
               <div className={PILL_SURFACE}>
-                <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">Visible</span>
+                <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                  Visible
+                </span>
                 <span className="text-sm font-medium text-[var(--text-primary)]">
                   {visibleProductToggleCount}/{totalToggleableProducts}
                 </span>
@@ -449,7 +481,9 @@ export function MapView() {
                   key={provider.id}
                   className="min-w-[220px] rounded-[20px] border border-[var(--glass-border)] px-3.5 py-3"
                 >
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">{provider.name}</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-muted)]">
+                    {provider.name}
+                  </p>
                   <div className="mt-2.5 flex flex-wrap gap-2">
                     {products.map((product) => {
                       const enabled = productVisibility[product.id];
@@ -478,7 +512,9 @@ export function MapView() {
       </div>
 
       <div className="flex flex-1 flex-col gap-4 overflow-auto px-8 py-6">
-        {subscriptionsError && <SelectableErrorMessage>{subscriptionsError}</SelectableErrorMessage>}
+        {subscriptionsError && (
+          <SelectableErrorMessage>{subscriptionsError}</SelectableErrorMessage>
+        )}
         {loadError && <SelectableErrorMessage>{loadError}</SelectableErrorMessage>}
 
         {showLoading ? (
@@ -487,9 +523,12 @@ export function MapView() {
           </div>
         ) : isEmpty ? (
           <div className={EMPTY_DASHED_SURFACE}>
-            <p className="text-sm text-[var(--text-muted)]">No subscription or provider data available for the map yet.</p>
+            <p className="text-sm text-[var(--text-muted)]">
+              No subscription or provider data available for the map yet.
+            </p>
             <p className="mt-1 text-xs text-[var(--text-subtle)]">
-              Add subscriptions or configure spend providers and the graph will populate automatically.
+              Add subscriptions or configure spend providers and the graph will populate
+              automatically.
             </p>
           </div>
         ) : (
@@ -517,7 +556,11 @@ export function MapView() {
                 size={1.15}
                 variant={BackgroundVariant.Dots}
               />
-              <Controls className="stashpeak-map__controls" position="top-right" showInteractive={false} />
+              <Controls
+                className="stashpeak-map__controls"
+                position="top-right"
+                showInteractive={false}
+              />
               <MiniMap<MapNode>
                 className="stashpeak-map__minimap"
                 bgColor="transparent"

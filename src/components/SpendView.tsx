@@ -45,7 +45,10 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
   async function handleSaveKey(id: ProviderId) {
     if (id !== "gcp" && !keyInput.trim()) return;
-    if (id === "gcp" && (!keyInput.trim() || !gcpProject.trim() || !gcpDataset.trim() || !gcpTable.trim())) {
+    if (
+      id === "gcp" &&
+      (!keyInput.trim() || !gcpProject.trim() || !gcpDataset.trim() || !gcpTable.trim())
+    ) {
       setAddError("Please fill in all GCP fields");
       return;
     }
@@ -117,17 +120,24 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
     {} as Record<string, number>,
   );
 
-  const hasConfiguredProviders = visibleProviders.some(({ id }) => states[id].tag !== "unconfigured");
+  const hasConfiguredProviders = visibleProviders.some(
+    ({ id }) => states[id].tag !== "unconfigured",
+  );
 
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">API Usage</p>
-            <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">Spend tracker</h2>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
+              API Usage
+            </p>
+            <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">
+              Spend tracker
+            </h2>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
-              Monitor your API usage across various providers and track your monthly subscription costs in one place.
+              Monitor your API usage across various providers and track your monthly subscription
+              costs in one place.
             </p>
           </div>
 
@@ -138,7 +148,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
             {hasAnyApiData && (
               <div className={`${PILL_SURFACE} flex items-center gap-1.5`}>
-                <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-1">API this month</span>
+                <span className="text-[10px] uppercase tracking-[0.2em] text-secondary/60 mr-1">
+                  API this month
+                </span>
                 <span className="text-sm font-medium text-ink">${apiTotal.toFixed(2)}</span>
               </div>
             )}
@@ -157,7 +169,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
 
       <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
         {loadError && <SelectableErrorMessage>{loadError}</SelectableErrorMessage>}
-        {subscriptionsError && <SelectableErrorMessage>{subscriptionsError}</SelectableErrorMessage>}
+        {subscriptionsError && (
+          <SelectableErrorMessage>{subscriptionsError}</SelectableErrorMessage>
+        )}
 
         <section className={CARD_SURFACE}>
           <div className="flex items-center justify-between mb-3">
@@ -241,7 +255,9 @@ export function SpendView({ onNavigate }: { onNavigate: (s: Section) => void }) 
           ) : (
             <div className="space-y-2.5">
               {Object.entries(monthlyByCurrency).map(([currency, total]) => {
-                const count = subscriptions.filter((subscription) => subscription.currency === currency).length;
+                const count = subscriptions.filter(
+                  (subscription) => subscription.currency === currency,
+                ).length;
                 return (
                   <div key={currency} className={SUBTLE_PANEL_SURFACE}>
                     <div className="flex items-baseline justify-between gap-3">

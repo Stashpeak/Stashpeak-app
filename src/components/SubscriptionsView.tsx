@@ -14,7 +14,13 @@ import { ACCENT_PILL_SURFACE, PILL_SURFACE } from "../lib/surfaceStyles";
 import { useUpcomingRenewals } from "../hooks/useUpcomingRenewals";
 import { RenewalBanner } from "./RenewalBanner";
 import { StatHero } from "./StatHero";
-import { SubscriptionForm, EMPTY_FORM, toFormState, toPayload, type FormState } from "./SubscriptionForm";
+import {
+  SubscriptionForm,
+  EMPTY_FORM,
+  toFormState,
+  toPayload,
+  type FormState,
+} from "./SubscriptionForm";
 import { SubscriptionList } from "./SubscriptionList";
 import { SubscriptionPresets } from "./SubscriptionPresets";
 
@@ -101,9 +107,13 @@ export function SubscriptionsView() {
   }, [subscriptions, rateMap, homeCurrency]);
 
   const categories = useMemo(() => {
-    const fromSubscriptions = subscriptions.map((s) => formatCategoryLabel(s.category)).filter(Boolean);
+    const fromSubscriptions = subscriptions
+      .map((s) => formatCategoryLabel(s.category))
+      .filter(Boolean);
     const fromPresets = PRESETS.map((p) => formatCategoryLabel(p.category));
-    return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubscriptions])].sort((a, b) => a.localeCompare(b));
+    return [...new Set([...SEED_CATEGORIES, ...fromPresets, ...fromSubscriptions])].sort((a, b) =>
+      a.localeCompare(b),
+    );
   }, [subscriptions]);
 
   const names = useMemo(() => {
@@ -119,7 +129,7 @@ export function SubscriptionsView() {
   }, [subscriptions]);
 
   function updateForm(key: keyof FormState, value: string) {
-    setForm((prev) => ({ ...prev, [key]: value } as FormState));
+    setForm((prev) => ({ ...prev, [key]: value }) as FormState);
   }
 
   async function handleSubmit() {
@@ -189,13 +199,15 @@ export function SubscriptionsView() {
       <div className="border-b border-zinc-100 px-8 py-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-(--purple-label)">Recurring spend</p>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-(--purple-label)">
+              Recurring spend
+            </p>
             <h2 className="mt-1.5 text-3xl font-light tracking-tight text-(--text-primary)">
               Subscription tracker
             </h2>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-(--text-secondary)">
-              Track recurring AI subscriptions, quick-add common tools, and keep monthly totals grouped by currency.
-              Annual plans are prorated in the totals below.
+              Track recurring AI subscriptions, quick-add common tools, and keep monthly totals
+              grouped by currency. Annual plans are prorated in the totals below.
             </p>
           </div>
 
@@ -219,7 +231,9 @@ export function SubscriptionsView() {
                   </span>
                   {aggregateTotal.hasMissingRate && (
                     <span
-                      title={"Some currencies are missing exchange rates \u2014 set them in Settings"}
+                      title={
+                        "Some currencies are missing exchange rates \u2014 set them in Settings"
+                      }
                       className="cursor-help text-xs text-(--warning-text)"
                     >
                       {"\u26A0\uFE0F"}
@@ -230,8 +244,12 @@ export function SubscriptionsView() {
 
               {Array.from(totals.entries()).map(([currency, total]) => (
                 <div key={currency} className={PILL_SURFACE}>
-                  <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-secondary/60">{currency}</span>
-                  <span className="text-sm font-medium text-primary">{formatCurrency(total, currency)}/mo</span>
+                  <span className="mr-2 text-[10px] uppercase tracking-[0.2em] text-secondary/60">
+                    {currency}
+                  </span>
+                  <span className="text-sm font-medium text-primary">
+                    {formatCurrency(total, currency)}/mo
+                  </span>
                 </div>
               ))}
             </>

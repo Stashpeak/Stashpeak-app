@@ -6,3 +6,12 @@ package-lock.json
 src-tauri/target/
 src-tauri/gen/
 src-tauri/Cargo.lock
+
+# Markdown is authored prose (architecture specs, README, community-health docs).
+# Left as-authored — Prettier would rewrite *italics* to _italics_ and reflow
+# lists/tables, which is noisy churn unrelated to code formatting.
+*.md
+
+# Existing CI/release workflows are left exactly as authored (this PR adds gates
+# to ci.yml by hand; Prettier reflows GitHub Actions YAML comments/indentation).
+.github/workflows/

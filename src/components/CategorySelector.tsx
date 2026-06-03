@@ -56,7 +56,9 @@ export function CategorySelector({
     trimmedValue.length > 0 &&
     !filteredCategories.some((category) => category.toLowerCase() === trimmedValue.toLowerCase());
 
-  const visibleItems = showCreateOption ? [...filteredCategories, trimmedValue] : filteredCategories;
+  const visibleItems = showCreateOption
+    ? [...filteredCategories, trimmedValue]
+    : filteredCategories;
 
   useEffect(() => {
     function handleMouseDown(event: MouseEvent) {
@@ -163,9 +165,7 @@ export function CategorySelector({
             ref={dropdownRef}
             className="fixed z-140 top-(--dd-top) left-(--dd-left) w-(--dd-w) [visibility:var(--dd-vis)]"
           >
-            <div
-              className="glass-surface-elevated bg-(--dropdown-surface-fill) overflow-hidden rounded-2xl shadow-md"
-            >
+            <div className="glass-surface-elevated bg-(--dropdown-surface-fill) overflow-hidden rounded-2xl shadow-md">
               <ul ref={listRef} className="max-h-48 overflow-y-auto py-1">
                 {filteredCategories.map((category, index) => (
                   <li
@@ -212,9 +212,7 @@ export function CategorySelector({
             readOnly={readonlyInput}
             onMouseDown={() => {
               toggleOnClickRef.current =
-                readonlyInput &&
-                isOpen &&
-                document.activeElement === inputRef.current;
+                readonlyInput && isOpen && document.activeElement === inputRef.current;
             }}
             onChange={(event) => {
               if (readonlyInput) return;
@@ -296,8 +294,16 @@ export function CategorySelector({
           />
           {showDropdownIndicator && readonlyInput && (
             <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
-              <svg className={`h-4 w-4 text-zinc-400 transition-transform ${isOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              <svg
+                className={`h-4 w-4 text-zinc-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
           )}
@@ -311,8 +317,16 @@ export function CategorySelector({
               onClick={handleToggleButtonClick}
               className="absolute inset-y-0 right-2 flex w-8 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-300"
             >
-              <svg className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              <svg
+                className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                  clipRule="evenodd"
+                />
               </svg>
             </button>
           )}

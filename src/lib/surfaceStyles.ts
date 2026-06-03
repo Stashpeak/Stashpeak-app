@@ -1,11 +1,8 @@
-export const CARD_SURFACE =
-  "glass-surface rounded-[20px] p-6";
+export const CARD_SURFACE = "glass-surface rounded-[20px] p-6";
 
-export const HEADER_STAT_SURFACE =
-  "glass-surface rounded-[20px] px-5 py-3.5 text-right";
+export const HEADER_STAT_SURFACE = "glass-surface rounded-[20px] px-5 py-3.5 text-right";
 
-export const PILL_SURFACE =
-  "glass-surface rounded-full px-4 py-2";
+export const PILL_SURFACE = "glass-surface rounded-full px-4 py-2";
 
 export const ACCENT_PILL_SURFACE =
   "glass-surface rounded-full px-4 py-2 [--glass-surface-fill:var(--purple-accent)]";

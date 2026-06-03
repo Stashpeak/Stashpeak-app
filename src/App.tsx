@@ -15,7 +15,16 @@ export type Section = "dashboard" | "subscriptions" | "docker" | "spend" | "map"
 const IS_DEV_BUILD = import.meta.env.DEV;
 
 const GEAR_ICON = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
     <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
   </svg>
@@ -23,7 +32,16 @@ const GEAR_ICON = (
 
 const ICONS: Record<Section, ReactElement> = {
   dashboard: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect x="1" y="1" width="6" height="6" rx="1.5" />
       <rect x="9" y="1" width="6" height="6" rx="1.5" />
       <rect x="1" y="9" width="6" height="6" rx="1.5" />
@@ -31,14 +49,32 @@ const ICONS: Record<Section, ReactElement> = {
     </svg>
   ),
   subscriptions: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect x="1" y="3" width="14" height="10" rx="2" />
       <path d="M1 6h14" />
       <path d="M5 10h2M9 10h2" />
     </svg>
   ),
   docker: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect x="1" y="5" width="3" height="3" rx="0.5" />
       <rect x="5" y="5" width="3" height="3" rx="0.5" />
       <rect x="9" y="5" width="3" height="3" rx="0.5" />
@@ -47,12 +83,30 @@ const ICONS: Record<Section, ReactElement> = {
     </svg>
   ),
   spend: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M8 2v12M5 5.5C5 4.12 6.34 3 8 3s3 1.12 3 2.5S9.66 8 8 8 5 9.12 5 10.5 6.34 13 8 13s3-1.12 3-2.5" />
     </svg>
   ),
   map: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M6 2L2 4v10l4-2 4 2 4-2V2l-4 2-4-2z" />
       <path d="M6 2v10M10 4v10" />
     </svg>
@@ -71,7 +125,8 @@ const SECTION_LABELS: Record<Section, string> = {
 
 function EmptyState({ section }: { section: "docker" }) {
   const descriptions: Record<"docker", string> = {
-    docker: "Monitor your local AI containers - Ollama, OpenWebUI, Qdrant, and anything else running on your machine.",
+    docker:
+      "Monitor your local AI containers - Ollama, OpenWebUI, Qdrant, and anything else running on your machine.",
   };
 
   return (
@@ -80,10 +135,10 @@ function EmptyState({ section }: { section: "docker" }) {
         {ICONS[section]}
       </div>
       <div className="space-y-1.5">
-        <h2 className="text-xl text-(--text-primary) font-light">
-          {SECTION_LABELS[section]}
-        </h2>
-        <p className="max-w-xs text-sm leading-relaxed text-(--text-secondary)">{descriptions[section]}</p>
+        <h2 className="text-xl text-(--text-primary) font-light">{SECTION_LABELS[section]}</h2>
+        <p className="max-w-xs text-sm leading-relaxed text-(--text-secondary)">
+          {descriptions[section]}
+        </p>
       </div>
       <span className="text-[10px] uppercase tracking-[0.25em] text-(--text-subtle)">
         Coming soon
@@ -99,7 +154,9 @@ export default function App() {
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0"));
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion("0.1.0"));
 
     import("./lib/updater").then(({ checkForUpdate }) => {
       checkForUpdate()
@@ -113,14 +170,10 @@ export default function App() {
   }, []);
 
   return (
-    <div
-      className="flex h-screen overflow-hidden select-none bg-(--bg-gradient) text-(--text-primary)"
-    >
-      <aside
-        className="flex w-64 shrink-0 flex-col border-r bg-(--sidebar-bg) border-(--border-sidebar) backdrop-blur-[20px]"
-      >
-        <div 
-          className="flex items-center border-b px-4 py-4 border-(--border-subtle)" 
+    <div className="flex h-screen overflow-hidden select-none bg-(--bg-gradient) text-(--text-primary)">
+      <aside className="flex w-64 shrink-0 flex-col border-r bg-(--sidebar-bg) border-(--border-sidebar) backdrop-blur-[20px]">
+        <div
+          className="flex items-center border-b px-4 py-4 border-(--border-subtle)"
           data-tauri-drag-region
         >
           <button
@@ -145,7 +198,9 @@ export default function App() {
                   : "text-(--text-secondary) hover:bg-(--glass-bg) hover:text-(--text-primary)"
               }`}
             >
-              <span className={`shrink-0 transition-colors ${active === id ? "text-(--text-primary)" : "text-(--text-secondary)"}`}>
+              <span
+                className={`shrink-0 transition-colors ${active === id ? "text-(--text-primary)" : "text-(--text-secondary)"}`}
+              >
                 {ICONS[id]}
               </span>
               {SECTION_LABELS[id]}
@@ -180,9 +235,7 @@ export default function App() {
               {GEAR_ICON}
             </button>
             {updateAvailable && (
-              <span
-                className="pointer-events-none absolute right-0 top-0 h-2 w-2 rounded-full bg-(--purple-primary) shadow-[0_0_0_2px_var(--bg-surface)]"
-              />
+              <span className="pointer-events-none absolute right-0 top-0 h-2 w-2 rounded-full bg-(--purple-primary) shadow-[0_0_0_2px_var(--bg-surface)]" />
             )}
           </div>
         </div>

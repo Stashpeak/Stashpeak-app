@@ -22,7 +22,11 @@ export interface StoredRelativeMapNodeLayout extends StoredMapNodeLayoutBase {
 export type StoredMapNodeLayout = StoredAbsoluteMapNodeLayout | StoredRelativeMapNodeLayout;
 export type StoredMapLayout = Record<string, StoredMapNodeLayout>;
 
-export function createAbsoluteNodeLayout(x: number, y: number, layoutKey?: string): StoredAbsoluteMapNodeLayout {
+export function createAbsoluteNodeLayout(
+  x: number,
+  y: number,
+  layoutKey?: string,
+): StoredAbsoluteMapNodeLayout {
   return { x, y, layoutKey };
 }
 

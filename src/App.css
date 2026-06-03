@@ -142,11 +142,7 @@
       rgba(255, 255, 255, 0) 57%,
       rgba(255, 255, 255, 0.1) 100%
     );
-    --bg-gradient: linear-gradient(
-      135deg,
-      rgb(25, 25, 25) 5.61%,
-      rgb(42, 36, 50) 94.39%
-    );
+    --bg-gradient: linear-gradient(135deg, rgb(25, 25, 25) 5.61%, rgb(42, 36, 50) 94.39%);
     color-scheme: dark;
   }
 
@@ -443,7 +439,11 @@
     --map-node-badge-border: color-mix(in srgb, var(--map-tone-accent) 38%, transparent);
     --map-node-badge-text: color-mix(in srgb, var(--text-primary) 76%, var(--map-tone-accent) 24%);
     --map-node-panel-fill: color-mix(in srgb, var(--bg-surface) 72%, var(--map-tone-accent) 14%);
-    --map-node-panel-border: color-mix(in srgb, var(--map-tone-accent) 18%, var(--glass-border) 82%);
+    --map-node-panel-border: color-mix(
+      in srgb,
+      var(--map-tone-accent) 18%,
+      var(--glass-border) 82%
+    );
   }
 
   .map-tone-anthropic {

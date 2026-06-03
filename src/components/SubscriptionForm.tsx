@@ -1,5 +1,9 @@
 import { CARD_SURFACE, SECONDARY_BUTTON_SURFACE, TEXT_INPUT_SURFACE } from "../lib/surfaceStyles";
-import { type BillingPeriod, type Subscription, type SubscriptionInput } from "../lib/subscriptions";
+import {
+  type BillingPeriod,
+  type Subscription,
+  type SubscriptionInput,
+} from "../lib/subscriptions";
 import { formatCategoryLabel } from "../lib/categoryFormatting";
 import { CURRENCY_OPTIONS } from "../lib/currencies";
 import { CategorySelector } from "./CategorySelector";
@@ -232,20 +236,12 @@ export function SubscriptionForm({
         </div>
         <div className="flex shrink-0 gap-2">
           {editingId !== null && !collapsed ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              className={SECONDARY_BUTTON_SURFACE}
-            >
+            <button type="button" onClick={onCancel} className={SECONDARY_BUTTON_SURFACE}>
               Cancel
             </button>
           ) : null}
           {onToggleCollapse ? (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              className={SECONDARY_BUTTON_SURFACE}
-            >
+            <button type="button" onClick={onToggleCollapse} className={SECONDARY_BUTTON_SURFACE}>
               {collapsed ? "+" : "−"}
             </button>
           ) : null}

@@ -93,7 +93,9 @@ export function useSpendData() {
     const cache = loadCache<ProviderId, SpendData>();
     const now = Date.now();
 
-    Promise.all(SPEND_PROVIDERS.map(({ id }) => getProviderEnabled(id).then((enabled) => ({ id, enabled }))))
+    Promise.all(
+      SPEND_PROVIDERS.map(({ id }) => getProviderEnabled(id).then((enabled) => ({ id, enabled }))),
+    )
       .then((results) => {
         if (cancelledRef.current) return;
 

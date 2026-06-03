@@ -36,7 +36,9 @@ export function NotificationSettings({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-medium text-ink">Billing renewal reminders</h2>
-          <p className="text-xs text-secondary mt-0.5">Notify when a subscription is about to renew</p>
+          <p className="text-xs text-secondary mt-0.5">
+            Notify when a subscription is about to renew
+          </p>
         </div>
         <label className="relative block w-10 h-6 shrink-0 cursor-pointer">
           <input
@@ -64,7 +66,8 @@ export function NotificationSettings({
       {enabled && (
         <div>
           <p className="text-xs text-secondary mb-3 leading-relaxed">
-            How many days before renewal to notify. Fires once per billing cycle when you open Stashpeak.
+            How many days before renewal to notify. Fires once per billing cycle when you open
+            Stashpeak.
           </p>
 
           <div className="flex gap-2 flex-wrap">
@@ -112,7 +115,9 @@ export function NotificationSettings({
         </div>
       )}
 
-      <p className={`text-xs text-primary transition-opacity ${notifSaved ? "opacity-100" : "opacity-0"}`}>
+      <p
+        className={`text-xs text-primary transition-opacity ${notifSaved ? "opacity-100" : "opacity-0"}`}
+      >
         Saved
       </p>
     </section>

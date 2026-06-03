@@ -53,7 +53,10 @@ export async function createSubscription(input: SubscriptionInput): Promise<Subs
   }
 }
 
-export async function updateSubscription(id: number, input: SubscriptionInput): Promise<Subscription> {
+export async function updateSubscription(
+  id: number,
+  input: SubscriptionInput,
+): Promise<Subscription> {
   try {
     return await invoke<Subscription>("update_subscription", { id, input });
   } catch (e) {
@@ -93,7 +96,10 @@ export async function getPinnedSubscriptionIds(): Promise<number[]> {
   }
 }
 
-export async function setSubscriptionLinkSuppressed(id: number, suppressed: boolean): Promise<void> {
+export async function setSubscriptionLinkSuppressed(
+  id: number,
+  suppressed: boolean,
+): Promise<void> {
   try {
     await invoke("set_subscription_link_suppressed", { id, suppressed });
   } catch (e) {

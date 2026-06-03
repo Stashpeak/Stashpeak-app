@@ -12,9 +12,7 @@ export function BusEdge({
   markerEnd,
   style,
 }: EdgeProps<MapEdge>) {
-  const laneY = sourceY < targetY
-    ? targetY - TOP_BUS_OFFSET
-    : targetY + BOTTOM_BUS_OFFSET;
+  const laneY = sourceY < targetY ? targetY - TOP_BUS_OFFSET : targetY + BOTTOM_BUS_OFFSET;
   const path = [
     `M ${sourceX} ${sourceY}`,
     `L ${sourceX} ${laneY}`,

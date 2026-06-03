@@ -11,6 +11,10 @@ export function formatCategoryLabel(value: string): string {
 
   return trimmedValue
     .split(/\s+/)
-    .map((word) => CATEGORY_LABEL_OVERRIDES[word.toLowerCase()] ?? `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`)
+    .map(
+      (word) =>
+        CATEGORY_LABEL_OVERRIDES[word.toLowerCase()] ??
+        `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`,
+    )
     .join(" ");
 }
