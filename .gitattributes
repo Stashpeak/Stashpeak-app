@@ -1,0 +1,11 @@
+# Normalize all text files to LF in the repository and on checkout, so a
+# CRLF working tree (Windows core.autocrlf) does not fight Prettier's
+# `endOfLine: lf` in `format:check` (pre-commit hook + CI).
+* text=auto eol=lf
+
+# Binary assets — never normalize.
+*.ttf binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.webp binary
