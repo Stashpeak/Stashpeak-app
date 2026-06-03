@@ -1,7 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Section } from "../App";
 import { listSubscriptions, type Subscription } from "../lib/subscriptions";
-import { CARD_SURFACE, EMPTY_DASHED_SURFACE, PILL_SURFACE, SUBTLE_PANEL_SURFACE } from "../lib/surfaceStyles";
+import {
+  CARD_SURFACE,
+  EMPTY_DASHED_SURFACE,
+  PILL_SURFACE,
+  SUBTLE_PANEL_SURFACE,
+} from "../lib/surfaceStyles";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 
 function formatDate(iso: string): string {
@@ -36,9 +41,7 @@ function Widget({
   return (
     <div className={CARD_SURFACE}>
       <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 className="text-base text-[var(--text-primary)] font-normal">
-          {title}
-        </h2>
+        <h2 className="text-base text-[var(--text-primary)] font-normal">{title}</h2>
         <button
           onClick={onCta}
           className="cursor-pointer text-xs text-[var(--purple-label)] transition-colors hover:text-[var(--text-primary)]"
@@ -63,7 +66,8 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
 
   const monthlyByCurrency = subscriptions.reduce(
     (accumulator, subscription) => {
-      accumulator[subscription.currency] = (accumulator[subscription.currency] ?? 0) + subscription.monthlyCost;
+      accumulator[subscription.currency] =
+        (accumulator[subscription.currency] ?? 0) + subscription.monthlyCost;
       return accumulator;
     },
     {} as Record<string, number>,
@@ -77,13 +81,12 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
         <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
           At a glance
         </p>
-        <h2
-          className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight"
-        >
+        <h2 className="mt-1.5 text-3xl text-[var(--text-primary)] font-light tracking-tight">
           Dashboard
         </h2>
         <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
-          Overview of your AI ecosystem. Monitor your spend, upcoming renewals, and active subscriptions.
+          Overview of your AI ecosystem. Monitor your spend, upcoming renewals, and active
+          subscriptions.
         </p>
       </div>
 
@@ -128,7 +131,9 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
                           key={subscription.id}
                           className="flex items-center justify-between gap-3 rounded-xl border bg-[var(--glass-bg)] px-3 py-2 backdrop-blur-[5px] border-[var(--glass-border)]"
                         >
-                          <span className="text-sm text-[var(--text-primary)]">{subscription.name}</span>
+                          <span className="text-sm text-[var(--text-primary)]">
+                            {subscription.name}
+                          </span>
                           <span className="text-xs text-[var(--text-secondary)]">
                             {formatDate(subscription.nextBillingAt!)} - {subscription.currency}{" "}
                             {subscription.monthlyCost.toFixed(2)}
@@ -152,7 +157,9 @@ export function DashboardView({ onNavigate }: { onNavigate: (section: Section) =
                 {subscriptions.slice(0, 5).map((subscription) => (
                   <div key={subscription.id} className={SUBTLE_PANEL_SURFACE}>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm text-[var(--text-primary)]">{subscription.name}</span>
+                      <span className="text-sm text-[var(--text-primary)]">
+                        {subscription.name}
+                      </span>
                       <span className="text-xs text-[var(--text-secondary)]">
                         {subscription.currency} {subscription.monthlyCost.toFixed(2)}/mo
                       </span>

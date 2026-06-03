@@ -16,7 +16,11 @@ const SPEND_PROVIDERS = [
 ];
 
 const THEME_OPTIONS: { value: Theme; label: string; description: string }[] = [
-  { value: "system", label: "System", description: "Follow your OS preference and update automatically." },
+  {
+    value: "system",
+    label: "System",
+    description: "Follow your OS preference and update automatically.",
+  },
   { value: "light", label: "Light", description: "Use the pastel glass theme." },
   { value: "dark", label: "Dark", description: "Use the darker glass theme." },
 ];
@@ -83,8 +87,12 @@ export function SettingsView({
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-zinc-100 px-8 py-6">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">Preferences</p>
-        <h2 className="mt-1.5 text-3xl font-light tracking-tight text-[var(--text-primary)]">Settings</h2>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--purple-label)]">
+          Preferences
+        </p>
+        <h2 className="mt-1.5 text-3xl font-light tracking-tight text-[var(--text-primary)]">
+          Settings
+        </h2>
         <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">
           Configure your regional preferences, notification settings, and API connectors.
         </p>
@@ -168,15 +176,18 @@ export function SettingsView({
                       role="switch"
                       aria-checked={providerStates[provider.id] ?? true}
                       onClick={() =>
-                        void handleProviderToggle(provider.id, !(providerStates[provider.id] ?? true))
+                        void handleProviderToggle(
+                          provider.id,
+                          !(providerStates[provider.id] ?? true),
+                        )
                       }
                       className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors ${
-                        providerStates[provider.id] ?? true ? "bg-primary" : "bg-zinc-200"
+                        (providerStates[provider.id] ?? true) ? "bg-primary" : "bg-zinc-200"
                       }`}
                     >
                       <span
                         className={`absolute top-1 h-4 w-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
-                          providerStates[provider.id] ?? true ? "left-5" : "left-1"
+                          (providerStates[provider.id] ?? true) ? "left-5" : "left-1"
                         }`}
                       />
                     </button>
@@ -187,10 +198,7 @@ export function SettingsView({
 
             <div className="border-t border-zinc-100" />
 
-            <UpdateSection
-              updateAvailable={updateAvailable}
-              onUpdateConsumed={onUpdateConsumed}
-            />
+            <UpdateSection updateAvailable={updateAvailable} onUpdateConsumed={onUpdateConsumed} />
           </div>
         </div>
       </div>

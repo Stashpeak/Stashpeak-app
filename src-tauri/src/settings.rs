@@ -45,7 +45,10 @@ pub fn get_notification_settings() -> Result<NotificationSettings, String> {
         }
     }
 
-    Ok(NotificationSettings { days_before, enabled })
+    Ok(NotificationSettings {
+        days_before,
+        enabled,
+    })
 }
 
 pub fn get_notification_days_before() -> Result<u32, String> {

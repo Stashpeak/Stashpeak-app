@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CARD_SURFACE, EMPTY_DASHED_SURFACE, EMPTY_STATE_SURFACE, SUBTLE_PANEL_SURFACE } from "../lib/surfaceStyles";
+import {
+  CARD_SURFACE,
+  EMPTY_DASHED_SURFACE,
+  EMPTY_STATE_SURFACE,
+  SUBTLE_PANEL_SURFACE,
+} from "../lib/surfaceStyles";
 import { formatCurrency } from "../lib/subscriptionMetrics";
 import { findPresetForSubscription } from "../lib/subscriptionPresets";
 import type { Subscription } from "../lib/subscriptions";
@@ -36,15 +41,13 @@ export function SubscriptionList({
 }: SubscriptionListProps) {
   return (
     <div className={CARD_SURFACE}>
-      <h3 className="text-base text-primary font-normal">
-        Saved subscriptions
-      </h3>
-      <p className="mt-1 text-sm text-secondary">Everything here is persisted in local SQLite storage.</p>
+      <h3 className="text-base text-primary font-normal">Saved subscriptions</h3>
+      <p className="mt-1 text-sm text-secondary">
+        Everything here is persisted in local SQLite storage.
+      </p>
 
       {isLoading ? (
-        <div className={`mt-5 ${EMPTY_STATE_SURFACE}`}>
-          Loading subscriptions...
-        </div>
+        <div className={`mt-5 ${EMPTY_STATE_SURFACE}`}>Loading subscriptions...</div>
       ) : subscriptions.length === 0 ? (
         <div className={`mt-5 ${EMPTY_DASHED_SURFACE}`}>
           <p className="text-sm text-zinc-500">No subscriptions yet</p>
@@ -58,10 +61,7 @@ export function SubscriptionList({
             const usageUrl = findPresetForSubscription(subscription)?.usageUrl;
 
             return (
-              <article
-                key={subscription.id}
-                className={SUBTLE_PANEL_SURFACE}
-              >
+              <article key={subscription.id} className={SUBTLE_PANEL_SURFACE}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -96,7 +96,17 @@ export function SubscriptionList({
                           title="Open provider usage page"
                           className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 px-3 py-1.5 text-xs text-primary transition hover:border-primary/35 hover:bg-primary/5"
                         >
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
                             <path d="M6 3h7v7" />
                             <path d="M13 3 3 13" />
                             <path d="M13 9v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3" />

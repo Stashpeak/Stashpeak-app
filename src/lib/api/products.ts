@@ -1,9 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import {
-  mergeProductVisibility,
-  type ProductId,
-  type ProductVisibilityState,
-} from "../products";
+import { mergeProductVisibility, type ProductId, type ProductVisibilityState } from "../products";
 
 interface ProductVisibilityRow {
   productId: ProductId;
@@ -14,7 +10,9 @@ export async function getProductVisibility(): Promise<ProductVisibilityState> {
   try {
     const rows = await invoke<ProductVisibilityRow[]>("get_product_visibility");
     return mergeProductVisibility(
-      Object.fromEntries(rows.map(({ productId, enabled }) => [productId, enabled])) as Partial<ProductVisibilityState>,
+      Object.fromEntries(
+        rows.map(({ productId, enabled }) => [productId, enabled]),
+      ) as Partial<ProductVisibilityState>,
     );
   } catch (error) {
     throw new Error(`Failed to load product visibility: ${error}`);

@@ -88,7 +88,8 @@ export function ExchangeRatesSection({
       {ratesNeeded.length > 0 && (
         <div className="space-y-3 pt-1">
           <p className="text-xs leading-relaxed text-secondary">
-            Enter exchange rates for your subscription currencies. Used to calculate the aggregate total.
+            Enter exchange rates for your subscription currencies. Used to calculate the aggregate
+            total.
           </p>
           {ratesNeeded.map((fromCurrency) => (
             <RateRow

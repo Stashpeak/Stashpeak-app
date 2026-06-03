@@ -126,7 +126,9 @@ const fixtures: Array<{ name: string; options: BuildGraphOptions }> = [
     options: options({
       providers: [ANTHROPIC],
       states: statesWith({ anthropic: { tag: "loading" } }),
-      subscriptions: [makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" })],
+      subscriptions: [
+        makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" }),
+      ],
       suppressedLinkIds: { 1: true },
     }),
   },
@@ -135,7 +137,9 @@ const fixtures: Array<{ name: string; options: BuildGraphOptions }> = [
     options: options({
       providers: [ANTHROPIC],
       states: statesWith({ anthropic: { tag: "loading" } }),
-      subscriptions: [makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" })],
+      subscriptions: [
+        makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" }),
+      ],
       productVisibility: mergeProductVisibility({
         "anthropic:claude-ai": false,
         "anthropic:claude-code": false,
@@ -147,7 +151,9 @@ const fixtures: Array<{ name: string; options: BuildGraphOptions }> = [
     options: options({
       providers: [ANTHROPIC],
       states: statesWith({ anthropic: { tag: "loading" } }),
-      subscriptions: [makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" })],
+      subscriptions: [
+        makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" }),
+      ],
       storedLayout: {
         "provider:anthropic": createAbsoluteNodeLayout(500, 60),
         "product:anthropic:claude-ai": createRelativeNodeLayout(
@@ -192,7 +198,9 @@ const fixtures: Array<{ name: string; options: BuildGraphOptions }> = [
           refreshedAt: new Date("2020-01-15T08:30:00Z"),
         },
       }),
-      subscriptions: [makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" })],
+      subscriptions: [
+        makeSub({ id: 1, name: "Claude Pro", provider: "Anthropic", category: "assistant" }),
+      ],
     }),
   },
 ];
@@ -233,7 +241,12 @@ describe("buildGraph behavioral invariants", () => {
     const graph = buildGraph(
       options({
         subscriptions: [
-          makeSub({ id: 1, name: "ChatGPT Work", provider: "OpenAI", notes: "  499 CZK work account  " }),
+          makeSub({
+            id: 1,
+            name: "ChatGPT Work",
+            provider: "OpenAI",
+            notes: "  499 CZK work account  ",
+          }),
           makeSub({ id: 2, name: "ChatGPT Personal", provider: "OpenAI", notes: "   " }),
         ],
       }),

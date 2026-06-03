@@ -27,16 +27,17 @@ function resolveTheme(theme: Theme): ResolvedTheme {
 
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(getStoredTheme()));
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    resolveTheme(getStoredTheme()),
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = (nextTheme: Theme) => {
-      const nextResolvedTheme = nextTheme === "system"
-        ? (mediaQuery.matches ? "dark" : "light")
-        : nextTheme;
+      const nextResolvedTheme =
+        nextTheme === "system" ? (mediaQuery.matches ? "dark" : "light") : nextTheme;
 
       document.documentElement.dataset.theme = nextResolvedTheme;
       setResolvedTheme(nextResolvedTheme);

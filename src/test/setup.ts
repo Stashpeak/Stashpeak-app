@@ -27,11 +27,7 @@ Intl.DateTimeFormat = pinDefaultLocale(Intl.DateTimeFormat);
 // Date.prototype.toLocale* (used by formatProviderRefreshedAt on 'ok'-status
 // providers) does NOT route through Intl.* above, so pin its default locale
 // too. Callers pass `[]` to mean "default locale"; treat that as en-US as well.
-const DATE_LOCALE_METHODS = [
-  "toLocaleString",
-  "toLocaleDateString",
-  "toLocaleTimeString",
-] as const;
+const DATE_LOCALE_METHODS = ["toLocaleString", "toLocaleDateString", "toLocaleTimeString"] as const;
 
 for (const method of DATE_LOCALE_METHODS) {
   const original = Date.prototype[method] as (
@@ -45,9 +41,7 @@ for (const method of DATE_LOCALE_METHODS) {
     options?: Intl.DateTimeFormatOptions,
   ): string {
     const pinned =
-      locales === undefined || (Array.isArray(locales) && locales.length === 0)
-        ? "en-US"
-        : locales;
+      locales === undefined || (Array.isArray(locales) && locales.length === 0) ? "en-US" : locales;
     return original.call(this, pinned, options);
   };
 }

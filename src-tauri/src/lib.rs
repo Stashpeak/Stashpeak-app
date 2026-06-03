@@ -66,7 +66,11 @@ fn windows_regional_locale() -> Option<String> {
         .ok()?;
     // Only accept a well-formed locale tag (ASCII letters/digits/hyphen) so the value
     // can never inject extra arguments into WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS.
-    if locale.is_empty() || !locale.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if locale.is_empty()
+        || !locale
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         return None;
     }
     Some(locale)

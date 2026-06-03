@@ -30,11 +30,10 @@ export function SubscriptionPresets({ onPresetSelect }: SubscriptionPresetsProps
 
   return (
     <div className={CARD_SURFACE}>
-      <h3 className="text-base text-primary font-normal">
-        Presets
-      </h3>
+      <h3 className="text-base text-primary font-normal">Presets</h3>
       <p className="mt-1 text-sm text-secondary">
-        Pick a service to pre-fill the form. Review and add your actual billing amount before saving.
+        Pick a service to pre-fill the form. Review and add your actual billing amount before
+        saving.
       </p>
 
       <div className="mt-4">

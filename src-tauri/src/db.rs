@@ -19,7 +19,9 @@ pub fn data_dir() -> PathBuf {
 /// and returns the connection. Call this only once at startup.
 pub fn open() -> rusqlite::Result<Connection> {
     let mut conn = connect()?;
-    migrations().to_latest(&mut conn).expect("database migration failed");
+    migrations()
+        .to_latest(&mut conn)
+        .expect("database migration failed");
     Ok(conn)
 }
 
@@ -44,7 +46,9 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/002_settings.sql")),
         M::up(include_str!("migrations/003_currency_settings.sql")),
         M::up(include_str!("migrations/004_provider_enabled.sql")),
-        M::up(include_str!("migrations/005_subscription_link_overrides.sql")),
+        M::up(include_str!(
+            "migrations/005_subscription_link_overrides.sql"
+        )),
         M::up(include_str!("migrations/006_subscription_link_pins.sql")),
         M::up(include_str!("migrations/007_product_visibility.sql")),
     ])

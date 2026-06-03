@@ -32,7 +32,7 @@ export async function checkForUpdate(): Promise<{ info: UpdateInfo; update: Upda
  */
 export async function downloadAndInstall(
   update: Update,
-  onProgress?: (downloaded: number, total: number | null) => void
+  onProgress?: (downloaded: number, total: number | null) => void,
 ): Promise<void> {
   let downloaded = 0;
   let total: number | null = null;

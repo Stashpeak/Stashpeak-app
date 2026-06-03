@@ -34,5 +34,7 @@ export const EMPTY_PROVIDER_STATES: Record<ProviderId, ProviderStatus> = {
 export function formatProviderRefreshedAt(date: Date): string {
   const isToday = date.toDateString() === new Date().toDateString();
   const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return isToday ? time : `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+  return isToday
+    ? time
+    : `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }

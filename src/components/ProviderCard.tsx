@@ -74,17 +74,27 @@ export function ProviderCard({
           {!comingSoon && status.tag === "loading" && (
             <p className="text-xs text-secondary mt-0.5 animate-pulse">Fetching...</p>
           )}
-          {id === "gcp" && <p className="text-[10px] text-amber-600 mt-1">Data delayed up to 48h</p>}
+          {id === "gcp" && (
+            <p className="text-[10px] text-amber-600 mt-1">Data delayed up to 48h</p>
+          )}
           {!comingSoon && status.tag === "ok" && (
             <div className="mt-3 flex flex-wrap gap-2.5">
               <div className={PILL_SURFACE}>
-                <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">This month</p>
-                <p className="text-base text-primary font-light">${status.data.currentMonthUsd.toFixed(2)}</p>
+                <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">
+                  This month
+                </p>
+                <p className="text-base text-primary font-light">
+                  ${status.data.currentMonthUsd.toFixed(2)}
+                </p>
               </div>
               <div className={PILL_SURFACE}>
-                <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">Last month</p>
+                <p className="text-[10px] text-secondary/60 uppercase tracking-[0.2em]">
+                  Last month
+                </p>
                 <p className="text-base text-primary font-light">
-                  {status.data.previousMonthUsd > 0 ? `$${status.data.previousMonthUsd.toFixed(2)}` : "-"}
+                  {status.data.previousMonthUsd > 0
+                    ? `$${status.data.previousMonthUsd.toFixed(2)}`
+                    : "-"}
                 </p>
               </div>
             </div>
@@ -132,7 +142,13 @@ export function ProviderCard({
                   <div className="flex gap-2">
                     <button
                       onClick={() => onSaveKey(id)}
-                      disabled={savingKey || !keyInput.trim() || !gcpProject.trim() || !gcpDataset.trim() || !gcpTable.trim()}
+                      disabled={
+                        savingKey ||
+                        !keyInput.trim() ||
+                        !gcpProject.trim() ||
+                        !gcpDataset.trim() ||
+                        !gcpTable.trim()
+                      }
                       className="px-4 py-1.5 rounded-full bg-primary text-white text-sm disabled:opacity-40 cursor-pointer hover:bg-primary/90 transition-colors"
                     >
                       {savingKey ? "Saving..." : "Save"}

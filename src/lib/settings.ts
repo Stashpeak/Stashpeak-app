@@ -59,11 +59,7 @@ export async function getExchangeRates(): Promise<ExchangeRate[]> {
   }
 }
 
-export async function upsertExchangeRate(
-  from: string,
-  to: string,
-  rate: number
-): Promise<void> {
+export async function upsertExchangeRate(from: string, to: string, rate: number): Promise<void> {
   try {
     await invoke("upsert_exchange_rate", { from, to, rate });
   } catch (e) {

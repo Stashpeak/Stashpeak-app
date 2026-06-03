@@ -247,21 +247,18 @@ export function inferProductIds(
   const normalizedProvider = normalizeValue(subscription.provider);
   const matchedProductIds = new Set<ProductId>();
 
-  PRODUCT_BUNDLE_RULES
-    .filter((rule) => rule.providerId === providerId)
-    .forEach((rule) => {
-      if (matchesRule(normalizedName, rule.keywords, rule.excludeKeywords)) {
-        rule.productIds.forEach((productId) => matchedProductIds.add(productId));
-      }
-    });
+  PRODUCT_BUNDLE_RULES.filter((rule) => rule.providerId === providerId).forEach((rule) => {
+    if (matchesRule(normalizedName, rule.keywords, rule.excludeKeywords)) {
+      rule.productIds.forEach((productId) => matchedProductIds.add(productId));
+    }
+  });
 
-  const nameMatches = PRODUCT_MATCH_RULES
-    .filter((rule) =>
-      getProductById(rule.productId).providerId === providerId
-      && rule.field === "name"
-      && matchesRule(normalizedName, rule.keywords, rule.excludeKeywords),
-    )
-    .sort((left, right) => getRuleSpecificity(right.keywords) - getRuleSpecificity(left.keywords));
+  const nameMatches = PRODUCT_MATCH_RULES.filter(
+    (rule) =>
+      getProductById(rule.productId).providerId === providerId &&
+      rule.field === "name" &&
+      matchesRule(normalizedName, rule.keywords, rule.excludeKeywords),
+  ).sort((left, right) => getRuleSpecificity(right.keywords) - getRuleSpecificity(left.keywords));
 
   nameMatches.forEach((rule) => matchedProductIds.add(rule.productId));
 
@@ -271,12 +268,12 @@ export function inferProductIds(
       .filter((productId): productId is ProductId => matchedProductIds.has(productId));
   }
 
-  PRODUCT_MATCH_RULES
-    .filter((rule) =>
-      getProductById(rule.productId).providerId === providerId
-      && rule.field === "provider"
-      && matchesRule(normalizedProvider, rule.keywords, rule.excludeKeywords),
-    )
+  PRODUCT_MATCH_RULES.filter(
+    (rule) =>
+      getProductById(rule.productId).providerId === providerId &&
+      rule.field === "provider" &&
+      matchesRule(normalizedProvider, rule.keywords, rule.excludeKeywords),
+  )
     .sort((left, right) => getRuleSpecificity(right.keywords) - getRuleSpecificity(left.keywords))
     .forEach((rule) => matchedProductIds.add(rule.productId));
 
@@ -298,7 +295,9 @@ function matchesRule(
     return false;
   }
 
-  if (excludeKeywords?.some((keyword) => containsKeyword(normalizedValue, normalizeValue(keyword)))) {
+  if (
+    excludeKeywords?.some((keyword) => containsKeyword(normalizedValue, normalizeValue(keyword)))
+  ) {
     return false;
   }
 

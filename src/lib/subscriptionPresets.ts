@@ -24,7 +24,13 @@ export const PRESETS: Preset[] = [
     category: "assistant",
     usageUrl: "https://claude.ai/settings/usage",
   },
-  { id: "google-ai-pro", name: "Google AI Pro", provider: "Google One", currency: "USD", category: "assistant" },
+  {
+    id: "google-ai-pro",
+    name: "Google AI Pro",
+    provider: "Google One",
+    currency: "USD",
+    category: "assistant",
+  },
   {
     id: "cursor",
     name: "Cursor",
@@ -41,9 +47,27 @@ export const PRESETS: Preset[] = [
     category: "coding",
     usageUrl: "https://github.com/settings/copilot",
   },
-  { id: "midjourney", name: "Midjourney", provider: "Midjourney", currency: "USD", category: "image" },
-  { id: "perplexity-pro", name: "Perplexity Pro", provider: "Perplexity", currency: "USD", category: "research" },
-  { id: "elevenlabs", name: "ElevenLabs", provider: "ElevenLabs", currency: "USD", category: "audio" },
+  {
+    id: "midjourney",
+    name: "Midjourney",
+    provider: "Midjourney",
+    currency: "USD",
+    category: "image",
+  },
+  {
+    id: "perplexity-pro",
+    name: "Perplexity Pro",
+    provider: "Perplexity",
+    currency: "USD",
+    category: "research",
+  },
+  {
+    id: "elevenlabs",
+    name: "ElevenLabs",
+    provider: "ElevenLabs",
+    currency: "USD",
+    category: "audio",
+  },
   { id: "runway", name: "Runway", provider: "Runway", currency: "USD", category: "video" },
 ];
 
@@ -61,7 +85,10 @@ const UNIQUE_PROVIDERS = PRESETS.reduce<Map<string, number>>((acc, preset) => {
   return acc;
 }, new Map());
 
-export function findPresetForSubscription(subscription: { name: string; provider: string }): Preset | undefined {
+export function findPresetForSubscription(subscription: {
+  name: string;
+  provider: string;
+}): Preset | undefined {
   const name = normalizeMatchValue(subscription.name);
   const provider = normalizeMatchValue(subscription.provider);
 
@@ -73,6 +100,8 @@ export function findPresetForSubscription(subscription: { name: string; provider
       return true;
     }
 
-    return provider !== "" && provider === presetProvider && UNIQUE_PROVIDERS.get(presetProvider) === 1;
+    return (
+      provider !== "" && provider === presetProvider && UNIQUE_PROVIDERS.get(presetProvider) === 1
+    );
   });
 }

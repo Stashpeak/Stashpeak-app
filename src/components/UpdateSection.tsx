@@ -11,10 +11,7 @@ interface UpdateSectionProps {
   onUpdateConsumed: () => void;
 }
 
-export function UpdateSection({
-  updateAvailable,
-  onUpdateConsumed,
-}: UpdateSectionProps) {
+export function UpdateSection({ updateAvailable, onUpdateConsumed }: UpdateSectionProps) {
   const [appVersion, setAppVersion] = useState("");
   const [checkState, setCheckState] = useState<CheckState>("idle");
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null);
@@ -25,7 +22,9 @@ export function UpdateSection({
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0"));
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion("0.1.0"));
   }, []);
 
   useEffect(() => {
@@ -117,9 +116,7 @@ export function UpdateSection({
 
       {checkState === "checking" && <p className="text-xs text-secondary">Checking...</p>}
 
-      {checkState === "upToDate" && (
-        <p className="text-xs text-primary">You&apos;re up to date.</p>
-      )}
+      {checkState === "upToDate" && <p className="text-xs text-primary">You&apos;re up to date.</p>}
 
       {checkState === "available" && (
         <div className="space-y-2">
@@ -151,9 +148,7 @@ export function UpdateSection({
       )}
 
       {checkState === "done" && (
-        <p className="text-xs text-primary">
-          Update installed. The app will restart shortly.
-        </p>
+        <p className="text-xs text-primary">Update installed. The app will restart shortly.</p>
       )}
 
       {checkState === "error" && (
