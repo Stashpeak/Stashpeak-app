@@ -160,9 +160,19 @@ pub fn check_and_notify(app: &AppHandle) {
             n.name, when, n.currency, n.cost, n.billing_period,
         );
 
-        match app.notification().builder().title("Stashpeak").body(&body).show() {
+        match app
+            .notification()
+            .builder()
+            .title("Stashpeak")
+            .body(&body)
+            .show()
+        {
             Ok(_) => {
-                tracing::info!("notification sent for subscription {} ({})", n.subscription_id, n.name);
+                tracing::info!(
+                    "notification sent for subscription {} ({})",
+                    n.subscription_id,
+                    n.name
+                );
             }
             Err(e) => {
                 tracing::error!("failed to send notification for {}: {e}", n.name);

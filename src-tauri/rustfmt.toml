@@ -1,0 +1,5 @@
+# Match the crate edition so `rustfmt` run directly (not just via `cargo fmt`)
+# applies the right edition idioms, and force LF to match the repo's
+# .gitattributes (`* text=auto eol=lf`) and Prettier's endOfLine policy.
+edition = "2021"
+newline_style = "Unix"

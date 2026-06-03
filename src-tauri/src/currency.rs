@@ -15,7 +15,9 @@ pub struct ExchangeRate {
 pub fn get_exchange_rates() -> Result<Vec<ExchangeRate>, String> {
     let conn = db::connect().map_err(|e| e.to_string())?;
     let mut stmt = conn
-        .prepare("SELECT from_currency, to_currency, rate FROM exchange_rates ORDER BY from_currency")
+        .prepare(
+            "SELECT from_currency, to_currency, rate FROM exchange_rates ORDER BY from_currency",
+        )
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
