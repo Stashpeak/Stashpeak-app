@@ -10,6 +10,10 @@ permissions:
 
 jobs:
   validate-pr-body:
+    # Dependabot version-bump PRs carry no issue link or test plan (and rewrite
+    # their body on every rebase, so a "Closes" comment can't satisfy this), so
+    # exempt them — the job is skipped rather than failed for those PRs.
+    if: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - name: Enforce issue linkage and test plan
