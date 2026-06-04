@@ -99,10 +99,16 @@ export function isSerializableValue(value: unknown): value is SerializedValue {
       return true;
     case "number":
       return Number.isFinite(value); // rejects NaN / ±Infinity
-    case "object":
-      return Array.isArray(value)
-        ? value.every(isSerializableValue)
-        : Object.values(value as Record<string, unknown>).every(isSerializableValue);
+    case "object": {
+      if (Array.isArray(value)) return value.every(isSerializableValue);
+      // Fail CLOSED on non-plain objects — Date, Map/Set, class instances
+      // (Codex P2, #187): JSON either rewrites them (Date → string) or strips
+      // prototype semantics, so they are NOT the identical payload the boundary
+      // promises. Only a plain object literal (or a null-prototype bag) passes.
+      const proto = Object.getPrototypeOf(value as object);
+      if (proto !== Object.prototype && proto !== null) return false;
+      return Object.values(value as Record<string, unknown>).every(isSerializableValue);
+    }
     default:
       return false; // function | undefined | symbol | bigint
   }
