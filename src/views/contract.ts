@@ -67,7 +67,14 @@ export type ViewSlot = "nav.section" | "dashboard.widget";
  *  unchanged. A recursive type, NOT `unknown`: serializability is enforced at
  *  the type level, not on an honor system (this is the load-bearing §13-L188
  *  invariant — without it a live closure can leak across the boundary and only
- *  fail at v2 WASM-lowering runtime). */
+ *  fail at v2 WASM-lowering runtime).
+ *
+ *  `number` is FINITE-ONLY: `NaN` / `±Infinity` are not stable JSON
+ *  (`JSON.stringify(NaN) === "null"`), so they would NOT cross the v2/WASM wire
+ *  as the identical data this contract promises (Codex P2, #187). TypeScript's
+ *  `number` cannot express finiteness, so `isSerializableValue` (below) is the
+ *  runtime guard the host applies at the boundary (the "honest enforcement
+ *  framing" again: the type DECLARES, the broker ENFORCES). */
 export type SerializedValue =
   | string
   | number
@@ -77,6 +84,29 @@ export type SerializedValue =
   | { readonly [key: string]: SerializedValue };
 
 export type SerializedProps = Readonly<Record<string, SerializedValue>>;
+
+/** [FROZEN] Runtime guard for the serialized boundary (Codex P2, #187). The
+ *  `SerializedValue` TYPE cannot exclude non-finite numbers, and TS structural
+ *  types cannot prove a value is closure-free at runtime — so the host runs
+ *  this on host-fed props (#183) and dispatched intent args (#182) at the
+ *  boundary, rejecting (or the serializer normalizing) any non-finite number or
+ *  non-plain value BEFORE it is promised as serialized. */
+export function isSerializableValue(value: unknown): value is SerializedValue {
+  if (value === null) return true;
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return true;
+    case "number":
+      return Number.isFinite(value); // rejects NaN / ±Infinity
+    case "object":
+      return Array.isArray(value)
+        ? value.every(isSerializableValue)
+        : Object.values(value as Record<string, unknown>).every(isSerializableValue);
+    default:
+      return false; // function | undefined | symbol | bigint
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // 3. data_deps (read capability) + action handles — STRUCTURED records (E4)
@@ -230,7 +260,9 @@ export type ViewRenderer = ReactRenderer | DeclarativeRenderer;
 export interface ViewContribution {
   /** [FROZEN] Stable id, UNIQUE WITHIN A SLOT (see SlotRegistry identity model).
    *  The node-id namespace root for any nodes this contribution emits:
-   *  `${id}:${localId}` via `namespaceNodeId`. */
+   *  `${id}:${localId}` via `namespaceNodeId`. GRAMMAR: MUST NOT contain the
+   *  reserved `:` delimiter — that keeps namespaced node ids injective and is
+   *  enforced by `namespaceNodeId` (Codex P2, #187). */
   readonly id: string;
   /** [FROZEN] Mount point. Names WHERE it draws; `renderer` (NOT slot) decides
    *  HOW — exactly as connector `kind` is a label, not a dispatch axis. */
@@ -396,6 +428,18 @@ export type BuildViewRegistry = (options?: SlotRegistryOptions) => SlotRegistry;
  *  v1 dashboard.widget emits persisted nodes, this is enforced by test fixture,
  *  not yet by a live consumer — flagged so the helper is not a latent no-op. */
 export function namespaceNodeId(sourceId: string, localId: string): string {
+  // INJECTIVITY (Codex P2, #187): `:` is the RESERVED delimiter, so `sourceId`
+  // (a contribution id) MUST NOT contain it — else namespaceNodeId("a:b","c")
+  // and namespaceNodeId("a","b:c") both yield "a:b:c" and two widgets collide
+  // on persisted node ids. `localId` MAY contain `:` (the Map's hierarchical
+  // ids do, e.g. "product:anthropic:claude-ai") and stays unambiguous because
+  // the FIRST `:` always delimits sourceId. This is the persistence-key format,
+  // so the constraint is part of the frozen ViewContribution.id grammar.
+  if (sourceId.includes(":")) {
+    throw new Error(
+      `namespaceNodeId: sourceId must not contain the reserved ':' delimiter (got ${JSON.stringify(sourceId)})`,
+    );
+  }
   return `${sourceId}:${localId}`;
 }
 
