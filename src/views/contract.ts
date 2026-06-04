@@ -114,9 +114,21 @@ function isSerializable(value: unknown, seen: WeakSet<object>): boolean {
       seen.add(obj);
       try {
         if (Array.isArray(obj)) {
+          // Validate ALL own keys, not just dense indices (Codex P2, #187):
+          // reject symbol keys, accessors, non-enumerable props, and any
+          // non-index extra prop (e.g. `a.fn = () => {}`) — JSON drops those,
+          // but a live closure could still ride into a React contribution.
+          for (const key of Reflect.ownKeys(obj)) {
+            if (key === "length") continue; // canonical non-enumerable array length
+            if (typeof key !== "string") return false; // symbol-keyed prop
+            const i = Number(key);
+            if (!Number.isInteger(i) || i < 0 || String(i) !== key) return false; // non-index prop
+            const desc = Object.getOwnPropertyDescriptor(obj, key);
+            if (!desc || !desc.enumerable || !("value" in desc)) return false; // accessor / non-enumerable
+            if (!isSerializable(desc.value, seen)) return false;
+          }
           for (let i = 0; i < obj.length; i++) {
-            if (!(i in obj)) return false; // sparse hole -> JSON null
-            if (!isSerializable(obj[i], seen)) return false;
+            if (!(i in obj)) return false; // sparse hole -> JSON renders null
           }
           return true;
         }

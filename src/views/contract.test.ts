@@ -84,6 +84,16 @@ describe("isSerializableValue", () => {
     sparse[2] = 3; // index 1 is a hole
     expect(isSerializableValue(sparse)).toBe(false);
   });
+
+  it("rejects arrays carrying non-index own properties", () => {
+    const withFn: number[] & { fn?: unknown } = [1, 2];
+    withFn.fn = () => {}; // JSON drops it, but the closure still rides on the array
+    expect(isSerializableValue(withFn)).toBe(false);
+
+    const withSym: number[] = [1];
+    (withSym as unknown as Record<symbol, unknown>)[Symbol("s")] = 2;
+    expect(isSerializableValue(withSym)).toBe(false);
+  });
 });
 
 describe("namespaceNodeId", () => {
