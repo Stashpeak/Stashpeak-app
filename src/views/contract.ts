@@ -86,28 +86,57 @@ export type SerializedValue =
 export type SerializedProps = Readonly<Record<string, SerializedValue>>;
 
 /** [FROZEN] Runtime guard for the serialized boundary (Codex P2, #187). The
- *  `SerializedValue` TYPE cannot exclude non-finite numbers, and TS structural
- *  types cannot prove a value is closure-free at runtime — so the host runs
+ *  `SerializedValue` TYPE cannot exclude non-finite numbers, symbol keys, or
+ *  closures, and structural types cannot prove acyclicity — so the host runs
  *  this on host-fed props (#183) and dispatched intent args (#182) at the
- *  boundary, rejecting (or the serializer normalizing) any non-finite number or
- *  non-plain value BEFORE it is promised as serialized. */
+ *  boundary, rejecting any value that would not cross the v2/WASM wire as the
+ *  IDENTICAL payload the contract promises. It FAILS CLOSED: anything JSON
+ *  would rewrite, drop, or choke on is rejected (the host serializer in #183
+ *  decides how to handle a rejection — reject vs normalize). */
 export function isSerializableValue(value: unknown): value is SerializedValue {
+  return isSerializable(value, new WeakSet<object>());
+}
+
+/** Recursive worker for {@link isSerializableValue}. `seen` tracks the current
+ *  DFS path, so a true CYCLE fails closed while a shared *acyclic* reference is
+ *  still allowed (JSON duplicates those). */
+function isSerializable(value: unknown, seen: WeakSet<object>): boolean {
   if (value === null) return true;
   switch (typeof value) {
     case "string":
     case "boolean":
       return true;
     case "number":
-      return Number.isFinite(value); // rejects NaN / ±Infinity
+      return Number.isFinite(value); // NaN / ±Infinity JSON-coerce to null
     case "object": {
-      if (Array.isArray(value)) return value.every(isSerializableValue);
-      // Fail CLOSED on non-plain objects — Date, Map/Set, class instances
-      // (Codex P2, #187): JSON either rewrites them (Date → string) or strips
-      // prototype semantics, so they are NOT the identical payload the boundary
-      // promises. Only a plain object literal (or a null-prototype bag) passes.
-      const proto = Object.getPrototypeOf(value as object);
-      if (proto !== Object.prototype && proto !== null) return false;
-      return Object.values(value as Record<string, unknown>).every(isSerializableValue);
+      const obj = value as object;
+      if (seen.has(obj)) return false; // circular reference on this path
+      seen.add(obj);
+      try {
+        if (Array.isArray(obj)) {
+          for (let i = 0; i < obj.length; i++) {
+            if (!(i in obj)) return false; // sparse hole -> JSON null
+            if (!isSerializable(obj[i], seen)) return false;
+          }
+          return true;
+        }
+        // Only a plain object literal (or null-prototype bag) — reject Date,
+        // Map/Set, class instances: JSON rewrites or strips their semantics.
+        const proto = Object.getPrototypeOf(obj);
+        if (proto !== Object.prototype && proto !== null) return false;
+        // Reflect.ownKeys sees symbol + non-enumerable keys that Object.values
+        // skips; reject any non-string key, non-enumerable prop, or accessor
+        // (a getter is not plain data and may run code / be dropped by JSON).
+        for (const key of Reflect.ownKeys(obj)) {
+          if (typeof key === "symbol") return false;
+          const desc = Object.getOwnPropertyDescriptor(obj, key);
+          if (!desc || !desc.enumerable || !("value" in desc)) return false;
+          if (!isSerializable(desc.value, seen)) return false;
+        }
+        return true;
+      } finally {
+        seen.delete(obj);
+      }
     }
     default:
       return false; // function | undefined | symbol | bigint
