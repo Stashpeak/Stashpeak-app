@@ -24,7 +24,7 @@
     "@tauri-apps/plugin-updater": "^2",
     "@xyflow/react": "^12.10.2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
