@@ -4570,7 +4570,7 @@ dependencies = [
  "dirs 5.0.1",
  "jsonwebtoken",
  "keyring",
- "rand 0.8.6",
+ "rand 0.9.3",
  "regex",
  "reqwest 0.12.28",
  "rsa",
