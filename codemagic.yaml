@@ -1,0 +1,48 @@
+# Codemagic CI — Tauri v2 iOS "does it even build?" smoke (UNSIGNED simulator build).
+#
+# Goal: prove the free macOS tier can COMPILE our Tauri iOS app (Rust core -> aarch64
+# simulator + Swift shell) WITHOUT an Apple Developer account ($99). Simulator builds
+# need no code signing, so this validates the whole no-Mac toolchain for free.
+# If this goes green -> next step is $99 Apple + signing + TestFlight to get it on a real iPhone.
+#
+# iOS commands only run on macOS — Codemagic provides it.
+workflows:
+  ios-smoke:
+    name: iOS simulator smoke (unsigned)
+    instance_type: mac_mini_m2 # Codemagic free tier (500 build min/mo)
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      node: 24 # package.json engines: node >=24
+    scripts:
+      - name: Install Rust + iOS targets
+        script: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          fi
+          source "$HOME/.cargo/env"
+          rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
+      - name: Make node/cargo visible to the Xcode build phase
+        script: |
+          # Tauri compiles the Rust core via a script phase INSIDE Xcode, which may not
+          # inherit the nvm/rustup PATH. Symlink the tools where the build phase will find them.
+          source "$HOME/.cargo/env"
+          sudo ln -sf "$(which node)"  /usr/local/bin/node  || true
+          sudo ln -sf "$(which npm)"   /usr/local/bin/npm   || true
+          sudo ln -sf "$(which cargo)" /usr/local/bin/cargo || true
+          sudo ln -sf "$(which rustc)" /usr/local/bin/rustc || true
+      - name: Install JS deps
+        script: |
+          npm ci || npm install
+      - name: Init iOS target
+        script: |
+          source "$HOME/.cargo/env"
+          npx tauri ios init --ci --verbose
+      - name: Build iOS app for the simulator (unsigned)
+        script: |
+          source "$HOME/.cargo/env"
+          npx tauri ios build --target aarch64-sim --debug --ci --verbose
+    artifacts:
+      - build/**/*.app
+      - src-tauri/gen/apple/**/*.app
+      - src-tauri/gen/apple/build/**/*.log
