@@ -33,10 +33,12 @@ workflows:
           # can find them.
           source "$HOME/.cargo/env"
           echo "PATH=$PATH"
+          missing=0
           for bin in node npm npx cargo rustc; do
             p="$(command -v "$bin" 2>/dev/null || true)"
             if [ -z "$p" ]; then
               echo "MISSING: $bin"
+              missing=1
             elif [ "$p" = "/usr/local/bin/$bin" ]; then
               echo "$bin already on PATH at $p (no symlink needed)"
             else
@@ -44,6 +46,10 @@ workflows:
               echo "linked $bin -> $p"
             fi
           done
+          if [ "$missing" -ne 0 ]; then
+            echo "Required toolchain binaries missing; aborting early so the root cause is explicit."
+            exit 1
+          fi
           node --version && npm --version && cargo --version
       - name: Install JS deps
         script: |
