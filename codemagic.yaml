@@ -22,24 +22,41 @@ workflows:
           fi
           source "$HOME/.cargo/env"
           rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
-      - name: Make node/cargo visible to the Xcode build phase
+      - name: Put Node + Rust on PATH (Codemagic uses `n`, not nvm)
         script: |
-          # Tauri compiles the Rust core via a script phase INSIDE Xcode, which may not
-          # inherit the nvm/rustup PATH. Symlink the tools where the build phase will find them.
+          # The previous run failed with `npm: command not found`: Codemagic activates
+          # Node via `n` during machine prep, but that node is NOT on PATH in plain
+          # script-step shells (Apple Silicon prefix differs). Diagnose where it lives,
+          # re-activate via `n`, then symlink the real binaries into /usr/local/bin so
+          # every later step AND Tauri's Rust build phase (run inside Xcode) find them.
+          echo "PATH=$PATH"
+          echo "n=$(command -v n) node=$(command -v node) npm=$(command -v npm) npx=$(command -v npx)"
+          # Best-effort activation — the real gates are `npm ci` / the build below, which
+          # fail loudly if Node still is not resolvable.
+          command -v n >/dev/null 2>&1 && n 24 || true
           source "$HOME/.cargo/env"
-          sudo ln -sf "$(command -v node)" /usr/local/bin/node
-          sudo ln -sf "$(command -v npm)" /usr/local/bin/npm
-          sudo ln -sf "$(command -v cargo)" /usr/local/bin/cargo
-          sudo ln -sf "$(command -v rustc)" /usr/local/bin/rustc
+          for bin in node npm npx cargo rustc; do
+            p="$(command -v "$bin" 2>/dev/null || true)"
+            if [ -n "$p" ]; then
+              sudo ln -sf "$p" "/usr/local/bin/$bin"
+              echo "linked $bin -> $p"
+            else
+              echo "MISSING: $bin"
+            fi
+          done
+          ls -la /usr/local/bin/node /usr/local/bin/npm 2>/dev/null || true
       - name: Install JS deps
         script: |
+          export PATH="/usr/local/bin:$PATH"
           npm ci
       - name: Init iOS target
         script: |
+          export PATH="/usr/local/bin:$PATH"
           source "$HOME/.cargo/env"
           npx tauri ios init --ci --verbose
       - name: Build iOS app for the simulator (unsigned)
         script: |
+          export PATH="/usr/local/bin:$PATH"
           source "$HOME/.cargo/env"
           npx tauri ios build --target aarch64-sim --debug --ci --verbose
     artifacts:
