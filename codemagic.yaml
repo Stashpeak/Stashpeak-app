@@ -22,24 +22,51 @@ workflows:
           fi
           source "$HOME/.cargo/env"
           rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
-      - name: Make node/cargo visible to the Xcode build phase
+      - name: Put Rust on PATH for the Xcode build phase (Node is already on /usr/local/bin)
         script: |
-          # Tauri compiles the Rust core via a script phase INSIDE Xcode, which may not
-          # inherit the nvm/rustup PATH. Symlink the tools where the build phase will find them.
+          # Root cause of the earlier `npm: command not found`: Codemagic's `n` already
+          # places node/npm/npx in /usr/local/bin (which is on PATH), so symlinking them
+          # onto themselves (`ln -sf /usr/local/bin/node /usr/local/bin/node`) created a
+          # self-referential ELOOP and broke npm. Fix: only symlink a binary when it is
+          # NOT already at the target. node/npm/npx are left untouched; cargo/rustc (in
+          # ~/.cargo/bin, off PATH) get linked so Tauri's Rust build phase inside Xcode
+          # can find them.
           source "$HOME/.cargo/env"
-          sudo ln -sf "$(command -v node)" /usr/local/bin/node
-          sudo ln -sf "$(command -v npm)" /usr/local/bin/npm
-          sudo ln -sf "$(command -v cargo)" /usr/local/bin/cargo
-          sudo ln -sf "$(command -v rustc)" /usr/local/bin/rustc
+          # Make Node's install prefix visible to THIS shell before probing, so the
+          # fail-fast below can't false-positive on node/npm/npx if the ambient PATH
+          # omits /usr/local/bin (the original "command not found" failure mode).
+          export PATH="/usr/local/bin:$PATH"
+          echo "PATH=$PATH"
+          missing=0
+          for bin in node npm npx cargo rustc; do
+            p="$(command -v "$bin" 2>/dev/null || true)"
+            if [ -z "$p" ]; then
+              echo "MISSING: $bin"
+              missing=1
+            elif [ "$p" = "/usr/local/bin/$bin" ]; then
+              echo "$bin already on PATH at $p (no symlink needed)"
+            else
+              sudo ln -sf "$p" "/usr/local/bin/$bin"
+              echo "linked $bin -> $p"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Required toolchain binaries missing; aborting early so the root cause is explicit."
+            exit 1
+          fi
+          node --version && npm --version && cargo --version
       - name: Install JS deps
         script: |
+          export PATH="/usr/local/bin:$PATH"
           npm ci
       - name: Init iOS target
         script: |
+          export PATH="/usr/local/bin:$PATH"
           source "$HOME/.cargo/env"
           npx tauri ios init --ci --verbose
       - name: Build iOS app for the simulator (unsigned)
         script: |
+          export PATH="/usr/local/bin:$PATH"
           source "$HOME/.cargo/env"
           npx tauri ios build --target aarch64-sim --debug --ci --verbose
     artifacts:
