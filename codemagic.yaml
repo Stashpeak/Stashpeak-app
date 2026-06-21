@@ -27,13 +27,13 @@ workflows:
           # Tauri compiles the Rust core via a script phase INSIDE Xcode, which may not
           # inherit the nvm/rustup PATH. Symlink the tools where the build phase will find them.
           source "$HOME/.cargo/env"
-          sudo ln -sf "$(which node)"  /usr/local/bin/node  || true
-          sudo ln -sf "$(which npm)"   /usr/local/bin/npm   || true
-          sudo ln -sf "$(which cargo)" /usr/local/bin/cargo || true
-          sudo ln -sf "$(which rustc)" /usr/local/bin/rustc || true
+          sudo ln -sf "$(command -v node)" /usr/local/bin/node
+          sudo ln -sf "$(command -v npm)" /usr/local/bin/npm
+          sudo ln -sf "$(command -v cargo)" /usr/local/bin/cargo
+          sudo ln -sf "$(command -v rustc)" /usr/local/bin/rustc
       - name: Install JS deps
         script: |
-          npm ci || npm install
+          npm ci
       - name: Init iOS target
         script: |
           source "$HOME/.cargo/env"
