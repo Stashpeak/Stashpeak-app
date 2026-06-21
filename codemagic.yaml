@@ -32,6 +32,10 @@ workflows:
           # ~/.cargo/bin, off PATH) get linked so Tauri's Rust build phase inside Xcode
           # can find them.
           source "$HOME/.cargo/env"
+          # Make Node's install prefix visible to THIS shell before probing, so the
+          # fail-fast below can't false-positive on node/npm/npx if the ambient PATH
+          # omits /usr/local/bin (the original "command not found" failure mode).
+          export PATH="/usr/local/bin:$PATH"
           echo "PATH=$PATH"
           missing=0
           for bin in node npm npx cargo rustc; do
