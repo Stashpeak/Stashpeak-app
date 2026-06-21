@@ -81,9 +81,13 @@ fn map_keyring_error(err: KeyringError) -> CredentialStoreError {
 
 /// Mobile (iOS/Android) has no OS keychain crate wired up: secure secret storage
 /// isn't part of the v1 mobile surface (mobile is foreground-reconcile + push, it
-/// holds no provider keys locally). This stub keeps the credential API present
-/// and compiling on mobile while honestly reporting the store as unavailable — it
-/// never silently "succeeds" at storing a secret it cannot actually protect.
+/// holds no provider keys locally). This stub keeps the credential API present and
+/// compiling on mobile, with read/write asymmetry that matches reality:
+/// - reads report a clean miss — there are genuinely no stored keys, so `has_*`
+///   is simply `false` and `get_*` is `None`, not an error every caller must
+///   special-case (e.g. `useSpendData` would otherwise swallow a spurious error);
+/// - writes fail loudly (surfacing as `SecretError::StorageUnavailable`) rather
+///   than silently dropping a secret this platform cannot actually protect.
 #[cfg(not(desktop))]
 struct UnavailableStore;
 
@@ -94,11 +98,11 @@ impl CredentialStore for UnavailableStore {
     }
 
     fn get_password(&self, _: &str, _: &str) -> Result<String, CredentialStoreError> {
-        Err(CredentialStoreError::Backend)
+        Err(CredentialStoreError::MissingEntry)
     }
 
     fn delete_credential(&self, _: &str, _: &str) -> Result<(), CredentialStoreError> {
-        Err(CredentialStoreError::Backend)
+        Err(CredentialStoreError::MissingEntry)
     }
 }
 
