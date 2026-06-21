@@ -331,10 +331,17 @@ pub fn run() {
     // Panic early if the DB is broken rather than showing a corrupt UI.
     db::open().expect("failed to open database");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init());
+
+    // The self-updater is desktop-only: iOS/Android stores own app updates, and
+    // the plugin is not built for mobile targets (see Cargo.toml). Register it
+    // only on desktop so the mobile binary compiles without it.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .setup(|app| {
             #[cfg(desktop)]
             {

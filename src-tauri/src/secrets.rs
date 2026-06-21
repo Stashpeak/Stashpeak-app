@@ -1,5 +1,6 @@
 use std::fmt;
 
+#[cfg(desktop)]
 use keyring::{Entry, Error as KeyringError};
 use zeroize::Zeroizing;
 
@@ -34,14 +35,17 @@ trait CredentialStore {
     fn delete_credential(&self, service: &str, account: &str) -> Result<(), CredentialStoreError>;
 }
 
+#[cfg(desktop)]
 struct KeyringStore;
 
+#[cfg(desktop)]
 impl KeyringStore {
     fn entry(service: &str, account: &str) -> Result<Entry, CredentialStoreError> {
         Entry::new(service, account).map_err(map_keyring_error)
     }
 }
 
+#[cfg(desktop)]
 impl CredentialStore for KeyringStore {
     fn set_password(
         &self,
@@ -67,11 +71,47 @@ impl CredentialStore for KeyringStore {
     }
 }
 
+#[cfg(desktop)]
 fn map_keyring_error(err: KeyringError) -> CredentialStoreError {
     match err {
         KeyringError::NoEntry => CredentialStoreError::MissingEntry,
         _ => CredentialStoreError::Backend,
     }
+}
+
+/// Mobile (iOS/Android) has no OS keychain crate wired up: secure secret storage
+/// isn't part of the v1 mobile surface (mobile is foreground-reconcile + push, it
+/// holds no provider keys locally). This stub keeps the credential API present
+/// and compiling on mobile while honestly reporting the store as unavailable — it
+/// never silently "succeeds" at storing a secret it cannot actually protect.
+#[cfg(not(desktop))]
+struct UnavailableStore;
+
+#[cfg(not(desktop))]
+impl CredentialStore for UnavailableStore {
+    fn set_password(&self, _: &str, _: &str, _: &str) -> Result<(), CredentialStoreError> {
+        Err(CredentialStoreError::Backend)
+    }
+
+    fn get_password(&self, _: &str, _: &str) -> Result<String, CredentialStoreError> {
+        Err(CredentialStoreError::Backend)
+    }
+
+    fn delete_credential(&self, _: &str, _: &str) -> Result<(), CredentialStoreError> {
+        Err(CredentialStoreError::Backend)
+    }
+}
+
+/// The platform's credential store: the OS keychain on desktop, an unavailable
+/// stub on mobile (see `UnavailableStore`).
+#[cfg(desktop)]
+fn platform_store() -> KeyringStore {
+    KeyringStore
+}
+
+#[cfg(not(desktop))]
+fn platform_store() -> UnavailableStore {
+    UnavailableStore
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -92,7 +132,7 @@ impl fmt::Display for SecretError {
 impl std::error::Error for SecretError {}
 
 pub fn store_provider_api_key(provider: &str, value: &str) -> Result<(), SecretError> {
-    store_provider_api_key_with_store(&KeyringStore, provider, value)
+    store_provider_api_key_with_store(&platform_store(), provider, value)
 }
 
 /// Read a provider's API key from the OS keychain.
@@ -103,15 +143,15 @@ pub fn store_provider_api_key(provider: &str, value: &str) -> Result<(), SecretE
 pub(crate) fn get_provider_api_key(
     provider: &str,
 ) -> Result<Option<Zeroizing<String>>, SecretError> {
-    get_provider_api_key_with_store(&KeyringStore, provider)
+    get_provider_api_key_with_store(&platform_store(), provider)
 }
 
 pub fn delete_provider_api_key(provider: &str) -> Result<(), SecretError> {
-    delete_provider_api_key_with_store(&KeyringStore, provider)
+    delete_provider_api_key_with_store(&platform_store(), provider)
 }
 
 pub fn has_provider_api_key(provider: &str) -> Result<bool, SecretError> {
-    has_provider_api_key_with_store(&KeyringStore, provider)
+    has_provider_api_key_with_store(&platform_store(), provider)
 }
 
 fn store_provider_api_key_with_store(
