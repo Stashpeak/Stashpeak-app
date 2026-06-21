@@ -22,29 +22,29 @@ workflows:
           fi
           source "$HOME/.cargo/env"
           rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
-      - name: Put Node + Rust on PATH (Codemagic uses `n`, not nvm)
+      - name: Put Rust on PATH for the Xcode build phase (Node is already on /usr/local/bin)
         script: |
-          # The previous run failed with `npm: command not found`: Codemagic activates
-          # Node via `n` during machine prep, but that node is NOT on PATH in plain
-          # script-step shells (Apple Silicon prefix differs). Diagnose where it lives,
-          # re-activate via `n`, then symlink the real binaries into /usr/local/bin so
-          # every later step AND Tauri's Rust build phase (run inside Xcode) find them.
-          echo "PATH=$PATH"
-          echo "n=$(command -v n) node=$(command -v node) npm=$(command -v npm) npx=$(command -v npx)"
-          # Best-effort activation — the real gates are `npm ci` / the build below, which
-          # fail loudly if Node still is not resolvable.
-          command -v n >/dev/null 2>&1 && n 24 || true
+          # Root cause of the earlier `npm: command not found`: Codemagic's `n` already
+          # places node/npm/npx in /usr/local/bin (which is on PATH), so symlinking them
+          # onto themselves (`ln -sf /usr/local/bin/node /usr/local/bin/node`) created a
+          # self-referential ELOOP and broke npm. Fix: only symlink a binary when it is
+          # NOT already at the target. node/npm/npx are left untouched; cargo/rustc (in
+          # ~/.cargo/bin, off PATH) get linked so Tauri's Rust build phase inside Xcode
+          # can find them.
           source "$HOME/.cargo/env"
+          echo "PATH=$PATH"
           for bin in node npm npx cargo rustc; do
             p="$(command -v "$bin" 2>/dev/null || true)"
-            if [ -n "$p" ]; then
+            if [ -z "$p" ]; then
+              echo "MISSING: $bin"
+            elif [ "$p" = "/usr/local/bin/$bin" ]; then
+              echo "$bin already on PATH at $p (no symlink needed)"
+            else
               sudo ln -sf "$p" "/usr/local/bin/$bin"
               echo "linked $bin -> $p"
-            else
-              echo "MISSING: $bin"
             fi
           done
-          ls -la /usr/local/bin/node /usr/local/bin/npm 2>/dev/null || true
+          node --version && npm --version && cargo --version
       - name: Install JS deps
         script: |
           export PATH="/usr/local/bin:$PATH"
