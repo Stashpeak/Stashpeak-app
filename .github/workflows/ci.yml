@@ -58,7 +58,15 @@ jobs:
 
   rust:
     name: Rust (fmt, clippy, test)
-    runs-on: ubuntu-22.04
+    # Matrix across all three desktop targets: the keyring backend is per-OS
+    # (windows-native / apple-native / linux-native) and more KB/sync code will be
+    # OS-specific, so a Linux-only gate would hide Windows/macOS breakage.
+    # fail-fast: false so one red OS still reports the others.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -80,6 +88,7 @@ jobs:
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
       - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
         # apt-get occasionally hangs on a slow Azure mirror (a ~14-min stall on the
         # update step blocked the Rust gate on PR #145, #146). Retry update+install
         # up to 3x with a per-attempt timeout so a hung mirror is killed and retried

@@ -1,6 +1,6 @@
 [package]
 name = "stashpeak"
-version = "0.1.0"
+version = "0.3.0"
 description = "A dashboard for your AI ecosystem"
 authors = ["Stashpeak"]
 edition = "2021"
