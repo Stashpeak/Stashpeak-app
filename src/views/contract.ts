@@ -137,7 +137,10 @@ function isSerializable(value: unknown, seen: WeakSet<object>): boolean {
             if (!isSerializable(desc.value, seen)) return false;
           }
           for (let i = 0; i < obj.length; i++) {
-            if (!(i in obj)) return false; // sparse hole -> JSON renders null
+            // Own-property check, NOT `in`: an index satisfied only via the
+            // prototype is still a hole JSON renders as null (and an inherited
+            // function is rewritten to null), so reject it (Codex P2, #187).
+            if (!Object.prototype.hasOwnProperty.call(obj, i)) return false;
           }
           return true;
         }

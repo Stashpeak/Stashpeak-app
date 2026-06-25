@@ -110,6 +110,12 @@ describe("isSerializableValue", () => {
     expect(isSerializableValue([-0])).toBe(false);
     expect(isSerializableValue({ a: -0 })).toBe(false);
   });
+
+  it("rejects array indices satisfied only via the prototype (not own props)", () => {
+    const arr = new Array(1); // own hole at index 0
+    Object.setPrototypeOf(arr, { 0: () => {} }); // index 0 lives only on the prototype
+    expect(isSerializableValue(arr)).toBe(false);
+  });
 });
 
 describe("toViewInfo", () => {
