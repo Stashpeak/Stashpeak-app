@@ -13,11 +13,19 @@ on:
       - reopened
       - synchronize
 
+# Only the latest event per PR needs to run; cancel superseded runs.
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Read-only, and safe under pull_request_target: this job only reads the PR title
+# via the API — it never checks out or runs the PR's code with this token.
 permissions:
   pull-requests: read
 
 jobs:
   lint:
+    name: Validate PR title
     runs-on: ubuntu-latest
     steps:
       - name: Validate PR title

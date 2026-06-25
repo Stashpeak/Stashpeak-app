@@ -40,7 +40,8 @@ updates:
       prefix: "chore"
       include: "scope"
     groups:
-      cargo-production:
-        dependency-type: "production"
-      cargo-development:
-        dependency-type: "development"
+      # Cargo doesn't support the dependency-type group matcher (npm/pip/etc.
+      # only), so bundle all crate updates into one grouped PR.
+      cargo:
+        patterns:
+          - "*"
