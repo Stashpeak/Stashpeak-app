@@ -116,6 +116,15 @@ describe("isSerializableValue", () => {
     Object.setPrototypeOf(arr, { 0: () => {} }); // index 0 lives only on the prototype
     expect(isSerializableValue(arr)).toBe(false);
   });
+
+  it('rejects an own "__proto__" data key (rebuilds drop it; pollution risk)', () => {
+    // JSON.parse makes an own enumerable "__proto__" data key on a normal object.
+    expect(isSerializableValue(JSON.parse('{"__proto__":7}'))).toBe(false);
+    // ...and on a null-proto bag (no accessor to trap the assignment).
+    const bag: Record<string, unknown> = Object.create(null);
+    bag["__proto__"] = 7;
+    expect(isSerializableValue(bag)).toBe(false);
+  });
 });
 
 describe("toViewInfo", () => {
@@ -141,19 +150,35 @@ describe("toViewInfo", () => {
 });
 
 describe("namespaceNodeId", () => {
-  it("joins sourceId and localId with the reserved delimiter", () => {
-    expect(namespaceNodeId("spend-summary", "row-1")).toBe("spend-summary:row-1");
+  it("keys on (slot, sourceId, localId) as `${slot}/${sourceId}:${localId}`", () => {
+    expect(namespaceNodeId("dashboard.widget", "spend-summary", "row-1")).toBe(
+      "dashboard.widget/spend-summary:row-1",
+    );
   });
 
   it("allows ':' inside localId (the map's hierarchical ids) and stays injective", () => {
-    // The FIRST ':' delimits sourceId, so localId may keep its own colons.
-    expect(namespaceNodeId("vault", "product:anthropic:claude-ai")).toBe(
-      "vault:product:anthropic:claude-ai",
+    // The first ':' after the '/' delimits sourceId, so localId keeps its colons.
+    expect(namespaceNodeId("dashboard.widget", "vault", "product:anthropic:claude-ai")).toBe(
+      "dashboard.widget/vault:product:anthropic:claude-ai",
+    );
+  });
+
+  it("encodes the slot so the same id in two slots does NOT collide", () => {
+    // Per-slot identity allows id reuse across slots; the slot prefix keeps the
+    // persisted node id injective (#187).
+    expect(namespaceNodeId("nav.section", "dashboard", "root")).not.toBe(
+      namespaceNodeId("dashboard.widget", "dashboard", "root"),
+    );
+  });
+
+  it("stays disjoint from the Map's bare keyspace (Map ids carry no '/')", () => {
+    // A widget id 'provider' must NOT collide with the Map's bare 'provider:...'.
+    expect(namespaceNodeId("dashboard.widget", "provider", "anthropic")).not.toBe(
+      "provider:anthropic",
     );
   });
 
   it("rejects a sourceId containing the reserved ':' delimiter", () => {
-    // Without this guard, ("a:b","c") and ("a","b:c") would both yield "a:b:c".
-    expect(() => namespaceNodeId("a:b", "c")).toThrow(/reserved/);
+    expect(() => namespaceNodeId("dashboard.widget", "a:b", "c")).toThrow(/reserved/);
   });
 });

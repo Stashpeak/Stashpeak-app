@@ -153,6 +153,12 @@ function isSerializable(value: unknown, seen: WeakSet<object>): boolean {
         // (a getter is not plain data and may run code / be dropped by JSON).
         for (const key of Reflect.ownKeys(obj)) {
           if (typeof key === "symbol") return false;
+          // An own data key literally named "__proto__" (e.g. from
+          // JSON.parse('{"__proto__":7}') or set on an Object.create(null) bag)
+          // survives JSON.stringify but a [[Set]]-style rebuild on the wire drops
+          // it (and risks prototype pollution when its value is an object) — so
+          // it breaks the identical-payload invariant; reject it (review #187).
+          if (key === "__proto__") return false;
           const desc = Object.getOwnPropertyDescriptor(obj, key);
           if (!desc || !desc.enumerable || !("value" in desc)) return false;
           if (!isSerializable(desc.value, seen)) return false;
@@ -318,10 +324,11 @@ export type ViewRenderer = ReactRenderer | DeclarativeRenderer;
  *  of `title`/`icon`/`order` are [V1-IMPL]. */
 export interface ViewContribution {
   /** [FROZEN] Stable id, UNIQUE WITHIN A SLOT (see SlotRegistry identity model).
-   *  The node-id namespace root for any nodes this contribution emits:
-   *  `${id}:${localId}` via `namespaceNodeId`. GRAMMAR: MUST NOT contain the
-   *  reserved `:` delimiter — that keeps namespaced node ids injective and is
-   *  enforced by `namespaceNodeId` (Codex P2, #187). */
+   *  Part of the node-id namespace root for any nodes this contribution emits:
+   *  `${slot}/${id}:${localId}` via `namespaceNodeId` — the slot is encoded too,
+   *  so a per-slot-unique id stays collision-free across slots. GRAMMAR: MUST NOT
+   *  contain the reserved `:` delimiter — enforced by `namespaceNodeId`
+   *  (review #187). */
   readonly id: string;
   /** [FROZEN] Mount point. Names WHERE it draws; `renderer` (NOT slot) decides
    *  HOW — exactly as connector `kind` is a label, not a dispatch axis. */
@@ -381,10 +388,15 @@ export class ViewRendererNotImplemented extends Error {
  *  text wrote `resolveRenderer(contribution) -> ReactElement`. The host-fed
  *  data inversion (§6 L88) FORCES the props in, so the frozen signature is
  *  `(contribution, props)`. The single-branch-site invariant is preserved. The
- *  spec §6 text is reconciled to this BEFORE freeze.
+ *  spec §6 text was reconciled to this in the freeze commit (EV1).
  *
- *  The per-contribution error boundary (§9) wraps the RETURNED element at the
- *  call site (so the boundary owns the contribution id), not inside this fn. */
+ *  ERROR-BOUNDARY WIRING (review #187): this fn THROWS on the not-yet-implemented
+ *  declarative arm, so the host MUST invoke `resolveRenderer` from WITHIN the
+ *  boundary's child subtree (inside a component the boundary renders), NOT pass an
+ *  already-computed element as `children`. A React error boundary catches a throw
+ *  from its descendants' render, not one the parent makes while building
+ *  `children` — otherwise a declarative contribution would escape the boundary and
+ *  crash the whole slot instead of degrading per-contribution. */
 export type ResolveRenderer = (
   contribution: ViewContribution,
   props: ViewRenderProps,
@@ -424,7 +436,9 @@ export interface SlotRegistryOptions {
  *      an id (e.g. a "dashboard" nav.section AND a "dashboard" widget). Frozen
  *      now — it is the registry's identity model (see ADR + judge gap #1).
  *   2. ORDER: list(slot) is sorted by `order` ASC, then registration index
- *      (deterministic, observable contract).
+ *      (deterministic, observable contract). `order` MUST be finite: a NaN
+ *      `order` makes the comparator non-total and the sort impl-defined, so
+ *      register() rejects a non-finite order when implemented (review #187).
  *   3. DUPLICATE id WITHIN A SLOT → reject + warn (NOT silent last-wins);
  *      returns { ok:false, reason:"duplicate-id" }. The same id in a DIFFERENT
  *      slot is allowed.
@@ -432,7 +446,9 @@ export interface SlotRegistryOptions {
  *      warn; returns { ok:false, reason:"abi" }. Panic-free (the right idiom for
  *      a browser host); hardens to a hard runtime reject in v2.
  *   5. Per-contribution error boundary on render (§9 wrapper below).
- *   6. Node-id namespacing helper `${sourceId}:${localId}` (below). */
+ *   6. Node-id namespacing helper `${slot}/${sourceId}:${localId}` (below) — the
+ *      slot is encoded so the per-slot identity (item 1) stays collision-free on
+ *      persisted node ids, and widget keys stay disjoint from the Map keyspace. */
 export interface SlotRegistry {
   /** [FROZEN] Register one contribution. Enforces the ABI gate and the
    *  per-slot duplicate-id policy; returns a typed RegisterResult; never throws
@@ -449,7 +465,11 @@ export interface SlotRegistry {
   list(slot: ViewSlot): readonly ViewContribution[];
 
   /** [FROZEN] Serializable projection of every contribution, slot-grouped,
-   *  deterministic order — the `list_views()` source. */
+   *  deterministic order — the `list_views()` source. GROUP ORDER is the
+   *  `ViewSlot` declaration order (nav.section, then dashboard.widget); within a
+   *  group, list(slot) order applies; a slot added later (additive) APPENDS its
+   *  group at the end. Pinned so adding a slot can't silently reorder the existing
+   *  wire output (review #187). */
   describe(): readonly ViewInfo[];
 }
 
@@ -467,39 +487,43 @@ export type BuildViewRegistry = (options?: SlotRegistryOptions) => SlotRegistry;
 // 10. Node-id namespacing — protects mapLayout persistence (§6 L94, §13 L190)
 // ─────────────────────────────────────────────────────────────────────────
 
-/** [FROZEN] Namespaces a contribution-emitted node id as `${sourceId}:${localId}`.
- *  REQUIRED to protect mapLayout persistence: the Map's bare `provider:` /
- *  `product:` / `subscription:` node ids AND their `layoutKey`s
- *  (buildGraph ↔ mapLayout, a CLOSED pair) MUST reach localStorage
+/** [FROZEN] Namespaces a slot contribution's node id as
+ *  `${slot}/${sourceId}:${localId}`. REQUIRED to protect mapLayout persistence:
+ *  the Map's bare `provider:` / `product:` / `subscription:` node ids AND their
+ *  `layoutKey`s (buildGraph ↔ mapLayout, a CLOSED pair) MUST reach localStorage
  *  BYTE-IDENTICAL — loadMapLayout() does NO migration, so any id change SILENTLY
  *  orphans every saved layout (recon §4).
  *
- *  The Map is NOT a slot host (§1, E9), and is the IDENTITY CASE: its source
- *  passes its ids through UNCHANGED (graft from Design 3 — its sourceId-
- *  equivalent is the empty/identity case; an implementer must NOT prefix map
- *  ids). This helper namespaces nodes emitted by NEW slot surfaces only
+ *  The Map is NOT a slot host (§1, E9) and is the IDENTITY CASE: its source
+ *  passes its ids through UNCHANGED (an implementer must NOT prefix map ids).
+ *  This helper namespaces nodes emitted by NEW slot surfaces only
  *  (dashboard.widget / declarative nodes).
  *
- *  ENFORCEMENT (judge gap #2 — the helper alone discharges nothing): the v1
- *  call-site obligation is a registry CONVENTION + a test that a
- *  dashboard.widget cannot emit a bare `provider:`/`product:`/`subscription:`
- *  id (every widget node id MUST be `${contribution.id}:${localId}`). Since no
- *  v1 dashboard.widget emits persisted nodes, this is enforced by test fixture,
- *  not yet by a live consumer — flagged so the helper is not a latent no-op. */
-export function namespaceNodeId(sourceId: string, localId: string): string {
-  // INJECTIVITY (Codex P2, #187): `:` is the RESERVED delimiter, so `sourceId`
-  // (a contribution id) MUST NOT contain it — else namespaceNodeId("a:b","c")
-  // and namespaceNodeId("a","b:c") both yield "a:b:c" and two widgets collide
-  // on persisted node ids. `localId` MAY contain `:` (the Map's hierarchical
-  // ids do, e.g. "product:anthropic:claude-ai") and stays unambiguous because
-  // the FIRST `:` always delimits sourceId. This is the persistence-key format,
-  // so the constraint is part of the frozen ViewContribution.id grammar.
+ *  INJECTIVITY (review #187): the registry identity is 2-D — an id is unique only
+ *  PER SLOT (item 1), so two contributions can legitimately share an id across
+ *  slots. The key therefore encodes BOTH `slot` AND `sourceId`, never the id
+ *  alone: with `slot` from the CLOSED `ViewSlot` union (neither value a prefix of
+ *  the other) and `sourceId` forbidden the reserved `:`, the
+ *  (slot, sourceId, localId) tuple is always recoverable, so distinct
+ *  contributions can never collide on a persisted node id. `localId` MAY contain
+ *  `:` (the Map's hierarchical ids do, e.g. "product:anthropic:claude-ai") — the
+ *  FIRST `:` after the `/` delimits sourceId. Slot-prefixing also DISJOINS these
+ *  keys from the Map's keyspace: a Map id never contains `/`, so
+ *  `dashboard.widget/provider:anthropic` can never equal the Map's bare
+ *  `provider:anthropic` — closing the reserved-root-token collision. This is the
+ *  persistence-key format, part of the frozen grammar.
+ *
+ *  ENFORCEMENT: the v1 call-site obligation is a registry CONVENTION + a fixture
+ *  test (every dashboard.widget node id MUST go through this helper). Since no v1
+ *  dashboard.widget emits persisted nodes yet, it is test-enforced, not yet by a
+ *  live consumer — flagged so the helper is not a latent no-op. */
+export function namespaceNodeId(slot: ViewSlot, sourceId: string, localId: string): string {
   if (sourceId.includes(":")) {
     throw new Error(
       `namespaceNodeId: sourceId must not contain the reserved ':' delimiter (got ${JSON.stringify(sourceId)})`,
     );
   }
-  return `${sourceId}:${localId}`;
+  return `${slot}/${sourceId}:${localId}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -537,8 +561,11 @@ export interface ViewInfo {
   readonly abiVersion: number;
   /** "react" | "declarative" — tag only; no component/schema body crosses. */
   readonly rendererMode: ViewRenderer["mode"];
-  readonly dataDeps: readonly ViewDataDep[];
-  readonly actions: readonly ViewActionHandle[];
+  /** Flat wire records — intentionally NOT the in-binary ViewDataDep /
+   *  ViewActionHandle interfaces, so a future in-binary-only field added to those
+   *  cannot structurally widen this frozen wire type (review #187). */
+  readonly dataDeps: readonly { readonly id: string }[];
+  readonly actions: readonly { readonly id: string }[];
 }
 
 /** [FROZEN] Concrete projection fn (graft from Design 1 — a real exported fn,
@@ -548,7 +575,11 @@ export function toViewInfo(c: ViewContribution): ViewInfo {
     id: c.id,
     slot: c.slot,
     title: c.title,
-    icon: c.icon,
+    // Only emit `icon` when present: an explicit `icon: undefined` own key
+    // diverges across JSON.stringify (drops) vs structuredClone (keeps), breaking
+    // the identical-payload invariant this wire projection must hold (review #187;
+    // tsconfig has no exactOptionalPropertyTypes, so TS won't flag the undefined).
+    ...(c.icon !== undefined ? { icon: c.icon } : {}),
     order: c.order,
     abiVersion: c.abiVersion,
     rendererMode: c.renderer.mode,
