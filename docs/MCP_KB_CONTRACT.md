@@ -133,8 +133,14 @@ This duplication is intentional and declared; it is not the spec hedging.
 
 ### 5.3 Resource URIs
 
-- Resources use the **`kb://` scheme rooted at the vault** — **one canonical scheme used everywhere** (§2, §5.2) — with a pinned normalization grammar: empty authority, path = vault-relative, forward-slash, NFC, percent-encoded per RFC 3986. A custom `kb://` scheme (deliberately **not** `file://`) is correct here: `file://` denotes an absolute filesystem path, which would both leak the vault's on-disk location and mis-state the **vault-relative, opaque** addressing this layer needs. `"vault-relative path = URI"` is not, by itself, a valid URI — the grammar above is specified so two clients (and the sync layer) address the same note identically. [review P3-18; CodeRabbit — single canonical scheme]
-- The canonical *string* used for identity/comparison is `SYNC_ENGINE` §6.1 canonical form (NFC, forward-slash, vault-relative); the URI is a 1:1 encoding of it.
+- Resources use the **`kb://` scheme** — **one canonical scheme everywhere** (§2, §5.2), deliberately **not** `file://` (which denotes an absolute filesystem path and would both leak the vault's on-disk location and mis-state the **vault-relative, opaque** addressing this layer needs).
+- **Canonical serialization (byte-for-byte) — every client and the sync layer MUST emit identical bytes for the same note.** A note's URI is `kb://vault/` + its `SYNC_ENGINE` §6.1 canonical path, encoded exactly as:
+  - **scheme** = lowercase `kb`;
+  - **authority** = the fixed literal token `vault` (a sentinel root, **not** a network host). The fixed authority is deliberate: a bare `kb://<segment>/…` would make a standard RFC 3986 parser read the first path segment as the authority — the ambiguity this pins shut;
+  - **path** = `/` + the canonical path (vault-relative, `/`-separated, **NFC**-normalized), each segment **percent-encoded per RFC 3986** over its UTF-8 bytes: encode every byte outside the `unreserved` set (`A–Z a–z 0–9 - . _ ~`), with **uppercase** hex digits (RFC 3986 §6.2.2.1); the `/` separators are never encoded;
+  - **no** query, **no** fragment, and **no** trailing slash except the root (`kb://vault/`).
+  - Example: canonical path `Projects/Q3 plan.md` → `kb://vault/Projects/Q3%20plan.md`.
+- The URI is a **1:1 reversible encoding** of the `SYNC_ENGINE` §6.1 canonical form; identity/comparison is on the canonical path string, and the URI never carries identity the canonical path does not. [review P3-18; CodeRabbit — single byte-for-byte canonical form]
 
 ---
 
