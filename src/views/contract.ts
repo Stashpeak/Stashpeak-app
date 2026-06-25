@@ -122,7 +122,13 @@ function isSerializable(value: unknown, seen: WeakSet<object>): boolean {
             if (key === "length") continue; // canonical non-enumerable array length
             if (typeof key !== "string") return false; // symbol-keyed prop
             const i = Number(key);
-            if (!Number.isInteger(i) || i < 0 || String(i) !== key) return false; // non-index prop
+            // A valid array index is an integer in [0, 2**32 - 2]; "4294967295"
+            // (2**32 - 1) and up round-trip as integers but JS stores them as
+            // ordinary props that JSON.stringify drops — reject as non-index
+            // extras (Codex P2, #187).
+            if (!Number.isInteger(i) || i < 0 || i >= 2 ** 32 - 1 || String(i) !== key) {
+              return false;
+            }
             const desc = Object.getOwnPropertyDescriptor(obj, key);
             if (!desc || !desc.enumerable || !("value" in desc)) return false; // accessor / non-enumerable
             if (!isSerializable(desc.value, seen)) return false;

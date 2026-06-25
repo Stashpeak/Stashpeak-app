@@ -94,6 +94,15 @@ describe("isSerializableValue", () => {
     (withSym as unknown as Record<symbol, unknown>)[Symbol("s")] = 2;
     expect(isSerializableValue(withSym)).toBe(false);
   });
+
+  it("rejects array own-keys at/above the max array index (JSON drops them)", () => {
+    // 2**32 - 1 (4294967295) is NOT a valid array index (max is 2**32 - 2): JS
+    // stores it as an ordinary property that JSON.stringify silently drops, so
+    // the guard must reject it as a non-index extra (Codex P2, #187).
+    const overMax: number[] = [1];
+    (overMax as unknown as Record<string, unknown>)["4294967295"] = 2;
+    expect(isSerializableValue(overMax)).toBe(false);
+  });
 });
 
 describe("namespaceNodeId", () => {
