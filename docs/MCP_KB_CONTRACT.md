@@ -115,8 +115,8 @@ vault files on disk ──► folder-watcher ──► SYNC_ENGINE reconcile ─
 
 ### 5.1 Handshake, capabilities, and stdout discipline
 
-- **`initialize` handshake:** the app declares a **pinned set of supported `protocolVersion`s** and negotiates the highest common one; it returns `serverInfo` (name + version). Unknown future versions degrade per the MCP negotiation rule, never crash. [review P1-10]
-- **Capabilities are declared exactly as implemented** — advertising an unimplemented capability makes conformant clients call it and fail:
+- **`initialize` handshake (shim-owned):** the **spawned shim** (`stashpeak-mcp`) is the process on the stdio pipe, so it performs the handshake — it declares a **pinned set of supported `protocolVersion`s**, negotiates the highest common one, and returns `serverInfo` (name + version), drawing the declared protocol/capability data from an **app-supplied capability manifest over local IPC** (the app owns _what_ is supported; the shim owns _emitting_ it on stdout). Unknown future versions degrade per the MCP negotiation rule, never crash. [review P1-10; CodeRabbit — shim owns the handshake]
+- **The shim advertises capabilities exactly as implemented** (from that same app-supplied manifest) — advertising an unimplemented capability makes conformant clients call it and fail:
   - v1: `resources: { listChanged: true }`, `tools: { listChanged: false }`.
   - `resources.subscribe` (per-URI live subscription) is **v1.x** and its capability flag is advertised **only when implemented**. The first draft listed `subscribe` in the v1 read surface — **removed**; `listChanged` is the right primitive (the folder-watcher already emits it). [review P1-11]
 - **`notifications/resources/list_changed`** is emitted by the folder-watcher on add / remove / rename — including a `SYNC_ENGINE` conflict-copy appearing (§9). Subscriptions/notifications key on **path**, not inode, so they survive the atomic temp→rename write (§8) and conflict-copy creation. [review P1-11]
@@ -133,7 +133,7 @@ This duplication is intentional and declared; it is not the spec hedging.
 
 ### 5.3 Resource URIs
 
-- Resources use a **`file://`-style URI rooted at the vault** (friendlier interop than a bespoke scheme) with a pinned normalization grammar: vault-relative, forward-slash, NFC, percent-encoded per RFC 3986. `"vault-relative path = URI"` is not, by itself, a valid URI — the grammar is specified so two clients address the same note identically. [review P3-18]
+- Resources use the **`kb://` scheme rooted at the vault** — **one canonical scheme used everywhere** (§2, §5.2) — with a pinned normalization grammar: empty authority, path = vault-relative, forward-slash, NFC, percent-encoded per RFC 3986. A custom `kb://` scheme (deliberately **not** `file://`) is correct here: `file://` denotes an absolute filesystem path, which would both leak the vault's on-disk location and mis-state the **vault-relative, opaque** addressing this layer needs. `"vault-relative path = URI"` is not, by itself, a valid URI — the grammar above is specified so two clients (and the sync layer) address the same note identically. [review P3-18; CodeRabbit — single canonical scheme]
 - The canonical *string* used for identity/comparison is `SYNC_ENGINE` §6.1 canonical form (NFC, forward-slash, vault-relative); the URI is a 1:1 encoding of it.
 
 ---
@@ -318,7 +318,7 @@ The token model says **nothing** about the most realistic vector: a **legitimate
 | P2-15 | write tools lack MCP annotations + `isError` result contract                            | P2     | §8.3 (annotations + `isError` rejections)               |
 | P2-16 | `clientInfo` is spoofable; must be display-only                                         | P2     | §6.2 (display-only; user-authored label; never keys scope) |
 | P2-17 | revocation race: scope must be re-read per call                                         | P2     | §6.3 (scope re-read per call, folded into re-validate)  |
-| P3-18 | `kb://` vs `file://` + URI normalization grammar hand-waved                             | P3     | §5.3 (`file://`-rooted, pinned grammar)                 |
+| P3-18 | `kb://` vs `file://` + URI normalization grammar hand-waved                             | P3     | §5.3 (single canonical `kb://` scheme, pinned grammar)  |
 
 ---
 
