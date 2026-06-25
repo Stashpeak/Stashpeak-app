@@ -13,11 +13,13 @@
 
 Brainstorming session 2026-06-25, grounded in the locked KB-as-context pivot (Decisions #28–#32) and a structural read of the existing connector/broker code (`src-tauri/src/connectors/http.rs`, `secrets.rs`) and the View/Action contracts in `EXTENSIONS_SPEC.md`.
 
-Three load-bearing forks were resolved with the founder (see §3), then the design was hardened in three adversarial rounds:
+Three load-bearing forks were resolved with the founder (see §3), then the design was hardened in five adversarial rounds:
 
 1. **Design review (2 reviewers):** distributed-systems (convergence / data-loss) + applied-cryptography (zero-knowledge / key management) → **25 findings** (14 sync + 11 crypto). Folded into the body; coverage map = §12.
 2. **Spec verification (29 agents):** caught a **structural contradiction between two round-1 fixes** (per-entry CAS vs a client-signed full-set root) + second-order gaps → reworked to a **signed append-only operation log**. Coverage = §12b.
-3. **Keystone re-verification (6 agents):** confirmed the signed-log model is structurally sound (anti-rollback **and** non-contending concurrency hold); found refinement gaps only (crash-safe re-encrypt, fresh-device rollback floor, read-skew tamper rule, `recoverySalt`, etc.). Coverage = §12c.
+3. **Keystone re-verification (6 agents):** confirmed the signed-log model is structurally sound (anti-rollback **and** non-contending concurrency hold); found refinement gaps only. Coverage = §12c.
+4. **Final check (3 agents):** the residual P0s all traced to a naive `VK = HKDF(password)` → **reworked the key model to a random `VK` wrapped under a password-derived key** (the real Bitwarden shape; password change = O(1) re-wrap) + equivocation/tuple-floor tamper detection. Coverage = §12d.
+5. **PR-review pass (CodeRabbit + Codex on #210):** caught second-order consequences of the round-4 key-model rework (mutable-account-hash vs once-written recovery blob; breach-cost wording; recovery-login proof; blobId equality leak). Coverage = §12e.
 
 > [!IMPORTANT]
 > The headline promise this spec must keep is **"sync never loses your data, and the relay can never read or undetectably tamper with it."** These corrections **require amending Locked Decision #3 (cipher) and #29 (conflict model) and reconciling the Locked THREAT_MODEL T3 / Core principle and Locked Decision #31 (write broker)** — all tracked as follow-ups in §14 — but change **no product decision** and **no zero-knowledge guarantee**. Every finding is folded into the body (primarily §4–§9; architecture-decision reconciles in §3/§13/§14).
@@ -78,14 +80,15 @@ Vault Key (VK)  = CSPRNG, 256-bit, generated ONCE at account creation   [random;
 account password ──Argon2id(salt, params)──► Master Key (MK)        [client-side only, never stored]
    MK ──HKDF "stashpeak/auth/v1"───► auth secret      ──► relay login (relay stores a SERVER-SIDE Argon2id stretch of it)
    MK ──HKDF "stashpeak/wrap/v1"───► Key-Wrapping Key (KWK)
-   wrappedVK = committing-AEAD(KWK, VK)                              ──► stored in {userId}/account (the only place VK persists, encrypted)
+   wrappedVK = committing-AEAD(KWK, VK)                              ──► stored in {userId}/account (the PASSWORD-wrapped copy of VK; the mnemonic holds a second wrap — §4.3)
 ```
 
 - **The real Bitwarden shape:** `VK` is a **random key wrapped under a password-derived `KWK`**, NOT `HKDF(password)`. This is the load-bearing choice — because `VK` is stable, a **password change is an O(1) re-wrap of `VK`** (re-derive `KWK`, re-upload `wrappedVK`), with **no data re-encryption, no signing-key change, no epoch transition** (§4.4). `K_obj` and `SK` are HKDF children of the stable `VK`, so they too survive a password change. [round-4 P0 — dissolves the re-encrypt cluster]
 - **Argon2id** (variant id, version 0x13). **Salt** = 16-byte CSPRNG value generated client-side once at account creation; stored in `{userId}/account`. Not secret, but the client **pins** it (TOFU) and treats a relay serving a different salt for the same account as an attack.
 - **Parameters are pinned**: `m ≥ 64 MiB, t ≥ 3, p = 1` (desktop floor; tune up where the device allows). **Deliberate divergence from ARCHITECTURE §2's "use library defaults, do not hand-tune"** — cross-device parameter-downgrade defense requires *authenticated pinned* params, which a runtime library default cannot provide. (The local at-rest path may keep library defaults; the sync path may not — §14 adds a scoping note to §2.)
-- **Anti-downgrade binding:** `argon2Salt`/`argon2Params` live in `{userId}/account`, whose hash is **covered by every signed checkpoint** (§5.2). An established device detects weakened params. **Fresh-install bootstrap** authenticates params **out-of-band on first contact**: from the **recovery mnemonic blob** (carries the account-record hash) or an **already-provisioned device** (QR/code), else explicit TOFU with a surfaced warning. The provisioned-device path additionally transfers the current `(vaultVersion, headHash)` as a **pinned freshness floor**: on first contact the device rejects (tamper) any served head whose `vaultVersion < pinned` **or** whose recomputed `headHash` at the pinned version `≠` the pinned `headHash` (so the floor catches a same-version fork, not just a rollback — §5.2). [crypto P1-2; round-3 genesis; round-4 equivocation]
-- **Auth/vault separation:** the relay stores **`Argon2id(serverSalt, auth secret)`** (server-side slow hash) → a breach pays a server-side Argon2 cost per guess on top of the client-side one. A **strong-password policy + zxcvbn meter is enforced at signup** — the vault's confidentiality reduces to password entropy. [crypto P1-1]
+  - **The client Argon2 params alone carry the breach-resistance of the vault.** A relay breach exposes `wrappedVK` + `argon2Salt` + `argon2Params`, so an attacker can offline-guess the password by deriving `KWK` and testing the key-wrap AEAD **without ever touching the server-side verifier**. So the server-side Argon2 stretch (below) hardens only the **auth/login** path; it adds **no** cost to an offline attack on the vault data. Tune the client params for that worst case. [PR #210 Codex P1]
+- **Anti-downgrade binding:** the **stable** config (`argon2Salt`, `argon2Params`, `serverSalt`, `recoverySalt`, `keyEpoch`) is hashed as **`accountConfigHash`**, which is **covered by every signed checkpoint** (§5.2) and **carried in the recovery blob** (§4.3). It deliberately excludes the **mutable** `wrappedVK`/`accountVersion` (which change on password change) so the once-written recovery blob and the checkpoint binding never go stale — the mutable account state has its own monotonic protection (`accountVersion`, §5.2). An established device detects weakened params. **Fresh-install bootstrap** authenticates params **out-of-band on first contact**: from the **recovery mnemonic blob** (carries `accountConfigHash`) or an **already-provisioned device** (QR/code), else explicit TOFU with a surfaced warning. [PR #210 — split immutable/mutable account hash] The provisioned-device path additionally transfers the current `(vaultVersion, headHash)` as a **pinned freshness floor**: on first contact the device rejects (tamper) any served head whose `vaultVersion < pinned` **or** whose recomputed `headHash` at the pinned version `≠` the pinned `headHash` (so the floor catches a same-version fork, not just a rollback — §5.2). [crypto P1-2; round-3 genesis; round-4 equivocation]
+- **Auth/vault separation:** the relay stores **`Argon2id(serverSalt, auth secret)`** (server-side slow hash) → an attacker guessing the **login** offline pays a server-side Argon2 cost on top of the client one. (As noted above, this does **not** extend to the vault data, which is crackable via `wrappedVK` with the client params alone.) A **strong-password policy + zxcvbn meter is enforced at signup** — the vault's confidentiality reduces to password entropy + client Argon2 cost. [crypto P1-1; PR #210 Codex P1]
 
 ### 4.2 Content & metadata encryption
 
@@ -101,8 +104,9 @@ account password ──Argon2id(salt, params)──► Master Key (MK)        [c
 
 - A **24-word BIP-39 mnemonic** (full 256-bit CSPRNG entropy, checksum-validated; not shortenable).
 - `KEK = Argon2id(recoverySalt, mnemonic entropy)` — **not** BIP-39's weak 2048-round PBKDF2. `recoverySalt` = a 16-byte CSPRNG value stored in `{userId}/account` (so it is covered by `accountRecordHash`/checkpoints) **and** carried in the recovery blob's authenticated header; it is stable for the account's life (the mnemonic — like `VK` — never changes). [crypto P1-4; round-3 recoverySalt]
-- `recovery blob = committing-AEAD(KEK, VK)`, stored on the relay, bound to the **immutable account record** — **not** to the per-commit `vaultVersion` (which would stale it). It also carries the **account-record hash** so a fresh device can authenticate `argon2Salt`/`argon2Params`/`recoverySalt` from it (§4.1). Because `VK` is stable (§4.1), the recovery blob is written **once** and never needs re-wrapping.
-- **Forgot password** = recover `VK` from the mnemonic, then **set a new password** (the O(1) re-wrap of §4.4 — re-derive `KWK`, re-upload `wrappedVK`, rotate the auth verifier). The mnemonic thus restores **both** data access and login. **Forgot password AND lost mnemonic = data unrecoverable** — the honest cost of zero-knowledge, stated plainly in onboarding.
+- `recovery blob = committing-AEAD(KEK, VK)`, stored on the relay, carrying **`accountConfigHash`** (the stable subset, §4.1) in its authenticated header — **not** `wrappedVK`/`accountVersion`/`vaultVersion` (which change and would stale it). A fresh device authenticates `argon2Salt`/`argon2Params`/`recoverySalt` from it. Because `VK` is stable and the header is stable, the recovery blob is written **once** and never needs re-wrapping. [PR #210]
+- **Forgot password** = recover `VK` from the mnemonic, then **set a new password**. The catch: a forgotten password means the client cannot `POST /v1/auth/login` (the auth secret is gone), so it cannot use the normal `PUT /v1/account` flow. Recovery therefore uses a dedicated **`POST /v1/account/recover`**: the client, having recovered `VK`, signs the new account record (new `wrappedVK` + rotated verifier + bumped `accountVersion`) with **`SK`** (`= HKDF(VK)`), and the relay accepts it as **proof of `VK` possession** (the relay knows the account's `SK` public key from the signed log). This restores **both** data access and login without ever knowing the old password. [PR #210 Codex P1 — recovery-login proof]
+- **Forgot password AND lost mnemonic = data unrecoverable** — the honest cost of zero-knowledge, stated plainly in onboarding.
 
 ### 4.4 Password change (O(1) re-wrap) & key epochs
 
@@ -121,33 +125,34 @@ The relay holds these opaque layers per user. **None is path-derived or content-
 
 - A normal file gets a **random per-file UUID `fileId`** at creation, stored only inside the encrypted metadata; a **rename/move keeps the same `fileId`** (the path changes inside the encrypted meta — §6.5), so a rename is invisible to the relay. [crypto P1-3]
 - A **deterministically-created conflict copy** gets a **deterministic** `fileId = HMAC(K_obj, canonicalPath ‖ contentHash)`, so two devices that independently create the same conflict copy mint the **same** `fileId` and converge (collapse to reconcile row 1). More generally: **two entries that share canonical path AND `contentHash` deduplicate to one identity** deterministically. [round-2 regressions]
-- Each content version gets an opaque **`blobId = HMAC(K_obj, contentHash)`** — deterministic, so **idempotent PUT** holds (the same content re-uploads to the same key) and the relay cannot confirm a known file (the real `contentHash` lives only inside the encrypted meta). Blobs are `fileId`-namespaced (§5.2), so cross-file content **dedup is not a goal** (out of scope, §2) — "deterministic" buys idempotency + the confirmation-attack defense, not dedup. [crypto P0-3; round-3 dedup]
+- Each content version gets an opaque **`blobId = HMAC(K_obj, fileId ‖ contentHash)`** — deterministic, so **idempotent PUT** holds (the same file re-uploading the same content hits the same key) and the relay cannot confirm a known file (the real `contentHash` lives only inside the encrypted meta). **`fileId` is folded into the derivation** so two *different* files with identical content get **different** `blobId`s — closing the cross-file content-equality leak (a plain `HMAC(contentHash)` would let the relay compare suffixes and learn which files match). Conflict-copy convergence is preserved: a conflict copy's `fileId` is itself deterministic (above), so both devices still compute the same `blobId`. Cross-file dedup is intentionally **not** a goal (out of scope, §2). [crypto P0-3; round-3 dedup; PR #210 Codex P2 equality-leak]
 
 ### 5.2 Layers and the signed operation log (the anti-rollback root)
 
 ```text
-{userId}/account                  { argon2Salt, argon2Params, serverSalt, recoverySalt,
-                                     wrappedVK, accountVersion, keyEpoch (=0 in v1) }
-                                   — changes only on password change (wrappedVK + verifier, under accountVersion CAS);
-                                     its hash (accountRecordHash) is covered by every checkpoint
+{userId}/account                  STABLE config: { argon2Salt, argon2Params, serverSalt, recoverySalt, keyEpoch (=0 in v1) }
+                                     → accountConfigHash (bound by checkpoint + recovery blob; never changes in v1)
+                                   MUTABLE state: { wrappedVK, accountVersion } — changes on password change, under
+                                     an accountVersion CAS; protected by accountVersion MONOTONICITY (client persists
+                                     the highest seen, rejects lower) — NOT by the per-commit checkpoint
 {userId}/log                       append-only operation log (DO-maintained):
                                      each record = { fileId, entryVersion, blobId|tombstone, prevEntryVersion,
                                                      keyEpoch, sig_SK(over those fields) }
                                    headHash_n = H(headHash_{n-1} ‖ record_n)     [DO advances; NO key needed]
                                    vaultVersion = the DO-assigned monotonic index of the latest record
-{userId}/checkpoint                latest signed checkpoint = sig_SK( vaultVersion, headHash, accountRecordHash )
+{userId}/checkpoint                latest signed checkpoint = sig_SK( vaultVersion, headHash, accountConfigHash )
                                    — written opportunistically by any device; OFF the commit critical path; monotonic
 {userId}/entries/{fileId}          relay-visible pointer { currentBlobId, entryVersion, deleted? }
                                    + encryptedMeta = AEAD(VK, { path, contentHash, size, mtime, renameHint? })
 {userId}/blobs/{fileId}/{blobId}   AEAD(VK, file bytes) — immutable, content-addressed by opaque blobId
-{userId}/recovery                  committing-AEAD(KEK_from_mnemonic, VK) — written once; header: accountRecordHash + recoverySalt
+{userId}/recovery                  committing-AEAD(KEK_from_mnemonic, VK) — written once; header: accountConfigHash (stable)
 ```
 
 This replaces the first draft's single client-signed full-set root, which could not coexist with per-entry commits. The fix is the standard **signed append-only log** (cf. Keybase sigchain / transparency logs): [keystone — verification round 2]
 
 - **The relay (DO) is the linearization authority.** Per accepted record it performs, in **one atomic DO storage transaction**, the entry-pointer CAS+bump, the log append (`headHash`), and the `vaultVersion` increment — so head, log, and entry layer can never disagree (a crash mid-transaction rolls all three back). It needs **no key**: each record carries the device's own `sig_SK`, so the relay cannot forge, reorder, or drop a record without breaking the chain. [round-3 P2 atomicity]
 - **A device signs only its own change** (`sig_SK` over `fileId ‖ entryVersion ‖ blobId|tombstone ‖ prevEntryVersion ‖ keyEpoch`) — never a snapshot of other entries. So non-overlapping commits never force a whole-set re-sign and there is no whole-manifest livelock. [sync P0-5]
-- **`accountRecordHash` covers `{ argon2Salt, argon2Params, serverSalt, recoverySalt, wrappedVK, accountVersion, keyEpoch }`** — one canonical rule, all fixed-presence fields; the checkpoint binds that hash (no field is listed both inside and outside the hash). [round-3 P2 epoch coverage]
+- **Two account hashes, split by mutability** (so a password change doesn't invalidate the once-written recovery blob or force a new checkpoint): **`accountConfigHash` = `H(argon2Salt, argon2Params, serverSalt, recoverySalt, keyEpoch)`** — the **stable** subset, bound by the checkpoint and carried in the recovery blob. The **mutable** `{ wrappedVK, accountVersion }` is **not** in that hash; it is protected by **`accountVersion` monotonicity** — written under a DO CAS (the DO rejects a stale-`accountVersion` write), and a client persists the highest `accountVersion` it has seen and rejects a lower one (rollback) exactly as it does for `vaultVersion`. A password change thus bumps `accountVersion` + `wrappedVK` **without** a log commit or new checkpoint. [PR #210 — both bots; split immutable/mutable account state]
 - **Anti-rollback / anti-fork.** A client persists the highest verified `(vaultVersion, headHash)` **as a tuple** and verifies the chain forward from its last trusted **checkpoint**. The **verification rule is precise** (a head fetch and a log fetch are separate requests, so concurrency must not read as tamper): recompute the chain and compare `headHash` *at the index equal to the fetched head's `vaultVersion`*. **"Tamper" is reserved for**: (1) a chain that fails to recompute up to the fetched index; (2) a served head/checkpoint whose `vaultVersion` is below the persisted highest; (3) a recomputed `headHash` at **any index ≤ the persisted highest that differs from the persisted `headHash` at that index** (proof of an equal-version fork / equivocation — a device that committed `v101a` and is later served a `v101b` holds cryptographic proof); or (4) a bad per-record signature. Trailing records at indices **strictly greater than both the fetched head and the persisted highest** are **benign concurrency → re-fetch-and-advance** — but are still fully chain- + signature-verified before `B` advances. [crypto P0-2; round-3 read-skew; round-4 equivocation]
 - **Checkpoints** are anti-rollback anchors a device signs lazily (bounded chain-verification). They are **monotonic**: the DO rejects a checkpoint PUT whose `vaultVersion ≤` the stored one, and a client treats a served checkpoint below its own last-trusted as tamper. Checkpoint writes are **quota-exempt** (O(1) per user, replace-in-place, a safety primitive) and permitted during read-only tier-lapse grace, so the anti-rollback floor keeps advancing even when commits are blocked. [round-3 P2 checkpoint monotonicity + quota]
 - **Genesis residual:** a brand-new device with no prior local state and no second live device has no authenticated freshness floor (it must TOFU-trust whatever head the relay serves). The provisioned-device bootstrap (§4.1) closes this when a second device exists; the mnemonic-only path discloses it as a residual (§7/§11). [round-3 P1 genesis]
@@ -260,7 +265,8 @@ All endpoints over TLS 1.3 + cert pinning; device-bound short-lived tokens (Deci
 | `GET  /v1/log?since={version}`    | log records since a version (client verifies chain + signatures up to the fetched head index)                      |
 | `GET  /v1/entry/{fileId}`         | one pointer + its encrypted meta                                                                                   |
 | `POST /v1/commit`                 | signed records (each with `prevEntryVersion`) → per-entry CAS + atomic log append; rejected entries returned; `413`/quota rejects leave `B` untouched (§9)                                                                  |
-| `PUT  /v1/account`                | password change: new `wrappedVK` + rotated auth verifier, under an `accountVersion` CAS (§4.4); quota-exempt        |
+| `PUT  /v1/account`                | password change (authenticated): new `wrappedVK` + rotated verifier, under an `accountVersion` CAS (§4.4); quota-exempt |
+| `POST /v1/account/recover`        | forgot-password recovery: new `wrappedVK` + verifier + bumped `accountVersion`, authenticated by an **`SK` signature** (proof of `VK` possession from the mnemonic — §4.3); quota-exempt |
 | `PUT  /v1/checkpoint`             | a signed checkpoint (off the commit path; monotonic; quota-exempt)                                                 |
 | `PUT  /v1/blob/{fileId}/{blobId}` | store ciphertext (immutable, idempotent)                                                                           |
 | `GET  /v1/blob/{fileId}/{blobId}` | fetch ciphertext                                                                                                   |
@@ -386,6 +392,16 @@ The reconcile/diff logic is a **pure function** `(L, B, R) → actions` — the 
 | Equal-version fork / equivocation not in the tamper set                             | P1       | §5.2 (tuple floor: `headHash`-mismatch at a shared index = tamper) + §4.1 (floor) + §7 |
 | Provisioned-device floor was version-only                                           | P1       | §4.1 (compare `headHash` at the pinned version)            |
 | Optional `keyEpochTransition` hashing ambiguity                                     | P2       | dissolved — no transition field (account record is fixed-presence) |
+
+## 12e. PR #210 bot-review fixes (CodeRabbit + Codex — second-order consequences of the round-4 rework)
+
+| Issue (PR review)                                                                                 | Severity | Resolved in                                                |
+| ----------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------- |
+| Mutable `accountRecordHash` (incl. `wrappedVK`/`accountVersion`) stales the once-written recovery blob + blocks a same-`vaultVersion` checkpoint (both bots) | P1 + Major | §4.1/§4.3/§5.2 (split into stable `accountConfigHash` + mutable state under `accountVersion` monotonicity) |
+| Server-side Argon2 wrongly credited with protecting vault data in a breach (`wrappedVK` is crackable with client params alone) | P1       | §4.1 (breach-cost note) + §7 T3                            |
+| Forgot-password recovery couldn't actually restore login (no authenticated path to a new verifier) | P1       | §4.3 + §8 (`POST /v1/account/recover`, `SK`-signed proof of `VK` possession) |
+| `blobId = HMAC(contentHash)` leaks cross-file content equality to the relay                        | P2       | §5.1 (`blobId = HMAC(K_obj, fileId ‖ contentHash)`)        |
+| Provenance round count outdated (CodeRabbit)                                                       | Minor    | §0 (five rounds)                                           |
 
 ---
 
