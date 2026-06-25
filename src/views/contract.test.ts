@@ -120,9 +120,15 @@ describe("isSerializableValue", () => {
   it('rejects an own "__proto__" data key (rebuilds drop it; pollution risk)', () => {
     // JSON.parse makes an own enumerable "__proto__" data key on a normal object.
     expect(isSerializableValue(JSON.parse('{"__proto__":7}'))).toBe(false);
-    // ...and on a null-proto bag (no accessor to trap the assignment).
+    // ...and on a null-proto bag: an own data key named "__proto__" (defined via
+    // defineProperty so it's unambiguously a data prop, not a prototype set).
     const bag: Record<string, unknown> = Object.create(null);
-    bag["__proto__"] = 7;
+    Object.defineProperty(bag, "__proto__", {
+      value: 7,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
     expect(isSerializableValue(bag)).toBe(false);
   });
 });
