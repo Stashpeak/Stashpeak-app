@@ -107,7 +107,10 @@ function isSerializable(value: unknown, seen: WeakSet<object>): boolean {
     case "boolean":
       return true;
     case "number":
-      return Number.isFinite(value); // NaN / ±Infinity JSON-coerce to null
+      // NaN / ±Infinity JSON-coerce to null; -0 is finite but JSON.stringify
+      // rewrites it to 0, which breaks the identical-payload invariant — reject
+      // it too (CodeRabbit, #187).
+      return Number.isFinite(value) && !Object.is(value, -0);
     case "object": {
       const obj = value as object;
       if (seen.has(obj)) return false; // circular reference on this path
@@ -546,7 +549,12 @@ export function toViewInfo(c: ViewContribution): ViewInfo {
     order: c.order,
     abiVersion: c.abiVersion,
     rendererMode: c.renderer.mode,
-    dataDeps: c.dataDeps,
-    actions: c.actions,
+    // Project to fresh { id } records, not the verbatim arrays: a richer internal
+    // object can structurally satisfy ViewDataDep/ViewActionHandle, and its extra
+    // runtime fields (callbacks, schemas) would otherwise ride into the frozen
+    // wire shape / a future list_views() serialization (Codex P2, #187) — mirrors
+    // how ConnectorInfo strips nested fields.
+    dataDeps: c.dataDeps.map((d) => ({ id: d.id })),
+    actions: c.actions.map((a) => ({ id: a.id })),
   };
 }

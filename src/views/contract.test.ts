@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { isSerializableValue, namespaceNodeId } from "./contract";
+import { isSerializableValue, namespaceNodeId, toViewInfo } from "./contract";
+import type { ViewContribution } from "./contract";
 
 // The two runtime guards in the otherwise type-only View contract. Both became
 // the persistence-key / serialized-boundary format, so their edge cases are
@@ -102,6 +103,34 @@ describe("isSerializableValue", () => {
     const overMax: number[] = [1];
     (overMax as unknown as Record<string, unknown>)["4294967295"] = 2;
     expect(isSerializableValue(overMax)).toBe(false);
+  });
+
+  it("rejects -0 (JSON.stringify rewrites it to 0)", () => {
+    expect(isSerializableValue(-0)).toBe(false);
+    expect(isSerializableValue([-0])).toBe(false);
+    expect(isSerializableValue({ a: -0 })).toBe(false);
+  });
+});
+
+describe("toViewInfo", () => {
+  it("projects dataDeps/actions to fresh { id } records, stripping extra fields", () => {
+    const contribution = {
+      id: "view-x",
+      slot: "nav.section",
+      title: "X",
+      order: 0,
+      abiVersion: 1,
+      renderer: { mode: "react", component: () => null },
+      // Extra runtime fields that structurally satisfy the { id } interfaces but
+      // must NOT cross into the frozen wire projection (Codex P2, #187).
+      dataDeps: [{ id: "dep-1", fetch: () => {} }],
+      actions: [{ id: "act-1", handler: () => {} }],
+    } as unknown as ViewContribution;
+
+    const info = toViewInfo(contribution);
+
+    expect(info.dataDeps).toEqual([{ id: "dep-1" }]);
+    expect(info.actions).toEqual([{ id: "act-1" }]);
   });
 });
 
