@@ -100,13 +100,17 @@ fn recent_with_conn(conn: &Connection, limit: usize) -> Result<Vec<LedgerRow>, S
     Ok(out)
 }
 
-/// Count a client's reads within the recent window and map the count to a
-/// `Brake`. The window is expressed against SQLite's own clock so the test's
+/// Sum a client's read VOLUME within the recent window and map it to a `Brake`.
+/// We count notes/hits returned (`result_count`), not just calls, so a single
+/// `kb_search`/`kb_list` that returns many notes counts toward the bulk-read
+/// brake by what it actually exposed; a zero-result probe still counts as one
+/// activity. The window is expressed against SQLite's own clock so the test's
 /// just-inserted rows (default `at = now`) all fall inside it.
 fn check_read_budget_with_conn(conn: &Connection, client_id: &str) -> Result<Brake, String> {
-    let count: i64 = conn
+    let volume: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM mcp_activity_ledger
+            "SELECT COALESCE(SUM(CASE WHEN result_count > 0 THEN result_count ELSE 1 END), 0)
+             FROM mcp_activity_ledger
              WHERE client_id = ?1
                AND at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?2)",
             rusqlite::params![client_id, format!("-{WINDOW_SECS} seconds")],
@@ -114,9 +118,9 @@ fn check_read_budget_with_conn(conn: &Connection, client_id: &str) -> Result<Bra
         )
         .map_err(|e| e.to_string())?;
 
-    Ok(if count >= PAUSE_THRESHOLD {
+    Ok(if volume >= PAUSE_THRESHOLD {
         Brake::Pause
-    } else if count >= NOTICE_THRESHOLD {
+    } else if volume >= NOTICE_THRESHOLD {
         Brake::Notice
     } else {
         Brake::Allow
@@ -242,6 +246,32 @@ mod tests {
         // client-b (same label, different id) is completely unaffected.
         assert_eq!(
             check_read_budget_with_conn(&conn, "client-b").unwrap(),
+            Brake::Allow
+        );
+    }
+
+    #[test]
+    fn budget_counts_result_volume_not_call_count() {
+        let conn = db::open_in_memory_migrated();
+        // A SINGLE call that returned a large result set must count by VOLUME, not as
+        // one row — otherwise a broad search/list bypasses the bulk-read brake.
+        record_read_with_conn(
+            &conn,
+            "client-x",
+            "X",
+            "kb_search",
+            "broad",
+            PAUSE_THRESHOLD as usize,
+        )
+        .unwrap();
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "client-x").unwrap(),
+            Brake::Pause
+        );
+        // A zero-result probe still counts as one activity (not zero).
+        record_read_with_conn(&conn, "client-z", "Z", "kb_search", "nomatch", 0).unwrap();
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "client-z").unwrap(),
             Brake::Allow
         );
     }
