@@ -27,7 +27,10 @@ impl EchoFilter {
     }
 
     pub fn is_echo(&self, path: &str, hash: u64) -> bool {
-        self.seen.lock().unwrap().contains(&(path.to_string(), hash))
+        self.seen
+            .lock()
+            .unwrap()
+            .contains(&(path.to_string(), hash))
     }
 }
 
