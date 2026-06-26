@@ -101,12 +101,9 @@ pub fn set_notifications_enabled(enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
-// Not yet wired to a Tauri command; suppressed until Plan 2 adds the command layer.
-#[allow(dead_code)]
 const KEY_VAULT_ROOT: &str = "kb_vault_root";
 
 /// Returns the configured KB vault root directory, or `None` if not yet set.
-#[allow(dead_code)]
 pub fn get_vault_root() -> Result<Option<String>, String> {
     let conn = db::connect().map_err(|e| e.to_string())?;
     conn.query_row(
@@ -121,7 +118,6 @@ pub fn get_vault_root() -> Result<Option<String>, String> {
 /// Persists the KB vault root directory. The path must be a non-empty, absolute,
 /// existing directory. Symlinks are resolved before storing so the stored value
 /// is always the canonical (symlink-free) real path.
-#[allow(dead_code)]
 pub fn set_vault_root(path: String) -> Result<(), String> {
     // Reject empty/relative roots up front; later containment checks would be ambiguous.
     let p = std::path::Path::new(&path);

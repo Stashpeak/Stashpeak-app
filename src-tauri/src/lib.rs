@@ -10,7 +10,7 @@ mod secrets;
 mod settings;
 mod subscriptions;
 
-async fn run_blocking<T, F>(task_name: &'static str, work: F) -> Result<T, String>
+pub(crate) async fn run_blocking<T, F>(task_name: &'static str, work: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
@@ -421,6 +421,11 @@ pub fn run() {
             set_home_currency,
             get_exchange_rates,
             upsert_exchange_rate,
+            kb::commands::kb_get_vault_root,
+            kb::commands::kb_set_vault_root,
+            kb::commands::kb_list,
+            kb::commands::kb_read_note,
+            kb::commands::kb_search,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
