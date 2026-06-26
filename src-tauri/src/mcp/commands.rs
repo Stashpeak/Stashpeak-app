@@ -2,7 +2,7 @@ use crate::kb::{ledger, tokens};
 use crate::mcp::config;
 use crate::mcp::lifecycle::McpService;
 use crate::settings;
-use tauri::State;
+use tauri::Manager;
 
 #[tauri::command]
 pub async fn mcp_get_enabled() -> Result<bool, String> {
@@ -10,47 +10,17 @@ pub async fn mcp_get_enabled() -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub async fn mcp_set_enabled(
-    enabled: bool,
-    app: tauri::AppHandle,
-    service: State<'_, McpService>,
-) -> Result<(), String> {
-    // Snapshot the live state BEFORE mutating so a persist-failure rollback
-    // restores the PREVIOUS state, not the requested one — an idempotent toggle
-    // (e.g. disabling an already-stopped service) must never flip the live server.
-    let was_running = service.is_running();
-    // Flip the live service FIRST, persist the setting only after it succeeds, so
-    // a bind/watcher failure never leaves `mcp_kb_access_enabled = true` while the
-    // server is actually down (settings always reflect the real running state).
-    if enabled {
-        service.start(&app).map_err(|e| e.to_string())?;
-    } else {
-        service.stop();
-    }
-    // Persist last (blocking). If this write fails, roll the live service back to
-    // its PREVIOUS state so settings and the live state never disagree.
-    if let Err(e) = crate::run_blocking("mcp_set_enabled", move || {
-        settings::set_mcp_enabled(enabled)
+pub async fn mcp_set_enabled(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
+    // The whole enable/disable transaction (snapshot -> flip -> persist -> rollback)
+    // runs synchronously under McpService's toggle lock so two concurrent toggles
+    // can't interleave; run it off the async executor via run_blocking. The service
+    // is re-fetched from managed state inside the 'static closure (the State borrow
+    // can't cross the spawn_blocking boundary).
+    crate::run_blocking("mcp_set_enabled", move || {
+        let service = app.state::<McpService>();
+        service.set_enabled_txn(&app, enabled)
     })
     .await
-    {
-        if enabled && !was_running {
-            // We started it for this request; the persist failed, so undo the start.
-            service.stop();
-        } else if !enabled && was_running {
-            // We stopped a running service; the persist failed, so the stored value
-            // may still say `true`. Restart to keep settings and live state aligned
-            // (boot reads the persisted value).
-            if let Err(start_err) = service.start(&app) {
-                tracing::error!(
-                    error = %start_err,
-                    "failed to restore mcp service after disable setting write failed"
-                );
-            }
-        }
-        return Err(e);
-    }
-    Ok(())
 }
 
 #[tauri::command]

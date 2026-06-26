@@ -11,24 +11,42 @@ use std::time::Duration;
 /// Poll cadence: a blocked per-connection read wakes this often to honor `stop`.
 const POLL: Duration = Duration::from_millis(250);
 
+/// Max concurrent IPC connections. Single-user/localhost only ever needs a handful
+/// (one read conn per call + one notify conn per client); the cap stops a buggy or
+/// hostile local process from pinning unbounded worker threads with idle sockets.
+const MAX_CONNECTIONS: usize = 32;
+
+/// Per-subscriber notify backlog bound. A wedged Subscribe client that stops
+/// reading must not grow the heap without limit; excess change hints are dropped
+/// (list_changed is an idempotent "re-list" hint, so dropping one is harmless —
+/// the client re-lists on the next signal or on demand).
+const NOTIFY_BACKLOG: usize = 256;
+
 /// Fan-out of changed canonical paths to connected notify (Subscribe) streams.
 /// std mpsc, not tokio broadcast — the IPC workers are blocking threads.
 #[derive(Default)]
 pub struct Notifier {
-    subs: Mutex<Vec<mpsc::Sender<String>>>,
+    subs: Mutex<Vec<mpsc::SyncSender<String>>>,
 }
 
 impl Notifier {
-    /// Fan a (already-GATED) changed canonical out to every notify stream, pruning
-    /// hung-up receivers. Callers MUST gate the path first (see McpService::notify_changed).
+    /// Fan a (already-GATED) changed canonical out to every notify stream. Bounded:
+    /// a full backlog DROPS the message (keeps the slow-but-alive subscriber); only
+    /// a disconnected receiver is pruned. Callers MUST gate the path first
+    /// (see McpService::notify_changed).
     pub fn notify(&self, canonical: &str) {
         let mut subs = self.subs.lock().expect("notifier lock poisoned");
-        subs.retain(|tx| tx.send(canonical.to_string()).is_ok());
+        subs.retain(|tx| {
+            !matches!(
+                tx.try_send(canonical.to_string()),
+                Err(mpsc::TrySendError::Disconnected(_))
+            )
+        });
     }
 
-    /// Register a notify stream; returns its receiver.
+    /// Register a notify stream; returns its receiver. Bounded at NOTIFY_BACKLOG.
     pub fn subscribe(&self) -> mpsc::Receiver<String> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(NOTIFY_BACKLOG);
         self.subs.lock().expect("notifier lock poisoned").push(tx);
         rx
     }
@@ -364,6 +382,20 @@ pub fn serve_with_listener(
     while !stop.load(Ordering::Relaxed) {
         match listener.accept() {
             Ok(stream) => {
+                // Cap concurrent connections BEFORE auth/first-frame: idle connections
+                // are intentionally allowed to park in read_frame_interruptible, so an
+                // unauthenticated local process could otherwise pin one worker per quiet
+                // socket and exhaust threads/memory. Reap finished workers first so the
+                // count is accurate, then drop new streams once at the cap.
+                workers.retain(|w| !w.is_finished());
+                if workers.len() >= MAX_CONNECTIONS {
+                    tracing::warn!(
+                        max = MAX_CONNECTIONS,
+                        "mcp: connection limit reached; dropping connection"
+                    );
+                    drop(stream);
+                    continue;
+                }
                 // Try recv timeout so blocked reads wake to honor stop.
                 // Windows named pipes return Unsupported; fall back to non-blocking
                 // mode in that case (read_exact_interruptible handles WouldBlock with
@@ -393,9 +425,6 @@ pub fn serve_with_listener(
                 workers.push(std::thread::spawn(move || {
                     handle_connection(stream, worker_stop, worker_notifier);
                 }));
-                // Reap any workers that finished on their own (closed connections)
-                // so the tracking Vec does not grow unbounded over the session.
-                workers.retain(|w| !w.is_finished());
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(50));

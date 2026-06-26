@@ -220,7 +220,10 @@ fn run_stdio_loop(token: &str, manifest: &CapabilityManifest, out: Arc<Mutex<std
                 }
                 // The client signalled it finished initializing: now it is safe to
                 // start the notify relay (once), but only if the capability is on.
+                // A true notification has NO id — a request-shaped one is rejected
+                // below in dispatch, not treated as the initialized signal.
                 if method == "notifications/initialized"
+                    && id.is_none()
                     && manifest.resources_list_changed
                     && !relay_started
                 {
@@ -260,6 +263,12 @@ fn tool_error(text: String) -> Value {
     json!({ "content": [ { "type": "text", "text": text } ], "isError": true })
 }
 
+/// Upper bound on `kb_search.limit`. Caps the work a single MCP call can request
+/// (a hostile/buggy client could otherwise ask for an enormous result set).
+const MAX_SEARCH_LIMIT: usize = 100;
+/// Default `kb_search.limit` when absent or out of range.
+const DEFAULT_SEARCH_LIMIT: usize = 10;
+
 /// The InputSchema (JSON Schema) for a tool, by name.
 fn tool_input_schema(name: &str) -> Value {
     match name {
@@ -267,7 +276,7 @@ fn tool_input_schema(name: &str) -> Value {
             "type": "object",
             "properties": {
                 "query": { "type": "string" },
-                "limit": { "type": "integer", "minimum": 1, "default": 10 }
+                "limit": { "type": "integer", "minimum": 1, "maximum": MAX_SEARCH_LIMIT, "default": DEFAULT_SEARCH_LIMIT }
             },
             "required": ["query"]
         }),
@@ -299,7 +308,15 @@ fn dispatch(
 
     match method {
         // ---- notifications (no response) ----
-        "notifications/initialized" => None,
+        // Only a true notification (no id) is swallowed; a request-shaped
+        // `notifications/initialized` (has an id) is malformed → -32600, so the
+        // caller is never left waiting on a reply that never comes.
+        "notifications/initialized" if is_notification => None,
+        "notifications/initialized" => Some(rpc_error(
+            rid,
+            -32600,
+            "invalid request: notifications/initialized must be a notification",
+        )),
         _ if is_notification => {
             // Any other notification we don't act on: swallow silently.
             None
@@ -467,15 +484,17 @@ fn dispatch_tool_call(
                 Some(q) if !q.is_empty() => q.to_string(),
                 _ => return tool_error("missing required argument: query".to_string()),
             };
-            // Schema advertises { integer, minimum: 1, default: 10 }. Mirror it:
-            // a missing limit, or one below 1 (including negatives), falls back to
-            // the documented default of 10 rather than silently becoming 0.
+            // Schema advertises { integer, minimum: 1, maximum: MAX_SEARCH_LIMIT,
+            // default: DEFAULT_SEARCH_LIMIT }. Mirror it exactly: a missing limit, one
+            // below 1, above the max, or not representable as usize falls back to the
+            // documented default rather than silently becoming 0 or unbounded work.
             let limit = args
                 .get("limit")
                 .and_then(Value::as_u64)
                 .filter(|&n| n >= 1)
-                .map(|n| n as usize)
-                .unwrap_or(10);
+                .and_then(|n| usize::try_from(n).ok())
+                .filter(|&n| n <= MAX_SEARCH_LIMIT)
+                .unwrap_or(DEFAULT_SEARCH_LIMIT);
             match call(IpcRequest::Search {
                 token: String::new(),
                 query,
@@ -788,13 +807,60 @@ mod tests {
     }
 
     #[test]
-    fn kb_search_schema_advertises_minimum_and_default_limit() {
-        // The advertised schema must match the parser's contract (minimum 1, default 10).
+    fn tools_call_kb_search_clamps_above_max_limit_to_default() {
+        // A limit above MAX_SEARCH_LIMIT must fall back to the default, not forward
+        // an unbounded result-set request to the broker.
+        let m = test_manifest();
+        let mut call = caller(|req| match req {
+            IpcRequest::Search { limit, .. } => {
+                assert_eq!(
+                    limit, DEFAULT_SEARCH_LIMIT,
+                    "limit > MAX_SEARCH_LIMIT should clamp to the default"
+                );
+                Ok(IpcResponse::Search { hits: vec![] })
+            }
+            _ => panic!("unexpected request"),
+        });
+        let over = (MAX_SEARCH_LIMIT as u64) + 1;
+        let resp = dispatch(
+            "tools/call",
+            Some(json!(21)),
+            &json!({ "name": "kb_search", "arguments": { "query": "alpha", "limit": over } }),
+            &m,
+            &mut call,
+        )
+        .unwrap();
+        assert_eq!(resp["result"]["isError"], false);
+    }
+
+    #[test]
+    fn kb_search_schema_advertises_bounded_limit() {
+        // The advertised schema must match the parser's contract (min 1, max, default).
         let schema = tool_input_schema("kb_search");
         let limit = &schema["properties"]["limit"];
         assert_eq!(limit["type"], "integer");
         assert_eq!(limit["minimum"], 1);
-        assert_eq!(limit["default"], 10);
+        assert_eq!(limit["maximum"], MAX_SEARCH_LIMIT);
+        assert_eq!(limit["default"], DEFAULT_SEARCH_LIMIT);
+    }
+
+    #[test]
+    fn dispatch_rejects_initialized_with_id_as_invalid_request() {
+        // A request-shaped `notifications/initialized` (has an id) is malformed and
+        // must get -32600, not be swallowed (which would hang the caller).
+        let m = test_manifest();
+        let mut call = caller(|_| panic!("no ipc call expected"));
+        let resp = dispatch(
+            "notifications/initialized",
+            Some(json!(7)),
+            &json!(null),
+            &m,
+            &mut call,
+        )
+        .expect("a request-shaped notification must produce a response");
+        assert_eq!(resp["error"]["code"], -32600);
+        // A true notification (no id) is swallowed → None.
+        assert!(dispatch("notifications/initialized", None, &json!(null), &m, &mut call).is_none());
     }
 
     #[test]

@@ -17,6 +17,12 @@ struct McpHandle {
 pub struct McpService {
     running: Mutex<Option<McpHandle>>,
     notifier: Arc<Notifier>,
+    /// Serializes the WHOLE enable/disable transaction (snapshot -> flip -> persist
+    /// -> rollback) so two concurrent toggles can't interleave and roll back on a
+    /// stale snapshot. Distinct from `running` (which start/stop/is_running take
+    /// per-op) — there is no lock-ordering cycle since nothing locks `running` then
+    /// `toggle_lock`.
+    toggle_lock: Mutex<()>,
 }
 
 impl Default for McpService {
@@ -24,7 +30,27 @@ impl Default for McpService {
         Self {
             running: Mutex::new(None),
             notifier: Arc::new(Notifier::default()),
+            toggle_lock: Mutex::new(()),
         }
+    }
+}
+
+/// What a persist-failure rollback must do to restore the PREVIOUS live state.
+#[derive(Debug, PartialEq, Eq)]
+enum RollbackAction {
+    Start,
+    Stop,
+    None,
+}
+
+/// Pure decision: after a failed setting-persist, what must the rollback do to
+/// restore the state that existed BEFORE the toggle? A start/stop that was a no-op
+/// (the service was already in the requested state) needs no rollback.
+fn rollback_action(enabled: bool, was_running: bool) -> RollbackAction {
+    match (enabled, was_running) {
+        (true, false) => RollbackAction::Stop,  // we started it; undo the start
+        (false, true) => RollbackAction::Start, // we stopped it; undo the stop
+        _ => RollbackAction::None,              // start/stop was a no-op
     }
 }
 
@@ -131,6 +157,51 @@ impl McpService {
         }
     }
 
+    /// Atomically apply an enable/disable toggle: snapshot the live state, flip the
+    /// service, persist the setting, and roll back on a persist failure — all under
+    /// `toggle_lock` so concurrent toggles can't interleave and act on a stale
+    /// snapshot. Fully synchronous (DB write included); call it via `run_blocking`.
+    pub fn set_enabled_txn<R: tauri::Runtime>(
+        &self,
+        app: &tauri::AppHandle<R>,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let _txn = self
+            .toggle_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        // Snapshot BEFORE mutating so the rollback restores the PREVIOUS state.
+        let was_running = self.is_running();
+
+        // Flip the live service FIRST, persist only after it succeeds, so a
+        // bind/watcher failure never leaves the setting saying `true` while the
+        // server is down.
+        if enabled {
+            self.start(app).map_err(|e| e.to_string())?;
+        } else {
+            self.stop();
+        }
+
+        // Persist last. On failure, roll the live service back to its PREVIOUS state.
+        if let Err(e) = settings::set_mcp_enabled(enabled) {
+            match rollback_action(enabled, was_running) {
+                RollbackAction::Stop => self.stop(),
+                RollbackAction::Start => {
+                    if let Err(start_err) = self.start(app) {
+                        tracing::error!(
+                            error = %start_err,
+                            "failed to restore mcp service after toggle persist failed"
+                        );
+                    }
+                }
+                RollbackAction::None => {}
+            }
+            return Err(e);
+        }
+        Ok(())
+    }
+
     /// Test-only: subscribe to the gated change stream.
     #[cfg(test)]
     pub(crate) fn test_subscribe(&self) -> std::sync::mpsc::Receiver<String> {
@@ -170,6 +241,17 @@ mod tests {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         )
+    }
+
+    /// The rollback decision restores the PREVIOUS live state, never the requested
+    /// one — an idempotent toggle (already in the requested state) needs no rollback.
+    #[test]
+    fn rollback_action_restores_previous_state() {
+        use RollbackAction::*;
+        assert_eq!(rollback_action(true, false), Stop); // started it -> undo
+        assert_eq!(rollback_action(true, true), None); // already running -> no-op
+        assert_eq!(rollback_action(false, true), Start); // stopped it -> undo
+        assert_eq!(rollback_action(false, false), None); // already stopped -> no-op
     }
 
     /// start_server_only() is idempotent and stop() is safe to call multiple times.
