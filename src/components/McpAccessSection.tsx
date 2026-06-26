@@ -115,10 +115,10 @@ export function McpAccessSection({
             disabled={busy}
             aria-label="Toggle KB access for AI agents"
             onChange={onToggleEnabled}
-            className="sr-only"
+            className="peer sr-only"
           />
           <span
-            className={`absolute inset-0 rounded-full transition-colors ${
+            className={`absolute inset-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-(--focus-ring) ${
               enabled ? "bg-primary" : "bg-zinc-200"
             }`}
           >
