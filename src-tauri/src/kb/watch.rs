@@ -14,6 +14,9 @@ pub fn content_hash(bytes: &[u8]) -> u64 {
 
 #[derive(Default)]
 pub struct EchoFilter {
+    // DEBT (Plan 5 write path): the set is UNBOUNDED / never-evicted — acceptable for v1
+    // because the read-only foundation has no live writer recording echoes.  The Plan 5
+    // write path should add an eviction strategy (e.g. LRU or time-based expiry).
     seen: Mutex<HashSet<(String, u64)>>,
 }
 
@@ -23,10 +26,14 @@ impl EchoFilter {
     }
 
     pub fn record(&self, path: &str, hash: u64) {
+        // DEBT: allocates a `String` for the key per call due to a std `Borrow` gap
+        // for tuple keys — `HashSet<(String, u64)>` cannot look up by `(&str, u64)`.
+        // Immaterial at one lookup per fs event; worth revisiting if call rate grows.
         self.seen.lock().unwrap().insert((path.to_string(), hash));
     }
 
     pub fn is_echo(&self, path: &str, hash: u64) -> bool {
+        // Same `Borrow` gap as `record` — allocates a `String` per lookup.
         self.seen
             .lock()
             .unwrap()
@@ -62,6 +69,11 @@ pub fn start_watch(
                 continue;
             };
             // Skip our own writes (write path records into `echo`).
+            // BEST-EFFORT / TOCTOU: the file is read AFTER the watcher event fires, so a
+            // concurrent external write may hash to a different value than what was recorded.
+            // False-negatives (missed suppression) are safe — we just emit an extra event.
+            // False-positives (suppressed external edit) are transient and self-correct on
+            // the next save.  Accepted debt for v1 (Plan 5 write path can tighten this).
             if let Ok(bytes) = std::fs::read(&p) {
                 if echo.is_echo(canonical.as_str(), content_hash(&bytes)) {
                     continue;

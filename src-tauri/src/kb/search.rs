@@ -24,6 +24,8 @@ pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<Search
             Err(_) => continue, // unreadable note: skip, never fail the whole search
         };
         let hay = body.to_lowercase();
+        // `str::matches` counts NON-overlapping occurrences (e.g. "aa" in "aaa" = 1),
+        // which is fine for a relevance rank — we only need a relative ordering signal.
         let score = hay.matches(&needle).count();
         if score == 0 {
             continue;
@@ -75,5 +77,34 @@ mod tests {
         fs::write(root.join("a.md"), "x x").unwrap();
         fs::write(root.join("b.md"), "x").unwrap();
         assert_eq!(search(root, "x", 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn empty_query_returns_no_hits() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("a.md"), "anything").unwrap();
+        assert!(search(root, "", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unreadable_note_is_skipped_not_fatal() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("good.md"), "alpha here").unwrap();
+        fs::write(root.join("bad.md"), [0xFF, 0xFE, 0x00, 0x9C]).unwrap(); // invalid UTF-8
+        let hits = search(root, "alpha", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "good.md");
+    }
+
+    #[test]
+    fn snippet_truncates_to_max_chars() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("long.md"), "x".repeat(300)).unwrap();
+        let hits = search(root, "x", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].snippet.chars().count(), 200);
     }
 }
