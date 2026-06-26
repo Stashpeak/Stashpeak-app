@@ -4,8 +4,6 @@
 //!
 //! Trust boundary = the shim<->app IPC hop (MCP_KB_CONTRACT.md §4, THREAT_MODEL T13).
 
-#![allow(dead_code)]
-
 pub mod commands;
 pub mod config;
 pub mod lifecycle;

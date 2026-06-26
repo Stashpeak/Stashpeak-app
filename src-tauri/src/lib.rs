@@ -453,6 +453,13 @@ pub fn run() {
             kb::commands::kb_list,
             kb::commands::kb_read_note,
             kb::commands::kb_search,
+            mcp::commands::mcp_get_enabled,
+            mcp::commands::mcp_set_enabled,
+            mcp::commands::mcp_mint_token,
+            mcp::commands::mcp_list_tokens,
+            mcp::commands::mcp_revoke_token,
+            mcp::commands::mcp_recent_activity,
+            mcp::commands::mcp_client_config_snippet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
