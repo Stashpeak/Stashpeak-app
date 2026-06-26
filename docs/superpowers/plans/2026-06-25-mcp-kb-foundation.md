@@ -526,6 +526,8 @@ pub fn to_os_path(vault_root: &Path, canonical: &str) -> Result<PathBuf, KbError
 
 > [!NOTE]
 > `to_os_path` resolves **lexically** (no handle re-validation). **Symlink-escape defense lives in the read layer** (`read.rs`, Task 3.1/3.2): `read_note` canonicalizes the target and re-asserts vault containment, and `list`'s `walk` skips symlink entries — so a vault-local symlink can neither be read nor recursed outside the vault. The heavier write-path hardening (reparse rejection, `GetFinalPathNameByHandle`, TOCTOU re-check at open) still lands with the write broker (`MCP_KB_CONTRACT.md` §8, Plan 5).
+>
+> **Accepted residual — check-then-open TOCTOU (deliberate, deferred to §8).** The canonicalize-then-`read_to_string`/`read_dir` flow proves containment *before* the open, so a writer that swaps a path component for an escaping symlink/mount *between* the check and the open could still escape. In this **read-only v1.0** slice the only actor that can write into the vault mid-read is the local user themselves or host malware — i.e. **THREAT_MODEL T1 (compromised host), which is explicitly out of scope** — because the MCP read path never writes and exposes no write to untrusted agents. The full **no-follow, handle-based** flow (open first with `O_NOFOLLOW` / `FILE_FLAG_OPEN_REPARSE_POINT`, then validate containment on the *opened handle*) that closes this race is the **write broker's owned hardening (§8 / Plan 5)**, where attacker-influenced paths actually exist; the read path adopts that same resolver when §8 lands (`MCP_KB_CONTRACT.md` §8 "route reads through the same hardened resolver"). Implementing a second handle-based resolver in this minimal foundation would duplicate §8 for a residual that is already out of scope here.
 
 - [ ] **Step 4: Run, verify pass**
 
@@ -572,6 +574,27 @@ mod tests {
         assert_eq!(read_note(root, "notes/todo.md").unwrap(), "# Hi\nbody");
         assert!(read_note(root, "../escape.md").is_err());
         assert!(read_note(root, "notes/todo.txt").is_err()); // non-markdown
+    }
+
+    // Regression for the symlink guards: a vault-local symlink must neither be listed
+    // nor followed out of the vault. (FIFO/socket coverage would need a mkfifo dep; the
+    // is_file() guard rejects them at runtime — see read_note / walk.)
+    #[cfg(unix)]
+    #[test]
+    fn skips_and_rejects_escaping_symlinks() {
+        use std::os::unix::fs::symlink;
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("secret.md"), "TOP SECRET").unwrap();
+        fs::write(root.join("real.md"), "ok").unwrap();
+        symlink(outside.path().join("secret.md"), root.join("link.md")).unwrap();
+
+        // walk skips the symlink entry → only the real regular file is listed.
+        assert_eq!(crate::kb::read::list(root).unwrap(), vec!["real.md".to_string()]);
+        // read_note canonicalizes + re-asserts containment → the escaping symlink is rejected.
+        assert!(read_note(root, "link.md").is_err());
+        assert_eq!(read_note(root, "real.md").unwrap(), "ok");
     }
 }
 ```
