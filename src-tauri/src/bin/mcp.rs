@@ -860,7 +860,14 @@ mod tests {
         .expect("a request-shaped notification must produce a response");
         assert_eq!(resp["error"]["code"], -32600);
         // A true notification (no id) is swallowed → None.
-        assert!(dispatch("notifications/initialized", None, &json!(null), &m, &mut call).is_none());
+        assert!(dispatch(
+            "notifications/initialized",
+            None,
+            &json!(null),
+            &m,
+            &mut call
+        )
+        .is_none());
     }
 
     #[test]

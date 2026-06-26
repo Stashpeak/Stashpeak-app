@@ -48,9 +48,9 @@ enum RollbackAction {
 /// (the service was already in the requested state) needs no rollback.
 fn rollback_action(enabled: bool, was_running: bool) -> RollbackAction {
     match (enabled, was_running) {
-        (true, false) => RollbackAction::Stop,  // we started it; undo the start
+        (true, false) => RollbackAction::Stop, // we started it; undo the start
         (false, true) => RollbackAction::Start, // we stopped it; undo the stop
-        _ => RollbackAction::None,              // start/stop was a no-op
+        _ => RollbackAction::None,             // start/stop was a no-op
     }
 }
 
