@@ -6,7 +6,14 @@ use std::path::PathBuf;
 /// - Windows: %APPDATA%\Stashpeak
 /// - macOS:   ~/Library/Application Support/Stashpeak
 /// - Linux:   ~/.local/share/stashpeak
+///
+/// Override via `STASHPEAK_DATA_DIR` (primarily a test seam; also allows relocating data).
 pub fn data_dir() -> PathBuf {
+    if let Ok(override_dir) = std::env::var("STASHPEAK_DATA_DIR") {
+        if !override_dir.is_empty() {
+            return PathBuf::from(override_dir);
+        }
+    }
     let base = dirs::data_dir().expect("could not locate platform data directory");
     base.join(if cfg!(debug_assertions) {
         "Stashpeak-dev"
