@@ -114,13 +114,57 @@ fn main() {
         }
     };
 
-    // (4) The shared stdout writer. The notify relay (Task 5.3) will also write
-    //     here — serialize every line through this Mutex so a notification can
-    //     never interleave inside a response line.
+    // (4) The shared stdout writer. The main loop AND the notify thread both
+    //     write here — serialize every line through this Mutex so a notification
+    //     can never interleave inside a response line.
     let out = Arc::new(Mutex::new(std::io::stdout()));
 
-    // (5) The stdio JSON-RPC loop, until stdin EOF.
+    // (5) Notify relay: a std thread that subscribes over a SECOND IPC
+    //     connection and emits notifications/resources/list_changed.
+    spawn_notify_relay(token.clone(), out.clone());
+
+    // (6) The stdio JSON-RPC loop, until stdin EOF.
     run_stdio_loop(&token, &manifest, out);
+}
+
+/// Spawn the notify relay: a dedicated std thread that opens a SECOND IPC
+/// connection, subscribes, and on each `Changed` frame emits an MCP
+/// notifications/resources/list_changed via the SHARED stdout writer. On connect
+/// failure / EOF / any read error the thread just returns (no notifications; the
+/// read path still errors cleanly). The path NEVER reaches the MCP client — v1
+/// advertises only list-level listChanged, so the notification carries no params.
+fn spawn_notify_relay(token: String, out: Arc<Mutex<std::io::Stdout>>) {
+    let _ = std::thread::Builder::new()
+        .name("mcp-notify".into())
+        .spawn(move || {
+            let name = match ipc_socket_name().to_ns_name::<GenericNamespaced>() {
+                Ok(n) => n,
+                Err(_) => return,
+            };
+            let mut conn = match Stream::connect(name) {
+                Ok(c) => c,
+                Err(_) => return, // app down: no notifications; the read path errors cleanly
+            };
+            if write_frame(&mut conn, &IpcRequest::Subscribe { token }).is_err() {
+                return;
+            }
+            // Each Changed frame → one list-level MCP notification (no id, no path).
+            loop {
+                match read_frame::<_, IpcResponse>(&mut conn) {
+                    Ok(IpcResponse::Changed { .. }) => {
+                        write_message(
+                            &out,
+                            &json!({
+                                "jsonrpc": "2.0",
+                                "method": "notifications/resources/list_changed"
+                            }),
+                        );
+                    }
+                    Ok(_) => continue,
+                    Err(_) => return, // app stopped / connection closed
+                }
+            }
+        });
 }
 
 /// One line per JSON-RPC message; write the line + `\n` + flush atomically under
