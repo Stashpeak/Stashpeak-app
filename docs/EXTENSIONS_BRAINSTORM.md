@@ -202,10 +202,7 @@ Při handoff do nového Claude Code sessionu v `stashpeak-app` workspace, attach
 
 **Z KB (Obsidian vault):**
 
-- `Resources/Obsidian Command Center.md` — proč tento brainstorm vůbec vznikl (inspirace + reverse-engineered pattern z Chase video)
-- `Projects/Stashpeak/Stashpeak App.md` — current project state v KB
-- `Projects/Stashpeak/Stashpeak Vault/` — strategy docs co vznikly při Vault planning (mohou informovat Vault-as-extension decision)
-- `Areas/AI Agents.md` — pokud extensions zahrnují LLM actions, sync s tímhle areá
+- Private strategy / project notes in the founder's personal knowledge base (paths omitted).
 
 ---
 

@@ -3,7 +3,7 @@
 **Status:** Design locked — ready for phased implementation (no code yet)
 **Created:** 2026-05-31
 **Supersedes (as the decision doc):** `docs/EXTENSIONS_BRAINSTORM.md` (that file was pre-spec; this resolves its 10 open questions)
-**Strategy source of truth:** KB `Projects/Stashpeak/2026-05-31 — Stashpeak Premium Plan & Architecture.md`
+**Strategy source of truth:** internal strategy / decision notes (private)
 **Decision-log home:** condensed entries to propagate into `internal-docs/stashpeak-app/ARCHITECTURE.md §8`
 
 ---
@@ -26,7 +26,7 @@ Brainstorming session 2026-05-31, grounded in the locked strategy + a full struc
 - **Infra:** v0.1/v0.2 fully local. Supabase introduced only later as a hybrid (accounts + premium gating + state-only sync) — never secrets, never content.
 - **Extension model scope:** **internal-first, forward-compatible** — first-party compiled-in now; v2 (WASM/Extism sandbox + code signing + marketplace) bolts on later **without an API rewrite**.
 - **Vault = flagship extension:** "own your AI context" = portability + control + KB-as-context. Chat = an optional later "+" extension that *consumes* the context layer, never the core/moat.
-- **Monetization:** premium = always NEW functionality, never paywalls existing. Validate (5 DMs → fake-door + Stripe) before any premium build; first premium feature after GO = spend forecasting + budget alerts.
+- **Monetization:** premium = always NEW functionality, never paywalls existing. Validate demand before any premium build.
 
 ## 2. Assumptions
 
@@ -137,9 +137,9 @@ Functional identity (validated against the KB research): **portability + control
 - **0.6.0 "Action Runtime"** — `ActionContext` broker, `action_runs` ledger + migration, capability-gated egress + confirm-before-egress/spend, cooperative cancellation, one dogfood rules-based action. The most under-counted subsystem; its own milestone + test surface.
 - **0.7.0 "Vault"** — built as **assembly of three hardened primitives**, not co-developed with them. Importer + folder Connectors, conversation/archive View, Clean&Export + Compress-to-primer Actions. First true end-to-end test of the brokered Action contract — budget for some contract churn here.
 
-**Later / conditional:** Docker + file-scan connectors → then #16/#88; map decomposition (subgraph→coordinator) after layout features + harness; Supabase hybrid + premium (forecasting + alerts) **gated on validation**; v2 WASM/Extism sandbox + signing + marketplace (bolts on the proven contracts).
+**Later / conditional:** Docker + file-scan connectors → then #16/#88; map decomposition (subgraph→coordinator) after layout features + harness; Supabase hybrid + premium **gated on validation**; v2 WASM/Extism sandbox + signing + marketplace (bolts on the proven contracts).
 
-**Validation (recommended to run in parallel):** the founder's own gate — 5 user DMs + fake-door + Stripe link; GO = ≥1 paid OR ≥30 waitlist in 2 weeks. Cheap, and a NO-GO would re-prioritize everything below 0.4.0. See §11.
+**Validation (recommended to run in parallel):** a lightweight demand gate runs alongside the build; a NO-GO would re-prioritize everything below 0.4.0. See §11.
 
 ## 10. Decision Log
 
@@ -177,7 +177,7 @@ Functional identity (validated against the KB research): **portability + control
 
 ## 11. Risks & acknowledged dissent
 
-- **Validate-first dissent (recorded, NOT adopted):** one roadmap reviewer concluded the foundation should not be built before validation — it adds zero user-facing value to a product with no validated demand, and (per the founder's own strategy) the rework exists only to enable premium/extensions, so it arguably belongs behind the same validation gate. The leaner alternative: build a **minimal Vault feature in the monolith** (import → clean → export) as both a value test and a fake-door, and refactor to the extension model only on GO. Opportunity cost: the founder's separate car-dealer SaaS is a more validated bet (6/6, 62% built). **Mitigation chosen:** proceed with the foundation, but run the validation gate **in parallel**; a NO-GO re-prioritizes everything below 0.4.0.
+- **Validate-first dissent (recorded, NOT adopted):** one roadmap reviewer argued the foundation should not be built before demand is validated, since the rework primarily enables premium/extensions and could sit behind the same validation gate. The leaner alternative: build a **minimal Vault feature in the monolith** (import → clean → export) as both a value test and a fake-door, and refactor to the extension model only on GO. **Mitigation chosen:** proceed with the foundation, but run the validation gate **in parallel**; a NO-GO re-prioritizes everything below 0.4.0.
 - **Shallow moat:** LLM cost-tracking is commoditizing (Helicone/Langfuse/Datadog) + first-party dashboard threat (OpenAI/Anthropic). The differentiator is local-first + zero-knowledge + breadth + trust.
 - **Effort under-counts:** GCP connector inversion (OAuth chain + composite credential + JWT signing) and the Action runtime (broker + ledger + egress confirm + cancellation) are larger than one bullet each — hence the milestone split.
 - **Half-migrated coexistence:** old + new worlds coexist during the strangler; keep each milestone independently shippable.
