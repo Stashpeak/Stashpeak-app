@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getMcpClientConfigSnippet,
   getMcpEnabled,
@@ -36,6 +36,11 @@ export function McpAccessSectionContainer({
 
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [activity, setActivity] = useState<LedgerRow[]>([]);
+
+  // Monotonic id for the in-flight mint. Each mint's awaited results are only
+  // applied while this still matches — so a dismiss (or a newer mint) during an
+  // await invalidates the stale result and a discarded secret can't reappear.
+  const mintRequestIdRef = useRef(0);
 
   const refreshTokens = useCallback(async () => {
     setTokens(await listMcpTokens());
@@ -97,22 +102,33 @@ export function McpAccessSectionContainer({
     if (label.length === 0 || busy) {
       return;
     }
+    const requestId = ++mintRequestIdRef.current;
     setBusy(true);
     try {
       // Read-only phase: scope is always "read" (no picker; the backend rejects
       // read_write until the write path lands).
       const raw = await mintMcpToken(label, "read");
+      // If a dismiss or a newer mint superseded this request during the await,
+      // drop the result — never reveal a token the user already dismissed.
+      if (mintRequestIdRef.current !== requestId) {
+        return;
+      }
       // Surface the raw token immediately — this is the only copy and it is shown
-      // once. Commit it to state BEFORE fetching the snippet so a snippet-fetch
-      // failure can never lose the secret.
+      // once. Commit it BEFORE fetching the snippet so a snippet-fetch failure
+      // can never lose the secret. Clear any stale snippet from a prior mint so
+      // it can't flash next to this token before the new snippet arrives.
       setMintedToken(raw);
+      setMintedSnippet(null);
       setCopiedToken(false);
       setCopiedSnippet(false);
       setMintLabel("");
       // Fetch the config snippet separately; a failure here still leaves the raw
-      // token revealed above.
+      // token revealed above. The snippet embeds the raw token, so apply it only
+      // if this mint is still the active one (guards the dismiss-during-await race).
       const snippet = await getMcpClientConfigSnippet(raw);
-      setMintedSnippet(snippet);
+      if (mintRequestIdRef.current === requestId) {
+        setMintedSnippet(snippet);
+      }
       await refreshTokens();
     } catch (error) {
       onError(String(error));
@@ -122,7 +138,10 @@ export function McpAccessSectionContainer({
   }
 
   function discardMinted() {
-    // Drop the raw secret from React state; it is never persisted or re-shown.
+    // Invalidate any in-flight mint so a late token/snippet resolve can't
+    // repopulate the reveal after dismissal, then drop the raw secret from
+    // React state; it is never persisted or re-shown.
+    mintRequestIdRef.current += 1;
     setMintedToken(null);
     setMintedSnippet(null);
     setCopiedToken(false);
