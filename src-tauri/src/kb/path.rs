@@ -58,9 +58,10 @@ pub fn to_os_path(vault_root: &Path, canonical: &str) -> Result<std::path::PathB
         || canonical.chars().any(|c| c.is_control())
         || canonical.contains('\\')
         || canonical.starts_with('/')
-        || canonical.starts_with("//")
+        // Fast-path reject for `X:`-style drive letters (e.g. "C:foo"). The real
+        // containment guarantee comes from the per-segment `.`/`..`/empty checks
+        // below and joining under the verbatim root — not from this byte check alone.
         || (canonical.len() >= 2 && canonical.as_bytes()[1] == b':')
-    // drive letter
     {
         return Err(reject());
     }
@@ -138,5 +139,43 @@ mod tests {
     fn to_os_path_round_trips_with_to_canonical() {
         let p = to_os_path(root(), "notes/todo.md").unwrap();
         assert_eq!(to_canonical(root(), &p).unwrap().as_str(), "notes/todo.md");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_windows_root_contains_and_rejects_siblings() {
+        use std::path::Path;
+        let root = Path::new(r"\\?\C:\vault");
+        // production stores the canonicalized (\\?\) root; the real code path must contain correctly
+        assert_eq!(
+            to_canonical(root, Path::new(r"\\?\C:\vault\notes\a.md"))
+                .unwrap()
+                .as_str(),
+            "notes/a.md"
+        );
+        // sibling-prefix under the verbatim root must still be rejected (fails closed)
+        assert!(to_canonical(root, Path::new(r"\\?\C:\vault-evil\x.md")).is_err());
+        // round-trip under the verbatim root is identity
+        let p = to_os_path(root, "notes/a.md").unwrap();
+        assert_eq!(to_canonical(root, &p).unwrap().as_str(), "notes/a.md");
+    }
+
+    #[test]
+    fn to_os_path_rejects_non_nfc_and_backslash() {
+        // NFD form (e + combining accent) is not NFC → rejected on ingress
+        assert!(to_os_path(root(), "cafe\u{0301}.md").is_err());
+        // backslash is rejected outright (Windows would treat it as a separator)
+        assert!(to_os_path(root(), "a\\b.md").is_err());
+    }
+
+    #[test]
+    fn to_os_path_rejects_drive_relative_without_separator() {
+        assert!(to_os_path(root(), "C:foo").is_err());
+    }
+
+    #[test]
+    fn empty_relative_is_root_and_not_round_trippable() {
+        assert_eq!(to_canonical(root(), root()).unwrap().as_str(), "");
+        assert!(to_os_path(root(), "").is_err());
     }
 }
