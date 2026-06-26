@@ -42,6 +42,14 @@ pub fn remember_secret(secret: &str) {
         .insert(trimmed.to_string());
 }
 
+/// Public entry point for scrubbing a short, user-facing string (e.g. a KB
+/// search snippet) through the same secret-redaction pipeline the log layer
+/// uses. Reuses `scrub_text` so the redaction rules never diverge.
+/// (MCP_KB_CONTRACT.md §7.1 — search snippets must not leak embedded secrets.)
+pub fn scrub_snippet(s: &str) -> String {
+    scrub_text(s)
+}
+
 fn log_dir() -> Result<PathBuf, LoggingInitError> {
     Ok(crate::db::data_dir().join("logs"))
 }

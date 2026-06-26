@@ -59,5 +59,36 @@ fn migrations() -> Migrations<'static> {
         )),
         M::up(include_str!("migrations/006_subscription_link_pins.sql")),
         M::up(include_str!("migrations/007_product_visibility.sql")),
+        M::up(include_str!("migrations/008_mcp.sql")),
     ])
+}
+
+#[cfg(test)]
+pub(crate) fn open_in_memory_migrated() -> Connection {
+    let mut conn = Connection::open_in_memory().expect("open in-memory db");
+    conn.execute_batch("PRAGMA foreign_keys=ON;")
+        .expect("pragma");
+    migrations()
+        .to_latest(&mut conn)
+        .expect("migrations apply to in-memory db");
+    conn
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_008_creates_mcp_tables() {
+        let conn = open_in_memory_migrated();
+        // Both tables exist and are empty.
+        let clients: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_clients", [], |r| r.get(0))
+            .expect("mcp_clients table exists");
+        let ledger: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_activity_ledger", [], |r| r.get(0))
+            .expect("mcp_activity_ledger table exists");
+        assert_eq!(clients, 0);
+        assert_eq!(ledger, 0);
+    }
 }

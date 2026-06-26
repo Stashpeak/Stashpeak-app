@@ -1,10 +1,13 @@
 //! KB foundation: vault-relative canonical paths, read/search, folder-watch.
 //! Read-only in this plan; the write path is owned by MCP_KB_CONTRACT.md §8.
 
+pub mod access;
 pub mod commands;
+pub mod ledger;
 pub mod path;
 pub mod read;
 pub mod search;
+pub mod tokens;
 pub mod watch;
 
 #[derive(Debug, PartialEq, Eq)]
