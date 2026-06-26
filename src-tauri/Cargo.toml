@@ -40,6 +40,12 @@ unicode-normalization = "0.1"
 rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
+# Cross-platform local IPC (Windows named pipe + Unix domain socket, one API).
+# Used by both the lib (mcp::server listener) and the stashpeak-mcp shim (client).
+# NOTE: `rmcp` is intentionally NOT added — Plan 3's P1 pre-execution correction makes
+# the shim's MCP server a hand-rolled line-delimited JSON-RPC handler (no SDK dep); rmcp
+# is deferred to a future optional refactor (resolve its version then).
+interprocess = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
@@ -61,3 +67,10 @@ tauri-plugin-updater = "2"
 # (RS256 / from_rsa_pem) can be exercised offline WITHOUT committing a private key.
 rsa = { version = "0.9", features = ["pem"] }
 tempfile = "3"
+
+# The stashpeak-mcp shim: a separate binary the MCP client spawns. It links
+# stashpeak_lib (reusing mcp::wire/mcp::uri) and speaks MCP on stdio + the
+# length-prefixed IPC to the running app. Built by `cargo build --all-targets`.
+[[bin]]
+name = "stashpeak-mcp"
+path = "src/bin/mcp.rs"
