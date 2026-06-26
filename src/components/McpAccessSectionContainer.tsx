@@ -102,12 +102,17 @@ export function McpAccessSectionContainer({
     if (label.length === 0 || busy) {
       return;
     }
+    let minted = false;
     const requestId = ++mintRequestIdRef.current;
     setBusy(true);
     try {
       // Read-only phase: scope is always "read" (no picker; the backend rejects
       // read_write until the write path lands).
       const raw = await mintMcpToken(label, "read");
+      // The grant now exists server-side, so the token list must refresh even if
+      // the snippet step below fails or this request was superseded — otherwise a
+      // minted token wouldn't appear in the revoke list until a reload.
+      minted = true;
       // If a dismiss or a newer mint superseded this request during the await,
       // drop the result — never reveal a token the user already dismissed.
       if (mintRequestIdRef.current !== requestId) {
@@ -129,10 +134,14 @@ export function McpAccessSectionContainer({
       if (mintRequestIdRef.current === requestId) {
         setMintedSnippet(snippet);
       }
-      await refreshTokens();
     } catch (error) {
       onError(String(error));
     } finally {
+      // Always reflect a successful mint in the token list, even if the snippet
+      // step threw or the reveal was superseded — the grant exists server-side.
+      if (minted) {
+        await refreshTokens().catch((error) => onError(String(error)));
+      }
       setBusy(false);
     }
   }
