@@ -54,6 +54,10 @@ describe("mintMcpToken", () => {
     ]);
   });
 
+  // This only asserts the wrapper forwards its args verbatim — it is NOT an
+  // endorsed product flow. The read-only phase offers no read_write UI and the
+  // backend rejects read_write tokens; the wrapper stays scope-generic so the
+  // write path (Plan 5) can reuse it unchanged.
   it("passes the read_write scope through verbatim", async () => {
     const calls = captureIPC("spk_mcp_x");
     await mintMcpToken("Cursor", "read_write");

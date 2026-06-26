@@ -30,6 +30,25 @@ export function formatActivityTarget(target: string): string {
   return `${target.slice(0, keep)}…${target.slice(target.length - keep)}`;
 }
 
+/**
+ * Render an RFC3339/ISO timestamp as a locale-aware date+time. Falls back to the
+ * raw string if it can't be parsed (an unexpected backend value), so the UI
+ * never shows "Invalid Date".
+ */
+export function formatTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export interface McpAccessSectionProps {
   // Enable toggle.
   enabled: boolean;
@@ -203,7 +222,7 @@ export function McpAccessSection({
                     <div className="min-w-0">
                       <p className="truncate text-sm text-ink">{token.label}</p>
                       <p className="text-xs text-secondary">
-                        {scopeLabel(token.scope)} · added {token.createdAt}
+                        {scopeLabel(token.scope)} · added {formatTimestamp(token.createdAt)}
                       </p>
                     </div>
                     <button
@@ -246,7 +265,7 @@ export function McpAccessSection({
                       <span className="font-mono">{formatActivityTarget(row.target)}</span>
                     </span>
                     <span className="shrink-0 tabular-nums">
-                      {row.resultCount} · {row.at}
+                      {row.resultCount} · {formatTimestamp(row.at)}
                     </span>
                   </li>
                 ))}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { scopeLabel, formatActivityTarget } from "./McpAccessSection";
+import { scopeLabel, formatActivityTarget, formatTimestamp } from "./McpAccessSection";
 
 describe("scopeLabel", () => {
   it("renders human labels for each scope", () => {
@@ -25,5 +25,24 @@ describe("formatActivityTarget", () => {
 
   it("shows a dash for an empty target", () => {
     expect(formatActivityTarget("")).toBe("—");
+  });
+});
+
+describe("formatTimestamp", () => {
+  it("renders a parseable ISO timestamp as a locale string (not the raw ISO)", () => {
+    const out = formatTimestamp("2026-06-26T10:00:00Z");
+    // Locale + timezone vary by environment, so assert on stable invariants:
+    // the year is present and the raw ISO punctuation is gone.
+    expect(out).toContain("2026");
+    expect(out).not.toContain("T10:00");
+    expect(out).not.toContain("Z");
+  });
+
+  it("falls back to the raw string for an unparseable value", () => {
+    expect(formatTimestamp("not-a-date")).toBe("not-a-date");
+  });
+
+  it("falls back to the raw (empty) string rather than 'Invalid Date'", () => {
+    expect(formatTimestamp("")).toBe("");
   });
 });
