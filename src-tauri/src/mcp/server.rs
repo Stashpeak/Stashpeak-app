@@ -78,6 +78,68 @@ fn read_exact_interruptible<S: std::io::Read>(
     FrameStep::Ok
 }
 
+/// Write all of `buf`, waking on WouldBlock/TimedOut/Ok(0) (the Windows
+/// nonblocking fallback makes writes nonblocking too) to retry, honoring `stop`.
+/// On the Unix blocking path writes never WouldBlock, so this is effectively a
+/// single write_all-equivalent. On Windows named pipes with PIPE_NOWAIT, the
+/// overlapped I/O path may return Ok(0) instead of WouldBlock when the pipe
+/// output buffer is full — we sleep and retry just like WouldBlock.
+fn write_all_interruptible<S: std::io::Write>(
+    stream: &mut S,
+    mut buf: &[u8],
+    stop: &AtomicBool,
+) -> bool {
+    while !buf.is_empty() {
+        if stop.load(Ordering::Relaxed) {
+            return false;
+        }
+        match stream.write(buf) {
+            // On Windows named pipes with PIPE_NOWAIT, a write to a full buffer
+            // may complete with 0 bytes via the overlapped I/O path rather than
+            // returning WouldBlock — treat it identically: sleep and retry.
+            Ok(0) => {
+                std::thread::sleep(POLL);
+                continue;
+            }
+            Ok(n) => buf = &buf[n..],
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                std::thread::sleep(POLL);
+                continue;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return false,
+        }
+    }
+    true
+}
+
+/// Serialize + length-prefix + write one frame, WouldBlock-aware. Mirrors
+/// wire::write_frame but resilient to the Windows nonblocking socket. Returns
+/// false on stop / peer-gone / serialize error (caller drops the connection).
+fn write_frame_interruptible<S: std::io::Write>(
+    stream: &mut S,
+    value: &impl serde::Serialize,
+    stop: &AtomicBool,
+) -> bool {
+    let body = match serde_json::to_vec(value) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let len = (body.len() as u32).to_be_bytes();
+    if !write_all_interruptible(stream, &len, stop) {
+        return false;
+    }
+    if !write_all_interruptible(stream, &body, stop) {
+        return false;
+    }
+    // flush is a no-op / quick on raw pipes; tolerate a nonblocking WouldBlock here.
+    let _ = stream.flush();
+    true
+}
+
 enum FrameRead {
     Got(IpcRequest),
     Stopped,
@@ -111,7 +173,6 @@ fn read_frame_interruptible<S: std::io::Read>(stream: &mut S, stop: &AtomicBool)
 /// Park a notify (Subscribe) connection: block on the change channel, write a
 /// Changed frame per readable change, honoring `stop` via recv_timeout.
 fn run_notify_loop<S: std::io::Write>(stream: &mut S, stop: &AtomicBool, notifier: &Notifier) {
-    use crate::mcp::wire::write_frame;
     let rx = notifier.subscribe();
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -119,7 +180,7 @@ fn run_notify_loop<S: std::io::Write>(stream: &mut S, stop: &AtomicBool, notifie
         }
         match rx.recv_timeout(POLL) {
             Ok(canonical) => {
-                if write_frame(stream, &IpcResponse::Changed { canonical }).is_err() {
+                if !write_frame_interruptible(stream, &IpcResponse::Changed { canonical }, stop) {
                     return;
                 }
             }
@@ -333,8 +394,6 @@ fn handle_connection<S: std::io::Read + std::io::Write>(
     stop: Arc<AtomicBool>,
     notifier: Arc<Notifier>,
 ) {
-    use crate::mcp::wire::write_frame;
-
     loop {
         match read_frame_interruptible(&mut stream, &stop) {
             FrameRead::Stopped => return,
@@ -351,14 +410,17 @@ fn handle_connection<S: std::io::Read + std::io::Write>(
                             return;
                         }
                         _ => {
-                            let _ =
-                                write_frame(&mut stream, &err("Unauthorized", "no valid token"));
+                            write_frame_interruptible(
+                                &mut stream,
+                                &err("Unauthorized", "no valid token"),
+                                &stop,
+                            );
                             return;
                         }
                     }
                 }
                 let resp = handle_request(&req);
-                if write_frame(&mut stream, &resp).is_err() {
+                if !write_frame_interruptible(&mut stream, &resp, &stop) {
                     return;
                 }
                 // A Manifest exchange is one-shot in practice but we keep the loop so a
@@ -507,6 +569,89 @@ mod ipc_tests {
 
             // Drop the client connection FIRST — gives the per-connection worker
             // EOF so serve_named can join it cleanly without deadlocking.
+            drop(conn);
+            stop.store(true, Ordering::Relaxed);
+            let _ = server.join();
+        });
+    }
+
+    /// Regression test for the Windows nonblocking write path: a response frame
+    /// that exceeds the OS pipe buffer (~512 bytes) must be delivered fully.
+    /// With the old blocking `write_all`, this fails on Windows because
+    /// `set_nonblocking(true)` makes writes nonblocking too, so `write_all` returns
+    /// `WouldBlock` and drops the rest of the frame. `write_frame_interruptible`
+    /// retries on WouldBlock, so the full 128 KiB is delivered.
+    #[test]
+    fn loopback_large_note_round_trips() {
+        use crate::mcp::wire::{read_frame, write_frame};
+
+        crate::test_support::with_temp_data_dir(|| {
+            let dir = tempdir().unwrap();
+            let big_content = "x".repeat(128 * 1024);
+            fs::write(dir.path().join("big.md"), &big_content).unwrap();
+            settings::set_vault_root(dir.path().to_string_lossy().into()).unwrap();
+            let raw = tokens::mint("LargeNoteTest".into(), Scope::Read).unwrap();
+
+            let sock = format!(
+                "stashpeak-mcp-largenote-{}-{}.sock",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            );
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let stop2 = stop.clone();
+            let sock2 = sock.clone();
+            let server = std::thread::spawn(move || {
+                let _ = serve_named(&sock2, stop2, Arc::new(Notifier::default()));
+            });
+            let _stop_guard = StopGuard(stop.clone());
+
+            let name = sock.to_ns_name::<GenericNamespaced>().unwrap();
+            let mut conn = {
+                let mut last_err = None;
+                let mut stream = None;
+                for _ in 0..50 {
+                    match Stream::connect(name.clone()) {
+                        Ok(s) => {
+                            stream = Some(s);
+                            break;
+                        }
+                        Err(e) => {
+                            last_err = Some(e);
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                        }
+                    }
+                }
+                stream.unwrap_or_else(|| panic!("failed to connect to listener: {last_err:?}"))
+            };
+
+            write_frame(
+                &mut conn,
+                &IpcRequest::ReadNote {
+                    token: raw,
+                    canonical: "big.md".into(),
+                },
+            )
+            .unwrap();
+            let resp: IpcResponse = read_frame(&mut conn).unwrap();
+            match resp {
+                IpcResponse::Note { content } => {
+                    assert_eq!(
+                        content.len(),
+                        128 * 1024,
+                        "expected 128 KiB content, got {} bytes",
+                        content.len()
+                    );
+                    assert_eq!(
+                        content, big_content,
+                        "large note content round-trip mismatch"
+                    );
+                }
+                other => panic!("expected Note response, got {other:?}"),
+            }
+
+            // Drop the client connection BEFORE signalling stop so the worker gets EOF
+            // and serve_named can join it cleanly without deadlocking.
             drop(conn);
             stop.store(true, Ordering::Relaxed);
             let _ = server.join();
