@@ -15,6 +15,10 @@ pub async fn mcp_set_enabled(
     app: tauri::AppHandle,
     service: State<'_, McpService>,
 ) -> Result<(), String> {
+    // Snapshot the live state BEFORE mutating so a persist-failure rollback
+    // restores the PREVIOUS state, not the requested one — an idempotent toggle
+    // (e.g. disabling an already-stopped service) must never flip the live server.
+    let was_running = service.is_running();
     // Flip the live service FIRST, persist the setting only after it succeeds, so
     // a bind/watcher failure never leaves `mcp_kb_access_enabled = true` while the
     // server is actually down (settings always reflect the real running state).
@@ -23,23 +27,26 @@ pub async fn mcp_set_enabled(
     } else {
         service.stop();
     }
-    // Persist last (blocking). If this write fails after a successful start, roll
-    // the service back so settings and the live state never disagree.
+    // Persist last (blocking). If this write fails, roll the live service back to
+    // its PREVIOUS state so settings and the live state never disagree.
     if let Err(e) = crate::run_blocking("mcp_set_enabled", move || {
         settings::set_mcp_enabled(enabled)
     })
     .await
     {
-        if enabled {
+        if enabled && !was_running {
+            // We started it for this request; the persist failed, so undo the start.
             service.stop();
-        } else if let Err(start_err) = service.start(&app) {
-            // The disable was applied to the live service but the persist failed,
-            // so the stored value may still say `true`. Restart to keep settings
-            // and live state from disagreeing (boot reads the persisted value).
-            tracing::error!(
-                error = %start_err,
-                "failed to restore mcp service after disable setting write failed"
-            );
+        } else if !enabled && was_running {
+            // We stopped a running service; the persist failed, so the stored value
+            // may still say `true`. Restart to keep settings and live state aligned
+            // (boot reads the persisted value).
+            if let Err(start_err) = service.start(&app) {
+                tracing::error!(
+                    error = %start_err,
+                    "failed to restore mcp service after disable setting write failed"
+                );
+            }
         }
         return Err(e);
     }

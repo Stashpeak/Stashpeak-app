@@ -19,5 +19,8 @@ fi
 if [ "$code" -eq 0 ]; then
   echo "FAIL: shim should exit non-zero when the app IPC is unavailable"; exit 1
 fi
+if [ ! -s "$ERR" ]; then
+  echo "FAIL: shim should diagnose the startup failure on stderr"; exit 1
+fi
 echo "OK: stdout empty on failure; diagnostics on stderr; non-zero exit (code $code)."
 echo "--- stderr was: ---"; cat "$ERR"
