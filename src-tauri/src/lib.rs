@@ -3,6 +3,7 @@ mod currency;
 mod db;
 pub mod kb;
 mod logging;
+mod mcp;
 mod notifications;
 mod products;
 mod providers;
