@@ -707,10 +707,11 @@ mod tests {
 
 ```rust
 use crate::kb::{read, KbError};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+// `Deserialize` is required so Plan 3's IPC layer can deserialize `Vec<SearchHit>` over the wire.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SearchHit {
     pub path: String,
     pub snippet: String,
