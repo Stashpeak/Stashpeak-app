@@ -529,11 +529,11 @@ git commit -m "feat(kb): resolve_readable default-deny gate (.kbignore + per-fol
 - Modify: `src-tauri/src/kb/access.rs`
 
 **Interfaces:**
-- Consumes: `kb::read::{list, read_note}`, `kb::search::{search, SearchHit}`, `resolve_readable`, `crate::logging` (T10 scrubber via `remember_secret` is for tokens; the snippet scrub reuses the same `scrub_text` path — see implementation note).
+- Consumes: `kb::read::{list, read_note}`, `kb::search::{search_in, SearchHit}` (the candidate-scoped ranker — gate the candidate list up front, never the raw `search::search` whole-vault scan), `resolve_readable`, `crate::logging` (T10 scrubber via `remember_secret` is for tokens; the snippet scrub reuses the same `scrub_text` path — see implementation note).
 - Produces (the facade Plan 3 calls INSTEAD of raw `kb::read`/`kb::search`):
   - `pub fn list_readable(vault_root: &Path) -> Result<Vec<String>, KbError>` — `kb::read::list` filtered through `resolve_readable`.
-  - `pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError>` — denies excluded paths with `KbError::PathRejected` (indistinguishable from not-found; never leaks).
-  - `pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError>` — searches only readable notes and **scrubs each snippet** through the T10 secret-scrubber before returning.
+  - `pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError>` — denies excluded paths with a **path-free** `KbError::PathRejected("not found")` (indistinguishable from not-found; the canonical path is never embedded in the error, so it can't leak when Plan 3 stringifies it).
+  - `pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError>` — **gates the candidate list up front** (excluded notes are never opened, scored, or counted — no ranking/timing leak), ranks only readable notes, and **scrubs each snippet** through the T10 secret-scrubber before returning.
 
 > [!IMPORTANT]
 > The T10 scrubber's `scrub_text` is **private** to `logging.rs` today (the only public entry point is `remember_secret`). To scrub snippets, expose a `pub fn scrub_snippet(s: &str) -> String` in `logging.rs` that calls the existing private `scrub_text` (the regex pipeline: api-key, bearer, `KEY/TOKEN/SECRET/PASSWORD=…` env-value, and registered known-secrets). This is a one-line public wrapper — do **not** duplicate the regex logic. Add it next to `remember_secret`.
@@ -576,10 +576,18 @@ fn read_note_denies_excluded_path_uniformly() {
     fs::create_dir_all(root.join("Private")).unwrap();
     fs::write(root.join("Private/secret.md"), "TOP SECRET").unwrap();
 
-    // The note physically exists but the gate denies it → PathRejected,
-    // indistinguishable from a non-existent note. The body never leaks.
+    // The note physically exists but the gate denies it → a path-free deny,
+    // indistinguishable from a non-existent note. The body never leaks, and
+    // the returned error must NOT embed the canonical path.
     let err = read_note(root, "Private/secret.md").unwrap_err();
-    assert!(matches!(err, KbError::PathRejected(_)));
+    match err {
+        KbError::PathRejected(msg) => {
+            // Path-free: the canonical path is absent from the error string.
+            assert!(!msg.contains("Private"));
+            assert!(!msg.contains("secret.md"));
+        }
+        other => panic!("expected path-free PathRejected, got {other:?}"),
+    }
 }
 
 #[test]
@@ -616,38 +624,59 @@ pub fn list_readable(vault_root: &Path) -> Result<Vec<String>, KbError> {
         .collect())
 }
 
-/// Gated `read_note`: denies excluded paths with `PathRejected` *before*
-/// touching the file, so an excluded note is indistinguishable from a
-/// non-existent one and its bytes never leave the server.
+/// Gated `read_note`: denies excluded paths *before* touching the file, so an
+/// excluded note is indistinguishable from a non-existent one and its bytes
+/// never leave the server. The returned error is **path-free** — it carries a
+/// fixed `"not found"` message, never the canonical path — so Plan 3 cannot
+/// leak the path (or even its existence) by stringifying the error.
 pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> {
     if !resolve_readable(vault_root, canonical) {
-        return Err(KbError::PathRejected(canonical.to_string()));
+        // Path-free deny: same shape as a genuine miss. The canonical path
+        // stays internal (logging/ledger may keep it); it is never embedded
+        // in the returned error.
+        return Err(KbError::PathRejected("not found".to_string()));
     }
     read::read_note(vault_root, canonical)
 }
 
-/// Gated `search`: runs Plan 1's search, then drops hits whose path is not
-/// readable and scrubs every surviving snippet through the T10 scrubber.
-/// (MCP_KB_CONTRACT.md §7.1 — no excluded note contributes a hit; no snippet
-/// leaks an embedded secret.)
+/// Gated `search`: gates the **candidate file list up front** — excluded notes
+/// are never opened, scanned, or scored — then ranks only the readable notes
+/// and scrubs every surviving snippet through the T10 scrubber.
+/// (MCP_KB_CONTRACT.md §7.1 — an excluded note contributes nothing: no hit, no
+/// influence on ranking, hit-counts, or timing; no snippet leaks an embedded
+/// secret.)
 pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError> {
-    // Over-fetch is unnecessary: filter first, then truncate to `limit`.
-    let raw = search::search(vault_root, query, usize::MAX)?;
-    let mut out: Vec<SearchHit> = raw
+    // Gate BEFORE ranking: build the readable candidate set, then hand only
+    // those paths to the scorer. Excluded notes are never read or ranked, so
+    // they cannot perturb scores, the hit count, or query timing.
+    let candidates: Vec<String> = read::list(vault_root)?
         .into_iter()
-        .filter(|hit| resolve_readable(vault_root, &hit.path))
+        .filter(|c| resolve_readable(vault_root, c))
+        .collect();
+
+    // `search::search_in` scores ONLY the supplied candidates (Plan 1's ranker,
+    // minus its own `read::list` enumeration). `limit` is applied inside, so no
+    // over-fetch is needed now that the input is already gated.
+    let raw = search::search_in(vault_root, &candidates, query, limit)?;
+    Ok(raw
+        .into_iter()
         .map(|mut hit| {
             hit.snippet = crate::logging::scrub_snippet(&hit.snippet);
             hit
         })
-        .collect();
-    out.truncate(limit);
-    Ok(out)
+        .collect())
 }
 ```
 
-> [!NOTE]
-> `search::search(.., usize::MAX)` then post-filter is correct (not wasteful at KB scale) because `resolve_readable` must run **after** ranking to avoid leaking the existence of excluded notes via a short result list. If profiling ever shows this matters, push `resolve_readable` into `search::search`'s `read::list` step behind the same gate — the interface is unchanged. `SearchHit` is `read`/`write` on its fields (Plan 1 made them `pub`), so the in-place `hit.snippet = …` mutation compiles.
+> [!IMPORTANT]
+> **Gate before ranking, not after.** The gate runs in the **listing/iteration**
+> path: `read::list` → `resolve_readable` produces the candidate set, and only
+> those paths are opened and scored. A post-filter on ranked results is **wrong**
+> — excluded notes would still be read, scored, and counted, leaking their
+> existence through ranking, hit-counts, and timing side-channels.
+>
+> This requires Plan 1's `kb::search` to expose a candidate-scoped entry point
+> `pub fn search_in(vault_root: &Path, candidates: &[String], query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError>` — the same ranker as `search::search`, but iterating the supplied `candidates` slice instead of doing its own `read::list`. (`search::search` becomes the thin wrapper `search_in(root, &read::list(root)?, query, limit)`.) If Plan 1 ships only `search::search`, **stop and reconcile the plans** (add `search_in`) — do **not** restore the post-filter. `SearchHit` is `read`/`write` on its fields (Plan 1 made them `pub`), so the in-place `hit.snippet = …` mutation compiles.
 
 - [ ] **Step 5: Run, verify pass** — `cd src-tauri && cargo test kb::access::tests` → PASS.
 
@@ -1304,12 +1333,12 @@ PR body must include `Closes #<ISSUE>` and a `## Test plan` section (the CI `val
 
 - **Contract coverage (Plan 2 PRODUCES, per the pinned cross-plan interface):**
   - `kb::access::resolve_readable(vault_root, canonical) -> bool` ✓ (2.2) — default-deny via `.kbignore` (2.1) + per-folder `.nokb` (2.2) + default-excluded secret set (2.1).
-  - gated facade `kb::access::{ list_readable, read_note, search }` ✓ (2.3) — each applies `resolve_readable` (excluded = absent / `PathRejected`, never leaks); `search` scrubs each snippet through T10 (`logging::scrub_snippet`) ✓.
+  - gated facade `kb::access::{ list_readable, read_note, search }` ✓ (2.3) — each applies `resolve_readable` (excluded = absent / path-free `PathRejected("not found")`, never leaks the canonical path); `search` gates the candidate list **before** ranking (excluded notes never opened/scored/counted) and scrubs each snippet through T10 (`logging::scrub_snippet`) ✓.
   - `kb::tokens::{ Scope, TokenInfo, mint, validate, revoke, list }` ✓ (3.1/3.2) — raw `spk_mcp_` ≥128-bit token returned ONCE, only its SHA-256 hash stored, `remember_secret` on mint **and** validate, scope keyed server-side, per-call scope resolution ✓.
   - `kb::ledger::{ record_read, recent, check_read_budget, Brake (Allow|Notice|Pause), LedgerRow }` ✓ (4.1/4.2) — bulk-read brake = sliding-window count → Notice/Pause ✓.
   - migration `008_mcp.sql` with the **exact** `mcp_clients` + `mcp_activity_ledger` column sets ✓ (1.2), registered in `db.rs` ✓.
 - **Signatures match the contract byte-for-byte:** `resolve_readable(&Path, &str)->bool`; `list_readable(&Path)->Result<Vec<String>,KbError>`; `read_note(&Path,&str)->Result<String,KbError>`; `search(&Path,&str,usize)->Result<Vec<SearchHit>,KbError>`; `mint(String,Scope)->Result<String,String>`; `validate(&str)->Result<Option<TokenInfo>,String>`; `revoke(&str)->Result<(),String>`; `list()->Result<Vec<TokenInfo>,String>`; `record_read(&str,&str,&str,usize)->Result<(),String>`; `recent(usize)->Result<Vec<LedgerRow>,String>`; `check_read_budget(&str)->Result<Brake,String>`. `TokenInfo{id,label,scope,created_at}` and `LedgerRow{client_label,tool,target,result_count,at}` match.
-- **Dependency on Plan 1 is explicit and consumed, not redefined:** `kb::path::to_os_path` (resolve_readable containment), `kb::read::{list,read_note}` + `kb::search::{search,SearchHit}` (the facade wraps them), `kb::KbError` (return type), `settings` (untouched here — Plan 3 reads the vault root), `run_blocking` (not used here; this plan adds no command). Header + intro state "Plan 2 of the MCP read-first series" and the Plan 1 dependency.
+- **Dependency on Plan 1 is explicit and consumed, not redefined:** `kb::path::to_os_path` (resolve_readable containment), `kb::read::{list,read_note}` + `kb::search::{search_in,SearchHit}` (the gated facade ranks only the up-front-gated candidate list via the candidate-scoped `search_in`; if Plan 1 as merged exposes only `search::search`, **reconcile** by adding the `search_in` overload — see the gated-`search` IMPORTANT note — rather than reintroducing a post-filter), `kb::KbError` (return type; the read-deny path uses its `PathRejected` variant with a path-free message), `settings` (untouched here — Plan 3 reads the vault root), `run_blocking` (not used here; this plan adds no command). Header + intro state "Plan 2 of the MCP read-first series" and the Plan 1 dependency.
 - **Scope guardrails honored:** no MCP protocol / IPC / shim (Plan 3); no frontend (Plan 4); no write path (Plan 5 — `Scope::ReadWrite` is defined as a token attribute but no write op consumes it; the write-side ledger is the future symmetric half). Read-only throughout.
 - **Codebase-fact fidelity:** migration number **008** (007 is the last existing); DB injection seam mirrors `secrets.rs` `*_with_store` because `db::connect()` is not test-isolable and the repo has no DB-backed tests today (the new `db::open_in_memory_migrated()` helper is the seam); `rand` promoted from dev-dep (was dev-only); `sha2`/`hex` added; `logging::scrub_snippet` is a one-line public wrapper over the existing private `scrub_text` (no regex duplication); timestamp defaults use the `strftime('%Y-%m-%dT%H:%M:%SZ','now')` idiom from `001_initial.sql`; commit-msg `#<ISSUE>` discipline; 3-OS CI gate before each commit.
 - **Placeholder scan:** the only intentional substitutions are `#<ISSUE>` / `#<PLAN1-ISSUE>` (real numbers from Task 0.1 / Plan 1) and the PR-body file — all explicit. Every code step carries complete, compilable code; no "TBD"/"similar to"/"add handling" placeholders.

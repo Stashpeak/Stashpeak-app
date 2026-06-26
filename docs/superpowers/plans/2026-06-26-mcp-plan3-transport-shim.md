@@ -908,6 +908,11 @@ pub fn ipc_socket_name() -> String {
 
 /// Bind the local socket and serve requests until `stop` flips true.
 /// One blocking thread per connection (KB reads are short, single-user volume).
+///
+/// Every per-connection worker shares the same `stop` flag and its `JoinHandle`
+/// is tracked, so when `stop` flips true we both (a) make every in-flight worker
+/// notice and exit between frames and (b) join them before returning — no client
+/// connection survives a disable (the toggle truly stops the server).
 pub fn serve(stop: Arc<AtomicBool>) -> Result<(), McpError> {
     let name = ipc_socket_name()
         .to_ns_name::<GenericNamespaced>()
@@ -921,12 +926,21 @@ pub fn serve(stop: Arc<AtomicBool>) -> Result<(), McpError> {
         .set_nonblocking(interprocess::local_socket::ListenerNonblockingMode::Accept)
         .map_err(|e| McpError::Io(e.to_string()))?;
 
+    // Track every live per-connection worker so stop() can join them all.
+    let mut workers: Vec<std::thread::JoinHandle<()>> = Vec::new();
+
     while !stop.load(Ordering::Relaxed) {
         match listener.accept() {
             Ok(stream) => {
-                std::thread::spawn(move || {
-                    handle_connection(stream);
-                });
+                // Each worker shares the stop flag and checks it between frames,
+                // so a disable interrupts even an idle long-lived connection.
+                let worker_stop = stop.clone();
+                workers.push(std::thread::spawn(move || {
+                    handle_connection(stream, worker_stop);
+                }));
+                // Reap any workers that finished on their own (closed connections)
+                // so the tracking Vec does not grow unbounded over the session.
+                workers.retain(|w| !w.is_finished());
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -937,16 +951,34 @@ pub fn serve(stop: Arc<AtomicBool>) -> Result<(), McpError> {
             }
         }
     }
+
+    // Stopping: every worker sees `stop == true` between frames and returns;
+    // join them all so no connection keeps serving reads after the toggle is off.
+    for w in workers {
+        let _ = w.join();
+    }
     Ok(())
 }
 
-/// One connection: frame in -> handle -> frame out, until EOF or error.
-fn handle_connection<S: std::io::Read + std::io::Write>(mut stream: S) {
+/// One connection: frame in -> handle -> frame out, until EOF, error, or stop.
+/// The shared `stop` flag is checked before every read so an idle long-lived
+/// connection (e.g. a shim that pins the socket) is torn down promptly on stop.
+fn handle_connection<S: std::io::Read + std::io::Write>(mut stream: S, stop: Arc<AtomicBool>) {
+    // A short read timeout would let a blocking read also notice `stop`; on the
+    // `interprocess` blocking stream this is best-effort. The between-frame check
+    // below is the guaranteed teardown point; pending shim reads end at EOF when
+    // the app process tears down its end on shutdown.
     loop {
+        if stop.load(Ordering::Relaxed) {
+            return; // disabled while idle/between frames: drop this connection.
+        }
         let req: IpcRequest = match read_frame(&mut stream) {
             Ok(r) => r,
             Err(_) => return, // EOF or bad frame: close this connection only.
         };
+        if stop.load(Ordering::Relaxed) {
+            return; // disabled mid-exchange: do not serve another read.
+        }
         let resp = handle_request(&req);
         if write_frame(&mut stream, &resp).is_err() {
             return;
@@ -961,7 +993,7 @@ fn handle_connection<S: std::io::Read + std::io::Write>(mut stream: S) {
 ```
 
 > [!NOTE]
-> `interprocess` 2.x's exact type/trait names (`ListenerOptions`, `to_ns_name`, the nonblocking mode enum, the stream traits) may shift between minor versions — resolve them against `cargo doc -p interprocess` at implementation time. The contract is fixed: a build-namespaced local socket, a stop-flag-driven accept loop, one thread per connection, framed request/response. On Unix, prefer the namespaced form (or a socket path under `db::data_dir()`) and ensure the socket file is removed on a clean stop; on Windows the named pipe needs no cleanup.
+> `interprocess` 2.x's exact type/trait names (`ListenerOptions`, `to_ns_name`, the nonblocking mode enum, the stream traits) may shift between minor versions — resolve them against `cargo doc -p interprocess` at implementation time. The contract is fixed: a build-namespaced local socket, a stop-flag-driven accept loop, one tracked+joinable thread per connection (workers share `stop` and check it between frames so a disable tears down even an idle long-lived connection), framed request/response. On Unix, prefer the namespaced form (or a socket path under `db::data_dir()`) and ensure the socket file is removed on a clean stop; on Windows the named pipe needs no cleanup.
 
 - [ ] **Step 2: Build + a loopback integration test**
 
@@ -1031,7 +1063,7 @@ git commit -m "feat(mcp): interprocess IPC listener with stop-flag accept loop (
 **Interfaces:**
 - Produces:
   - `settings::{ get_mcp_enabled() -> Result<bool,String>, set_mcp_enabled(enabled: bool) -> Result<(),String> }` (key `"mcp_kb_access_enabled"`, default `false`).
-  - `pub struct McpService { running: Mutex<Option<McpHandle>> }` (held in Tauri state via `app.manage(McpService::default())`), with `pub fn start(&self) -> Result<(), McpError>` (idempotent: spawn the `serve` thread if not already running) and `pub fn stop(&self)` (flip the stop flag + join). `McpHandle` holds the `Arc<AtomicBool>` stop flag + the `JoinHandle`.
+  - `pub struct McpService { running: Mutex<Option<McpHandle>> }` (held in Tauri state via `app.manage(McpService::default())`), with `pub fn start(&self, app: &AppHandle) -> Result<(), McpError>` (idempotent: spawn the `serve` thread + boot the KB watcher if not already running) and `pub fn stop(&self)` (flip the stop flag, join the `serve` thread + every worker, drop the watcher). `McpHandle` holds the `Arc<AtomicBool>` stop flag, the `serve` `JoinHandle`, and the held `RecommendedWatcher`. (The `AppHandle` parameter + the watcher field are added in Task 4.2 Step 3, which folds the watcher into this same lifecycle — implement them together.)
 - Per Decision #24, the service is a resource-holding contribution: it starts/stops with the toggle and **binds no network port** (local IPC only).
 
 - [ ] **Step 1: Write the failing test (settings round-trip + idempotent start/stop)**
@@ -1048,13 +1080,19 @@ fn mcp_enabled_defaults_false_and_round_trips() {
 // in lifecycle.rs tests:
 #[test]
 fn start_is_idempotent_and_stop_is_safe() {
+    // `start` takes an AppHandle (it also boots the watcher — Task 4.2 Step 3);
+    // a Tauri mock app provides one without a real window.
+    let app = tauri::test::mock_app();
     let svc = McpService::default();
-    svc.start().unwrap();
-    svc.start().unwrap(); // second start is a no-op, not a double-bind
+    svc.start(&app.handle()).unwrap();
+    svc.start(&app.handle()).unwrap(); // second start is a no-op, not a double-bind
     svc.stop();
     svc.stop(); // stopping a stopped service is safe
 }
 ```
+
+> [!NOTE]
+> The `start`/`stop` bodies shown in Step 4 below are the Task-4.1 baseline (listener only); Task 4.2 Step 3 extends them to take the `AppHandle` and fold the watcher into the same lifecycle. Write Step 4 with the extended signature directly if you implement Task 4.2 in the same pass — the test above already uses it.
 
 - [ ] **Step 2: Run, verify fail** — `cd src-tauri && cargo test mcp::lifecycle::tests settings::tests::mcp_enabled` → FAIL.
 
@@ -1132,12 +1170,18 @@ impl McpService {
     }
 
     /// Stop the listener and join its thread. Safe to call when stopped.
+    ///
+    /// Setting the shared `stop` flag both ends the accept loop AND signals every
+    /// live per-connection worker (they check the same flag between frames);
+    /// `serve` joins all of those workers before it returns, so joining the
+    /// `serve` thread here guarantees no connection is still serving reads once
+    /// `stop()` returns — the toggle truly stops the server.
     pub fn stop(&self) {
         let mut guard = self.running.lock().expect("mcp service lock poisoned");
         if let Some(mut handle) = guard.take() {
             handle.stop.store(true, Ordering::Relaxed);
             if let Some(join) = handle.join.take() {
-                let _ = join.join();
+                let _ = join.join(); // returns only after every worker is joined
             }
             tracing::info!("mcp ipc server stopped");
         }
@@ -1162,7 +1206,9 @@ use crate::mcp::lifecycle::McpService;
 app.manage(McpService::default());
 if settings::get_mcp_enabled().unwrap_or(false) {
     if let Some(svc) = app.try_state::<McpService>() {
-        if let Err(e) = svc.start() {
+        // `start` also boots the KB folder-watcher (Task 4.2 Step 3), so the
+        // watcher only runs while MCP is enabled — this plan owns its lifecycle.
+        if let Err(e) = svc.start(&app.handle()) {
             tracing::error!(error = %e, "failed to start mcp service at boot");
         }
     }
@@ -1246,15 +1292,89 @@ app.listen("kb://list_changed", move |event| {
 ```
 
 > [!NOTE]
-> The Plan 1 watcher itself is started elsewhere (Plan 1 produced `kb::watch::start_watch`; its boot wiring is Plan 1's, not this plan's). This task only relays the *event* it emits. If the watcher is not yet started at app boot in the merged Plan 1, add the `start_watch` boot call here guarded by `get_mcp_enabled()` (the watcher only needs to run while MCP is enabled) and record that in the PR.
+> Plan 1 produces `kb::watch::start_watch` but never calls it at boot — **this plan owns the watcher lifecycle.** The watcher is bound to the MCP enable state: it starts when `mcp_kb_access_enabled` is true (at boot and on the enable-toggle) and stops on disable, so it only runs while MCP is enabled. Step 3 below folds `start_watch`/drop into `McpService::start`/`stop` so the watcher and the IPC listener share one lifecycle; this task's Tauri listener (Step 2 above) only relays the `kb://list_changed` *event* the running watcher emits into the notify broadcast.
 
-- [ ] **Step 3: Build + verify** — `cd src-tauri && cargo build && cargo test mcp::` → PASS.
+- [ ] **Step 3: Fold the watcher into the lifecycle service (this plan owns it)**
 
-- [ ] **Step 4: Commit**
+The watcher shares the IPC listener's lifecycle: it starts inside `McpService::start` and is dropped inside `McpService::stop`. Because `kb::watch::start_watch` needs the Tauri `AppHandle` (to emit `kb://list_changed`) and the server-owned vault root, `start` takes the `AppHandle`; the returned `RecommendedWatcher` is held in `McpHandle` so dropping it on stop tears the watch down. Update `McpHandle`, `start`, and `stop` from Task 4.1:
+
+```rust
+use crate::kb::watch::{self, EchoFilter};
+use crate::settings;
+use notify::RecommendedWatcher;
+use tauri::AppHandle;
+
+struct McpHandle {
+    stop: Arc<AtomicBool>,
+    join: Option<JoinHandle<()>>,
+    // Held for its lifetime: dropping the watcher stops the filesystem watch.
+    _watcher: Option<RecommendedWatcher>,
+}
+
+impl McpService {
+    /// Start the IPC listener thread AND the KB folder-watcher if not already
+    /// running. Idempotent. The watcher emits `kb://list_changed`, which the
+    /// app's listener relays into this service's notify broadcast (Step 2).
+    pub fn start(&self, app: &AppHandle) -> Result<(), McpError> {
+        let mut guard = self.running.lock().expect("mcp service lock poisoned");
+        if guard.is_some() {
+            return Ok(()); // already running
+        }
+
+        // Start the watcher first, bound to the server-owned vault root. A missing
+        // root is not fatal: the listener still serves, and the watcher starts on
+        // the next enable once a vault is configured.
+        let watcher = match settings::get_vault_root().map_err(McpError::Kb)? {
+            Some(root) => match watch::start_watch(app.clone(), &root, EchoFilter::default()) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    tracing::warn!(error = %e, "kb watcher failed to start; list_changed disabled");
+                    None
+                }
+            },
+            None => None,
+        };
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_thread = stop.clone();
+        let join = std::thread::spawn(move || {
+            if let Err(e) = server::serve(stop_thread) {
+                tracing::error!(error = %e, "mcp ipc server exited with error");
+            }
+        });
+        *guard = Some(McpHandle {
+            stop,
+            join: Some(join),
+            _watcher: watcher,
+        });
+        tracing::info!("mcp ipc server + kb watcher started");
+        Ok(())
+    }
+
+    /// Stop the listener (join its thread + every worker) and drop the watcher.
+    pub fn stop(&self) {
+        let mut guard = self.running.lock().expect("mcp service lock poisoned");
+        if let Some(mut handle) = guard.take() {
+            handle.stop.store(true, Ordering::Relaxed);
+            if let Some(join) = handle.join.take() {
+                let _ = join.join(); // returns only after every worker is joined
+            }
+            // `handle` (incl. `_watcher`) drops here, stopping the filesystem watch.
+            tracing::info!("mcp ipc server + kb watcher stopped");
+        }
+    }
+}
+```
+
+Update the two call sites accordingly: the boot wiring in `lib.rs` (Task 4.1 Step 5) becomes `svc.start(&app.handle())`, and `mcp_set_enabled` in `commands.rs` (Task 6.1) calls `service.start(&app_handle)` (the command takes `app: AppHandle`). The idempotency test in Task 4.1 Step 1 needs an `AppHandle`; drive it with Tauri's `tauri::test::mock_app()` (or gate the watcher start behind the existing temp-app harness) so `start`/`stop` remain unit-testable without a real window.
+
+- [ ] **Step 4: Build + verify** — `cd src-tauri && cargo build && cargo test mcp::` → PASS.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/mcp/lifecycle.rs src-tauri/src/mcp/wire.rs src-tauri/src/mcp/server.rs src-tauri/src/lib.rs
-git commit -m "feat(mcp): relay kb://list_changed to a notify-stream broadcast (refs #<ISSUE>)"
+git commit -m "feat(mcp): relay kb://list_changed + fold watcher into the mcp lifecycle (refs #<ISSUE>)"
 ```
 
 ---
@@ -1601,13 +1721,28 @@ pub async fn mcp_get_enabled() -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub async fn mcp_set_enabled(enabled: bool, service: State<'_, McpService>) -> Result<(), String> {
-    // Persist first (blocking), then flip the live service to match.
-    crate::run_blocking("mcp_set_enabled", move || settings::set_mcp_enabled(enabled)).await?;
+pub async fn mcp_set_enabled(
+    enabled: bool,
+    app: tauri::AppHandle,
+    service: State<'_, McpService>,
+) -> Result<(), String> {
+    // Flip the live service FIRST, persist the setting only after it succeeds, so
+    // a bind/watcher failure never leaves `mcp_kb_access_enabled = true` while the
+    // server is actually down (settings always reflect the real running state).
     if enabled {
-        service.start().map_err(|e| e.to_string())?;
+        service.start(&app).map_err(|e| e.to_string())?;
     } else {
         service.stop();
+    }
+    // Persist last (blocking). If this write fails after a successful start, roll
+    // the service back so settings and the live state never disagree.
+    if let Err(e) =
+        crate::run_blocking("mcp_set_enabled", move || settings::set_mcp_enabled(enabled)).await
+    {
+        if enabled {
+            service.stop();
+        }
+        return Err(e);
     }
     Ok(())
 }
@@ -1647,7 +1782,7 @@ pub async fn mcp_client_config_snippet(token: String) -> Result<String, String> 
 ```
 
 > [!NOTE]
-> `mcp_set_enabled` takes `State<'_, McpService>` (not via `run_blocking`, which would lose the borrow) — the setting persist is the only blocking work and is wrapped; `start()`/`stop()` are fast (spawn/join a thread) and run on the command task. `mcp_mint_token` returns the raw token to the frontend exactly once (Plan 4 shows-then-discards); `tokens::mint` already `remember_secret`s it (Plan 2).
+> `mcp_set_enabled` takes `AppHandle` (to boot the watcher via `service.start(&app)`) + `State<'_, McpService>` (not via `run_blocking`, which would lose the borrow) — the setting persist is the only blocking work and is wrapped; `start()`/`stop()` are fast (spawn/join a thread) and run on the command task. **Order matters:** the live service is flipped *first* and the setting is persisted *only after* a successful `start()` (with a rollback `stop()` if the persist itself fails), so a bind/watcher failure can never leave `mcp_kb_access_enabled = true` while the server is down — settings always mirror the real running state. `mcp_mint_token` returns the raw token to the frontend exactly once (Plan 4 shows-then-discards); `tokens::mint` already `remember_secret`s it (Plan 2).
 
 - [ ] **Step 5: Register the commands in `lib.rs`**
 
@@ -1787,7 +1922,7 @@ A cross-plan review (Plans 1–4 + `MCP_KB_CONTRACT.md`) found the items below. 
 - **[P1 — upstream, already fixed] camelCase wire.** Plan 2's `TokenInfo` / `LedgerRow` now carry `#[serde(rename_all = "camelCase")]` (the repo-wide convention; Plan 4's TS reads `createdAt` / `clientLabel` / `resultCount`). Any new struct THIS plan returns to the frontend must do the same.
 - **[P1 — apply here] Make the hand-rolled JSON-RPC stdio handler the PRIMARY path; demote `rmcp` to an optional swap-in.** Task 5.2's `run_mcp_stdio` currently ends in a bounded `rmcp` sketch (`Err("wire rmcp stdio transport here")`). Instead, write the complete line-delimited JSON-RPC handlers for `initialize` (from the app-supplied manifest), `resources/list`, `resources/read`, `tools/list`, `tools/call` directly on stdin/stdout, so every step compiles as written. (The CI smoke in Task 6.2 validates this path identically.) Keep `rmcp` only as an optional later refactor, and resolve its version then.
 - **[P2 — apply here] Declare the notification wire variants up front.** Add `IpcRequest::Subscribe { token }` and `IpcResponse::Changed { canonical: String }` to `wire.rs` in **Task 2.3** (not retrofitted in Task 4.2), and make Task 3.2's `handle_connection` match include the new arm so it stays exhaustive. Task 4.2 then only wires the relay, not the enum.
-- **[P2 — apply here] This plan OWNS starting the watcher.** Add an explicit `setup` boot step that calls `kb::watch::start_watch(...)` when `mcp_kb_access_enabled` is true (and on enable-toggle), rather than the conditional "if Plan 1 didn't start it" prose note. Plan 1 produces `start_watch` but never calls it at boot.
+- **[P2 — applied] This plan OWNS the watcher lifecycle.** `kb::watch::start_watch(...)` is folded into `McpService::start` (and the watcher is dropped in `McpService::stop`) so it runs exactly when `mcp_kb_access_enabled` is true — at boot and on the enable-toggle, stopped on disable (Task 4.2 Step 3). Plan 1 produces `start_watch` but never calls it at boot; there is no "if Plan 1 didn't start it" fallback path — the watcher start/stop are concrete lifecycle steps here.
 - **[P2 — note] `usize` fields** (`SearchHit.score`, `LedgerRow.result_count`) serialize fine as JSON numbers and TS reads `number`; left as-is. Switch to `u32`/`u64` only if cross-arch determinism is ever wanted.
 - **[confirmed defaults — no change needed]** Per-folder do-not-expose marker = Plan 2's **`.nokb`** file (plus `.kbignore *`) — accepted as the pinned convention (`MCP_KB_CONTRACT.md` §7.1 left the on-disk form open). Bulk-read brake thresholds = `WINDOW_SECS=60`, `NOTICE=30`, `PAUSE=100` — accepted defaults, tunable in one place (`kb::ledger`); this plan acts on the `Brake` verbatim.
 - **[sequencing]** All four plan files live under `docs/superpowers/plans/`, which only exists on `main` once Plan 1 (PR #213) merges. Issue/PR cross-refs (`#<ISSUE>`, Plan 1 = PR #213) are placeholders — substitute real numbers at execution.

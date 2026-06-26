@@ -554,7 +554,7 @@ export function McpAccessSection({
                 className={`${TEXT_INPUT_SURFACE} max-w-56`}
               />
               <div className="flex gap-2" role="radiogroup" aria-label="Access level">
-                {scopes.map((scope) => {
+                {scopes.map((scope, index) => {
                   const active = mintScope === scope;
                   return (
                     <button
@@ -562,7 +562,28 @@ export function McpAccessSection({
                       type="button"
                       role="radio"
                       aria-checked={active}
+                      // Roving tabindex: only the selected option is in the tab
+                      // order; arrow keys move selection within the group.
+                      tabIndex={active ? 0 : -1}
                       onClick={() => onMintScopeChange(scope)}
+                      onKeyDown={(e) => {
+                        if (
+                          e.key === "ArrowRight" ||
+                          e.key === "ArrowDown" ||
+                          e.key === "ArrowLeft" ||
+                          e.key === "ArrowUp"
+                        ) {
+                          e.preventDefault();
+                          const forward = e.key === "ArrowRight" || e.key === "ArrowDown";
+                          const next =
+                            (index + (forward ? 1 : -1) + scopes.length) % scopes.length;
+                          onMintScopeChange(scopes[next]);
+                          const sibling = e.currentTarget.parentElement?.children[next];
+                          if (sibling instanceof HTMLElement) {
+                            sibling.focus();
+                          }
+                        }
+                      }}
                       className={
                         active
                           ? "rounded-full bg-primary px-4 py-1.5 text-sm text-white transition-all"
@@ -835,14 +856,18 @@ export function McpAccessSectionContainer({
     setBusy(true);
     try {
       const raw = await mintMcpToken(label, mintScope);
-      // Fetch the snippet immediately; the raw token is only available now.
-      const snippet = await getMcpClientConfigSnippet(raw);
+      // Surface the raw token immediately — this is the only copy and it is shown
+      // once. Commit it to state BEFORE fetching the snippet so a snippet-fetch
+      // failure can never lose the secret.
       setMintedToken(raw);
-      setMintedSnippet(snippet);
       setCopiedToken(false);
       setCopiedSnippet(false);
       setMintLabel("");
       setMintScope("read");
+      // Fetch the config snippet separately; a failure here still leaves the raw
+      // token revealed above.
+      const snippet = await getMcpClientConfigSnippet(raw);
+      setMintedSnippet(snippet);
       await refreshTokens();
     } catch (error) {
       onError(String(error));
