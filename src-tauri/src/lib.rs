@@ -395,6 +395,28 @@ pub fn run() {
                 }
             });
 
+            // MCP KB access server: register the service state, auto-start if enabled,
+            // and wire the kb://list_changed event relay with the confidentiality gate.
+            {
+                use tauri::{Listener, Manager};
+
+                app.manage(crate::mcp::lifecycle::McpService::default());
+                if settings::get_mcp_enabled().unwrap_or(false) {
+                    if let Some(svc) = app.try_state::<crate::mcp::lifecycle::McpService>() {
+                        if let Err(e) = svc.start(app.handle()) {
+                            tracing::error!(error = %e, "failed to start mcp service at boot");
+                        }
+                    }
+                }
+                let relay = app.handle().clone();
+                app.listen("kb://list_changed", move |event| {
+                    if let Some(svc) = relay.try_state::<crate::mcp::lifecycle::McpService>() {
+                        let canonical = event.payload().trim_matches('"').to_string();
+                        svc.notify_changed(&canonical);
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
