@@ -32,12 +32,10 @@ impl EchoFilter {
         self.seen.lock().unwrap().insert((path.to_string(), hash));
     }
 
-    pub fn is_echo(&self, path: &str, hash: u64) -> bool {
+    pub fn consume_echo(&self, path: &str, hash: u64) -> bool {
         // Same `Borrow` gap as `record` — allocates a `String` per lookup.
-        self.seen
-            .lock()
-            .unwrap()
-            .contains(&(path.to_string(), hash))
+        // One-shot: remove on match so a real later external edit to the same content emits.
+        self.seen.lock().unwrap().remove(&(path.to_string(), hash))
     }
 }
 
@@ -68,6 +66,21 @@ pub fn start_watch(
             let Ok(canonical) = path::to_canonical(&root, &p) else {
                 continue;
             };
+            // Symmetric with `list`: skip hidden segments and never follow a symlink (its target
+            // could be outside the vault — `std::fs::read` would otherwise hash out-of-vault content).
+            if canonical
+                .as_str()
+                .split('/')
+                .any(|part| part.starts_with('.'))
+            {
+                continue;
+            }
+            let Ok(meta) = std::fs::symlink_metadata(&p) else {
+                continue;
+            };
+            if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+                continue;
+            }
             // Skip our own writes (write path records into `echo`).
             // BEST-EFFORT / TOCTOU: the file is read AFTER the watcher event fires, so a
             // concurrent external write may hash to a different value than what was recorded.
@@ -75,7 +88,7 @@ pub fn start_watch(
             // False-positives (suppressed external edit) are transient and self-correct on
             // the next save.  Accepted debt for v1 (Plan 5 write path can tighten this).
             if let Ok(bytes) = std::fs::read(&p) {
-                if echo.is_echo(canonical.as_str(), content_hash(&bytes)) {
+                if echo.consume_echo(canonical.as_str(), content_hash(&bytes)) {
                     continue;
                 }
             }
@@ -99,9 +112,10 @@ mod tests {
     fn echo_filter_recognizes_self_writes() {
         let f = EchoFilter::new();
         let h = content_hash(b"hello");
-        assert!(!f.is_echo("a.md", h));
+        assert!(!f.consume_echo("a.md", h));
         f.record("a.md", h);
-        assert!(f.is_echo("a.md", h)); // same path+content = our own write
-        assert!(!f.is_echo("a.md", content_hash(b"changed"))); // foreign edit
+        assert!(f.consume_echo("a.md", h)); // first match = our own write
+        assert!(!f.consume_echo("a.md", h)); // consumed: a real later edit to same content emits
+        assert!(!f.consume_echo("a.md", content_hash(b"changed"))); // foreign edit
     }
 }

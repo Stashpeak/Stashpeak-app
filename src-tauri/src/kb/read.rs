@@ -18,6 +18,11 @@ pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> 
     if !canonical.ends_with(&format!(".{MD_EXT}")) {
         return Err(KbError::PathRejected(canonical.to_string()));
     }
+    // Hidden files/dirs are outside the KB surface (symmetric with `list`'s dotfile skip):
+    // don't let a client-supplied path read `.secret.md` or `.obsidian/private.md`.
+    if canonical.split('/').any(|seg| seg.starts_with('.')) {
+        return Err(KbError::PathRejected(canonical.to_string()));
+    }
     let os = path::to_os_path(vault_root, canonical)?;
     // Symlink-escape defense: resolve ALL symlinks (incl. intermediate dirs) and
     // re-assert vault containment before reading. `Path::starts_with` is component-wise,
@@ -70,7 +75,11 @@ fn walk(vault_root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), KbEr
             walk(vault_root, &p, out)?;
         } else if ft.is_file() && p.extension().and_then(|e| e.to_str()) == Some(MD_EXT) {
             // `ft.is_file()` keeps FIFOs/sockets/devices out of the read surface.
-            out.push(path::to_canonical(vault_root, &p)?.as_str().to_string());
+            match path::to_canonical(vault_root, &p) {
+                Ok(canonical) => out.push(canonical.as_str().to_string()),
+                Err(KbError::PathRejected(_)) => continue, // unrepresentable name: skip, don't abort the scan
+                Err(e) => return Err(e),
+            }
         }
     }
     Ok(())
@@ -143,5 +152,16 @@ mod tests {
             list(root).unwrap(),
             vec!["a/b.md".to_string(), "z.md".to_string()]
         );
+    }
+
+    #[test]
+    fn read_note_rejects_dotfiles() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join(".secret.md"), "x").unwrap();
+        std::fs::create_dir_all(root.join(".obsidian")).unwrap();
+        std::fs::write(root.join(".obsidian/private.md"), "x").unwrap();
+        assert!(read_note(root, ".secret.md").is_err());
+        assert!(read_note(root, ".obsidian/private.md").is_err());
     }
 }

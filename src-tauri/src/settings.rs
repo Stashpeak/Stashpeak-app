@@ -193,6 +193,20 @@ mod tests {
         unsafe {
             std::env::set_var("STASHPEAK_DATA_DIR", db_dir.path());
         }
+        // Drop guard: ensures STASHPEAK_DATA_DIR is removed even if the test panics,
+        // preventing the deleted tempdir from leaking into later tests that call
+        // db::connect() / db::data_dir().
+        struct StashpeakDataDirGuard;
+        impl Drop for StashpeakDataDirGuard {
+            fn drop(&mut self) {
+                // SAFETY: test-only cleanup; mirrors the set_var above.
+                unsafe {
+                    std::env::remove_var("STASHPEAK_DATA_DIR");
+                }
+            }
+        }
+        let _guard = StashpeakDataDirGuard;
+
         // open() runs migrations so the `settings` table exists in the temp DB.
         crate::db::open().unwrap();
 
@@ -221,11 +235,5 @@ mod tests {
             set_vault_root(vault.path().join("missing").to_string_lossy().to_string()).is_err(),
             "non-existent path must be rejected"
         );
-
-        // SAFETY: test-only; mirrors the set_var above; prevents the deleted tempdir from
-        // leaking into later tests that call db::connect() / db::data_dir().
-        unsafe {
-            std::env::remove_var("STASHPEAK_DATA_DIR");
-        }
     }
 }

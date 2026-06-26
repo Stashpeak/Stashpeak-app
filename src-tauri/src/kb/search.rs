@@ -13,6 +13,9 @@ pub struct SearchHit {
 const SNIPPET_MAX: usize = 200;
 
 pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let needle = query.to_lowercase();
     if needle.is_empty() {
         return Ok(Vec::new());

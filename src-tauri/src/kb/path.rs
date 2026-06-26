@@ -33,7 +33,14 @@ pub fn to_canonical(vault_root: &Path, abs_path: &Path) -> Result<CanonicalPath,
         match comp {
             Component::Normal(os) => {
                 let s = os.to_str().ok_or_else(reject)?;
-                parts.push(s.nfc().collect::<String>());
+                // Canonical form is NFC (Decision #40). Reject non-NFC on-disk names rather than
+                // normalizing them: normalizing would list a name that can't be reopened on byte-exact
+                // filesystems. Non-NFC names are outside the canonical surface in v1 (a future resolver
+                // mapping NFC->real dir entry could add them).
+                if s.nfc().collect::<String>() != s {
+                    return Err(reject());
+                }
+                parts.push(s.to_string());
             }
             // No root/prefix/curdir/parentdir allowed in a relative vault path.
             _ => return Err(reject()),
@@ -73,7 +80,7 @@ pub fn to_os_path(vault_root: &Path, canonical: &str) -> Result<std::path::PathB
     }
     let mut out = vault_root.to_path_buf();
     for seg in canonical.split('/') {
-        if seg.is_empty() || seg == "." || seg == ".." {
+        if seg.is_empty() || seg == "." || seg == ".." || seg.contains(':') {
             return Err(reject());
         }
         out.push(seg);
@@ -108,11 +115,10 @@ mod tests {
     }
 
     #[test]
-    fn nfc_normalizes() {
-        // "é" as NFD (e + combining accent) must canonicalize to NFC single codepoint
-        let nfd = "/vault/cafe\u{0301}.md";
-        let c = to_canonical(root(), Path::new(nfd)).unwrap();
-        assert_eq!(c.as_str(), "caf\u{00e9}.md");
+    fn rejects_non_nfc_os_component() {
+        // "é" as NFD (e + combining accent) is not NFC → must be rejected, not normalized.
+        // Normalizing would list a name that can't be reopened on byte-exact filesystems.
+        assert!(to_canonical(root(), Path::new("/vault/cafe\u{0301}.md")).is_err());
     }
 
     #[test]
@@ -171,6 +177,12 @@ mod tests {
     #[test]
     fn to_os_path_rejects_drive_relative_without_separator() {
         assert!(to_os_path(root(), "C:foo").is_err());
+    }
+
+    #[test]
+    fn to_os_path_rejects_drive_prefix_in_segment() {
+        assert!(to_os_path(root(), "notes/C:foo.md").is_err());
+        assert!(to_os_path(root(), "a/b/D:evil").is_err());
     }
 
     #[test]
