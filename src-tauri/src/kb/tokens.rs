@@ -126,39 +126,42 @@ fn mint_with_conn(conn: &Connection, label: String, scope: Scope) -> Result<Stri
 }
 
 fn validate_with_conn(conn: &Connection, raw: &str) -> Result<Option<TokenInfo>, String> {
-    // Shape-check BEFORE registering with the log-scrubber: garbage inputs must
-    // not grow the secret registry (MCP_KB_CONTRACT.md §6.1).
+    // Shape-check before any work: garbage can't reach the DB or the scrubber.
     if !looks_like_raw_token(raw) {
         return Ok(None);
     }
-    // A raw token reaching validate is a live secret — scrub it from logs.
-    crate::logging::remember_secret(raw);
     let token_hash = hash_token(raw);
+    let row = conn
+        .query_row(
+            "SELECT id, label, scope, created_at FROM mcp_clients
+             WHERE token_hash = ?1 AND revoked = 0",
+            [token_hash],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
 
-    conn.query_row(
-        "SELECT id, label, scope, created_at FROM mcp_clients
-         WHERE token_hash = ?1 AND revoked = 0",
-        [token_hash],
-        |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        },
-    )
-    .optional()
-    .map_err(|e| e.to_string())?
-    .map(|(id, label, scope, created_at)| {
-        Ok(TokenInfo {
-            id,
-            label,
-            scope: Scope::parse(&scope)?,
-            created_at,
-        })
-    })
-    .transpose()
+    match row {
+        Some((id, label, scope, created_at)) => {
+            // Only a REAL, active token is a live secret worth scrubbing — register
+            // it here so shape-valid guesses can't grow the registry.
+            crate::logging::remember_secret(raw);
+            Ok(Some(TokenInfo {
+                id,
+                label,
+                scope: Scope::parse(&scope)?,
+                created_at,
+            }))
+        }
+        None => Ok(None),
+    }
 }
 
 fn revoke_with_conn(conn: &Connection, id: &str) -> Result<(), String> {
@@ -344,6 +347,15 @@ mod tests {
             validate_with_conn(&conn, "spk_mcp_not_a_real_token").unwrap(),
             None
         );
+    }
+
+    /// Fix B (round 2): a shape-valid but never-minted token must return Ok(None)
+    /// and must NOT register itself with the log-scrubber.
+    #[test]
+    fn validate_rejects_shape_valid_but_unminted_token() {
+        let conn = db::open_in_memory_migrated();
+        let fake = format!("{}{}", "spk_mcp_", "a".repeat(64)); // shape-valid, never minted
+        assert!(validate_with_conn(&conn, &fake).unwrap().is_none());
     }
 
     /// Fix 5: `revoke_with_conn` must return Err for a non-existent or already-revoked id.

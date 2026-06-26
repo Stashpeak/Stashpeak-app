@@ -190,6 +190,14 @@ pub fn list_readable(vault_root: &Path) -> Result<Vec<String>, KbError> {
 /// never leave the server. The returned error is **path-free** — it carries a
 /// fixed `"not found"` message, never the canonical path — so Plan 3 cannot
 /// leak the path (or even its existence) by stringifying the error.
+///
+/// Note — accepted TOCTOU residual: `resolve_readable` authorizes the path
+/// string, then the file is opened via `read::*`. A swap/rename of the path
+/// between check and open could bypass the `.kbignore`/`.nokb` gate — but only a
+/// local filesystem writer (the user, or host malware = THREAT_MODEL T1, out of
+/// scope) can do that; the MCP agent is read-only and cannot write/rename. The
+/// atomic handle-based resolver that closes this is owned by the write broker
+/// (MCP_KB_CONTRACT.md §8 / Plan 5); the read path adopts it when §8 lands.
 pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> {
     if !resolve_readable(vault_root, canonical) {
         // Path-free deny: same shape as a genuine miss. The canonical path
@@ -209,6 +217,8 @@ pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> 
 /// (MCP_KB_CONTRACT.md §7.1 — an excluded note contributes nothing: no hit, no
 /// influence on ranking, hit-counts, or timing; no snippet leaks an embedded
 /// secret.)
+///
+/// Note — accepted TOCTOU residual: same as `read_note`; see its doc comment.
 pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError> {
     // Gate BEFORE ranking: build the readable candidate set, then hand only
     // those paths to the scorer. Excluded notes are never read or ranked, so

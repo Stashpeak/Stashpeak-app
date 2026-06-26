@@ -67,7 +67,13 @@ fn record_read_with_conn(
     conn.execute(
         "INSERT INTO mcp_activity_ledger (client_id, client_label, tool, target, result_count)
          VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![client_id, client_label, tool, target, result_count as i64],
+        rusqlite::params![
+            client_id,
+            client_label,
+            tool,
+            target,
+            i64::try_from(result_count).unwrap_or(i64::MAX)
+        ],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -81,7 +87,7 @@ fn recent_with_conn(conn: &Connection, limit: usize) -> Result<Vec<LedgerRow>, S
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([limit as i64], |row| {
+        .query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
             Ok(LedgerRow {
                 client_id: row.get(0)?,
                 client_label: row.get(1)?,
