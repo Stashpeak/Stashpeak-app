@@ -3,7 +3,9 @@ mod currency;
 mod db;
 pub mod kb;
 mod logging;
-mod mcp;
+// `pub` so the `stashpeak-mcp` shim binary (a separate crate that links
+// `stashpeak_lib`) can consume mcp::wire / mcp::uri / mcp::manifest / mcp::server.
+pub mod mcp;
 mod notifications;
 mod products;
 mod providers;
