@@ -217,6 +217,10 @@ pub fn get_vault_root() -> Result<Option<String>, String> {
 }
 
 pub fn set_vault_root(path: String) -> Result<(), String> {
+    // Reject empty/relative roots up front, or later containment checks are ambiguous.
+    if path.trim().is_empty() || !std::path::Path::new(&path).is_absolute() {
+        return Err("vault root must be a non-empty absolute path".into());
+    }
     let conn = crate::db::connect().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)
@@ -485,6 +489,11 @@ pub fn to_os_path(vault_root: &Path, canonical: &str) -> Result<PathBuf, KbError
         return Err(reject());
     }
 
+    // Enforce NFC on ingress: the canonical form is NFC (Decision #40); reject any
+    // alternate byte sequence so one note can't be addressed two ways (cache/ledger sanity).
+    if canonical.nfc().collect::<String>() != canonical {
+        return Err(reject());
+    }
     let mut out = vault_root.to_path_buf();
     for seg in canonical.split('/') {
         if seg.is_empty() || seg == "." || seg == ".." {
@@ -497,7 +506,7 @@ pub fn to_os_path(vault_root: &Path, canonical: &str) -> Result<PathBuf, KbError
 ```
 
 > [!NOTE]
-> `to_os_path` does **not** follow symlinks or re-validate the opened handle — that hardening (reparse rejection, GetFinalPathNameByHandle, TOCTOU re-check) lives in the **write** path (`MCP_KB_CONTRACT.md` §8, Plan 5). For read-only access it is acceptable to resolve lexically; Plan 2's `resolve_readable` gate adds the confidentiality layer on top. A follow-up note: when the write broker lands, route reads through the same hardened resolver for symlink-escape parity.
+> `to_os_path` resolves **lexically** (no handle re-validation). **Symlink-escape defense lives in the read layer** (`read.rs`, Task 3.1/3.2): `read_note` canonicalizes the target and re-asserts vault containment, and `list`'s `walk` skips symlink entries — so a vault-local symlink can neither be read nor recursed outside the vault. The heavier write-path hardening (reparse rejection, `GetFinalPathNameByHandle`, TOCTOU re-check at open) still lands with the write broker (`MCP_KB_CONTRACT.md` §8, Plan 5).
 
 - [ ] **Step 4: Run, verify pass**
 
@@ -566,7 +575,15 @@ pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> 
         return Err(KbError::PathRejected(canonical.to_string()));
     }
     let os = path::to_os_path(vault_root, canonical)?;
-    std::fs::read_to_string(&os).map_err(|e| KbError::Io(e.to_string()))
+    // Symlink-escape defense: resolve ALL symlinks (incl. intermediate dirs) and
+    // re-assert vault containment before reading. `Path::starts_with` is component-wise,
+    // so a sibling like `<root>-evil` cannot pass as inside `<root>`.
+    let real = std::fs::canonicalize(&os).map_err(|e| KbError::Io(e.to_string()))?;
+    let real_root = std::fs::canonicalize(vault_root).map_err(|e| KbError::Io(e.to_string()))?;
+    if !real.starts_with(&real_root) {
+        return Err(KbError::PathRejected(canonical.to_string()));
+    }
+    std::fs::read_to_string(&real).map_err(|e| KbError::Io(e.to_string()))
 }
 ```
 
@@ -628,7 +645,13 @@ fn walk(vault_root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), KbEr
             continue; // skip dotfiles + dot-directories
         }
         let p = entry.path();
-        if p.is_dir() {
+        // Never follow symlinks: a vault-local link could escape the vault. `read_dir`
+        // entry file-type reports the link itself (it does not traverse it).
+        let ft = entry.file_type().map_err(|e| KbError::Io(e.to_string()))?;
+        if ft.is_symlink() {
+            continue;
+        }
+        if ft.is_dir() {
             walk(vault_root, &p, out)?;
         } else if p.extension().and_then(|e| e.to_str()) == Some(MD_EXT) {
             out.push(path::to_canonical(vault_root, &p)?.as_str().to_string());
@@ -660,7 +683,7 @@ git commit -m "feat(kb): recursive markdown list (dotfile-skipping, sorted) (ref
 **Interfaces:**
 - Consumes: `read::list`, `read::read_note`.
 - Produces:
-  - `pub struct SearchHit { pub path: String, pub snippet: String, pub score: usize }` (all `Serialize`).
+  - `pub struct SearchHit { pub path: String, pub snippet: String, pub score: usize }` — derives `Serialize + Deserialize` (Plan 3's IPC deserializes `Vec<SearchHit>` over the wire).
   - `pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError>` — case-insensitive whole-query substring match; `score` = number of occurrences; `snippet` = the first matching line trimmed to ~200 chars; results sorted by `score` desc then `path` asc, truncated to `limit`.
 
 > YAGNI: v1 is a simple substring scan, not a real index. A tokenized/indexed search is a later optimization; the interface stays the same.
