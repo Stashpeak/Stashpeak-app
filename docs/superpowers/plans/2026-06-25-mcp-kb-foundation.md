@@ -188,10 +188,13 @@ Add to the `#[cfg(test)]` module in `settings.rs` (match the existing settings t
 fn vault_root_round_trips() {
     // (use the same in-temp-dir DB setup the other settings tests use)
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_string_lossy().to_string();
+    let input = dir.path().to_string_lossy().to_string();
+    // set_vault_root stores the CANONICALIZED (symlink-free) path, so compare against that
+    // (e.g. macOS tempdirs live under a /var -> /private/var symlink).
+    let want = std::fs::canonicalize(dir.path()).unwrap().to_string_lossy().to_string();
     assert_eq!(get_vault_root().unwrap(), None);
-    set_vault_root(root.clone()).unwrap();
-    assert_eq!(get_vault_root().unwrap(), Some(root));
+    set_vault_root(input).unwrap();
+    assert_eq!(get_vault_root().unwrap(), Some(want));
     // Rejected up front: empty, relative, and non-directory (missing / file) roots.
     assert!(set_vault_root("".into()).is_err());
     assert!(set_vault_root("relative/dir".into()).is_err());
@@ -228,17 +231,20 @@ pub fn set_vault_root(path: String) -> Result<(), String> {
     if path.trim().is_empty() || !p.is_absolute() {
         return Err("vault root must be a non-empty absolute path".into());
     }
-    // Must be an EXISTING DIRECTORY: a file path or a missing dir would otherwise only
-    // fail later in the read layer (read_dir/canonicalize). `is_dir()` follows symlinks
-    // and is false for both missing paths and files.
-    if !p.is_dir() {
+    // Canonicalize before persisting: resolves symlinks (a symlinked root can't point the
+    // boundary elsewhere) and errors on a missing path; then require a directory. The STORED
+    // value is the symlink-free real path, matching what the read layer canonicalizes against.
+    let real =
+        std::fs::canonicalize(p).map_err(|_| "vault root must be an existing directory".to_string())?;
+    if !real.is_dir() {
         return Err("vault root must be an existing directory".into());
     }
+    let canonical = real.to_string_lossy().to_string();
     let conn = crate::db::connect().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        rusqlite::params![KEY_VAULT_ROOT, path],
+        rusqlite::params![KEY_VAULT_ROOT, canonical],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -596,6 +602,11 @@ pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> 
     if !real.starts_with(&real_root) {
         return Err(KbError::PathRejected(canonical.to_string()));
     }
+    // Regular files only: a FIFO/socket/device named `*.md` would block or misbehave under
+    // read_to_string. `is_file()` is true ONLY for regular files (false for those + dirs).
+    if !real.is_file() {
+        return Err(KbError::PathRejected(canonical.to_string()));
+    }
     std::fs::read_to_string(&real).map_err(|e| KbError::Io(e.to_string()))
 }
 ```
@@ -666,7 +677,8 @@ fn walk(vault_root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), KbEr
         }
         if ft.is_dir() {
             walk(vault_root, &p, out)?;
-        } else if p.extension().and_then(|e| e.to_str()) == Some(MD_EXT) {
+        } else if ft.is_file() && p.extension().and_then(|e| e.to_str()) == Some(MD_EXT) {
+            // `ft.is_file()` keeps FIFOs/sockets/devices out of the read surface.
             out.push(path::to_canonical(vault_root, &p)?.as_str().to_string());
         }
     }
