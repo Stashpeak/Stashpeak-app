@@ -141,6 +141,36 @@ pub fn set_vault_root(path: String) -> Result<(), String> {
     Ok(())
 }
 
+const KEY_MCP_ENABLED: &str = "mcp_kb_access_enabled";
+
+/// Returns whether the MCP KB access server is enabled. Defaults to `false`.
+pub fn get_mcp_enabled() -> Result<bool, String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    let val: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [KEY_MCP_ENABLED],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(val.map(|v| v == "true").unwrap_or(false))
+}
+
+/// Persists whether the MCP KB access server is enabled.
+// Used in tests and will be wired as a Tauri command in a future phase.
+#[allow(dead_code)]
+pub fn set_mcp_enabled(enabled: bool) -> Result<(), String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![KEY_MCP_ENABLED, if enabled { "true" } else { "false" }],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Returns the user's chosen home currency (e.g. "USD", "CZK").
 /// Defaults to "USD" if not set.
 pub fn get_home_currency() -> Result<String, String> {
@@ -176,6 +206,23 @@ pub fn set_home_currency(currency: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hermetic round-trip for get_mcp_enabled / set_mcp_enabled.
+    #[test]
+    fn mcp_enabled_defaults_false_and_round_trips() {
+        crate::test_support::with_temp_data_dir(|| {
+            // Default: not set → false.
+            assert!(!get_mcp_enabled().unwrap());
+
+            // Enable and read back.
+            set_mcp_enabled(true).unwrap();
+            assert!(get_mcp_enabled().unwrap());
+
+            // Disable and read back.
+            set_mcp_enabled(false).unwrap();
+            assert!(!get_mcp_enabled().unwrap());
+        });
+    }
 
     /// Hermetic round-trip test for get_vault_root / set_vault_root.
     ///
