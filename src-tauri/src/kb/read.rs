@@ -119,6 +119,15 @@ mod tests {
     }
 
     #[test]
+    fn read_note_rejects_directory_named_md() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join("d.md")).unwrap();
+        // A directory named like a note must be rejected by the is_file() guard, on every platform.
+        assert!(read_note(root, "d.md").is_err());
+    }
+
+    #[test]
     fn lists_markdown_recursively_sorted_skipping_dotfiles() {
         let dir = tempdir().unwrap();
         let root = dir.path();
