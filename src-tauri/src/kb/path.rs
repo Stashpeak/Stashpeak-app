@@ -17,7 +17,10 @@ pub fn to_canonical(vault_root: &Path, abs_path: &Path) -> Result<CanonicalPath,
     let reject = || KbError::PathRejected(abs_path.display().to_string());
 
     // Lexically reject parent-traversal before any prefix logic.
-    if abs_path.components().any(|c| matches!(c, Component::ParentDir)) {
+    if abs_path
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
         return Err(reject());
     }
 
@@ -56,7 +59,8 @@ pub fn to_os_path(vault_root: &Path, canonical: &str) -> Result<std::path::PathB
         || canonical.contains('\\')
         || canonical.starts_with('/')
         || canonical.starts_with("//")
-        || (canonical.len() >= 2 && canonical.as_bytes()[1] == b':') // drive letter
+        || (canonical.len() >= 2 && canonical.as_bytes()[1] == b':')
+    // drive letter
     {
         return Err(reject());
     }
@@ -81,7 +85,9 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    fn root() -> &'static Path { Path::new("/vault") }
+    fn root() -> &'static Path {
+        Path::new("/vault")
+    }
 
     #[test]
     fn strips_root_and_uses_forward_slashes() {

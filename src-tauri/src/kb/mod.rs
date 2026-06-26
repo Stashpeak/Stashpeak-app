@@ -1,11 +1,11 @@
 //! KB foundation: vault-relative canonical paths, read/search, folder-watch.
 //! Read-only in this plan; the write path is owned by MCP_KB_CONTRACT.md §8.
 
+pub mod commands;
 pub mod path;
 pub mod read;
 pub mod search;
 pub mod watch;
-pub mod commands;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum KbError {
