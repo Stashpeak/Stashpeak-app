@@ -26,9 +26,9 @@ pub struct LedgerRow {
 /// Bulk-read brake tuning (a single point of truth). A sliding window of
 /// `WINDOW_SECS` seconds; `NOTICE_THRESHOLD` reads raises a non-dismissable
 /// notice; `PAUSE_THRESHOLD` reads pauses the client pending re-confirmation.
-pub(crate) const WINDOW_SECS: i64 = 60;
-pub(crate) const NOTICE_THRESHOLD: i64 = 30;
-pub(crate) const PAUSE_THRESHOLD: i64 = 100;
+const WINDOW_SECS: i64 = 60;
+const NOTICE_THRESHOLD: i64 = 30;
+const PAUSE_THRESHOLD: i64 = 100;
 
 // ---- public wrappers --------------------------------------------------------
 
@@ -83,7 +83,7 @@ fn recent_with_conn(conn: &Connection, limit: usize) -> Result<Vec<LedgerRow>, S
                 client_label: row.get(0)?,
                 tool: row.get(1)?,
                 target: row.get(2)?,
-                result_count: row.get::<_, i64>(3)? as usize,
+                result_count: row.get::<_, i64>(3)?.max(0) as usize,
                 at: row.get(4)?,
             })
         })
@@ -195,5 +195,23 @@ mod tests {
             check_read_budget_with_conn(&conn, "Quiet").unwrap(),
             Brake::Allow
         );
+    }
+
+    #[test]
+    fn recent_respects_limit() {
+        let conn = db::open_in_memory_migrated();
+        for i in 0..5 {
+            record_read_with_conn(&conn, "A", "kb_list", &format!("t{i}"), 1).unwrap();
+        }
+        assert_eq!(recent_with_conn(&conn, 3).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn record_read_accepts_zero_result_count() {
+        let conn = db::open_in_memory_migrated();
+        record_read_with_conn(&conn, "A", "kb_search", "nomatch", 0).unwrap();
+        let rows = recent_with_conn(&conn, 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].result_count, 0);
     }
 }

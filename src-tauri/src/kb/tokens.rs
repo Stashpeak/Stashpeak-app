@@ -277,4 +277,17 @@ mod tests {
         assert!(labels.contains(&"First"));
         assert!(labels.contains(&"Second"));
     }
+
+    #[test]
+    fn validate_fails_closed_on_unknown_scope() {
+        let conn = db::open_in_memory_migrated();
+        let raw = mint_with_conn(&conn, "Tampered".into(), Scope::Read).unwrap();
+        // Simulate a hand-edited/tampered row with a scope the enum doesn't know.
+        conn.execute("UPDATE mcp_clients SET scope = 'admin'", [])
+            .unwrap();
+        // Must be an Err (Scope::parse rejects 'admin') — NOT Ok(Some(Read)) or any privileged default.
+        assert!(validate_with_conn(&conn, &raw).is_err());
+        // list must also fail closed rather than silently dropping/elevating the row.
+        assert!(list_with_conn(&conn).is_err());
+    }
 }
