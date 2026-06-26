@@ -10,6 +10,8 @@ mod providers;
 mod secrets;
 mod settings;
 mod subscriptions;
+#[cfg(test)]
+mod test_support;
 
 pub(crate) async fn run_blocking<T, F>(task_name: &'static str, work: F) -> Result<T, String>
 where
