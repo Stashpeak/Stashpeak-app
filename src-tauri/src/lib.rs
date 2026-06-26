@@ -1,6 +1,7 @@
 mod connectors;
 mod currency;
 mod db;
+pub mod kb;
 mod logging;
 mod notifications;
 mod products;
