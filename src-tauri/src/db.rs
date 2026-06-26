@@ -66,7 +66,8 @@ fn migrations() -> Migrations<'static> {
 #[cfg(test)]
 pub(crate) fn open_in_memory_migrated() -> Connection {
     let mut conn = Connection::open_in_memory().expect("open in-memory db");
-    conn.execute_batch("PRAGMA foreign_keys=ON;").expect("pragma");
+    conn.execute_batch("PRAGMA foreign_keys=ON;")
+        .expect("pragma");
     migrations()
         .to_latest(&mut conn)
         .expect("migrations apply to in-memory db");
