@@ -25,12 +25,13 @@ CREATE INDEX mcp_clients_token_hash ON mcp_clients(token_hash);
 -- ============================================================
 CREATE TABLE mcp_activity_ledger (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_label  TEXT    NOT NULL,             -- routing key (the token's label)
+    client_id     TEXT    NOT NULL,             -- stable routing key (mcp_clients.id); NOT a FK so rows survive client deletion
+    client_label  TEXT    NOT NULL,             -- display snapshot of the token label at record time (may diverge from mcp_clients.label after rename)
     tool          TEXT    NOT NULL,             -- 'kb_list' | 'kb_read_note' | 'kb_search'
     target        TEXT    NOT NULL,             -- canonical path or query
     result_count  INTEGER NOT NULL,            -- note count / hit count
     at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
--- The bulk-read brake queries recent rows per client by time; index it.
-CREATE INDEX mcp_activity_ledger_client_time ON mcp_activity_ledger(client_label, at);
+-- The bulk-read brake queries recent rows per client by time; key by client_id (stable).
+CREATE INDEX mcp_activity_ledger_client_time ON mcp_activity_ledger(client_id, at);

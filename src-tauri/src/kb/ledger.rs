@@ -14,8 +14,9 @@ pub enum Brake {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")] // repo convention: camelCase to the frontend; Plan 4 reads `clientLabel` / `resultCount`
+#[serde(rename_all = "camelCase")] // repo convention: camelCase to the frontend; Plan 4 reads `clientId` / `clientLabel` / `resultCount`
 pub struct LedgerRow {
+    pub client_id: String,
     pub client_label: String,
     pub tool: String,
     pub target: String,
@@ -33,13 +34,14 @@ const PAUSE_THRESHOLD: i64 = 100;
 // ---- public wrappers --------------------------------------------------------
 
 pub fn record_read(
+    client_id: &str,
     client_label: &str,
     tool: &str,
     target: &str,
     result_count: usize,
 ) -> Result<(), String> {
     let conn = db::connect().map_err(|e| e.to_string())?;
-    record_read_with_conn(&conn, client_label, tool, target, result_count)
+    record_read_with_conn(&conn, client_id, client_label, tool, target, result_count)
 }
 
 pub fn recent(limit: usize) -> Result<Vec<LedgerRow>, String> {
@@ -47,24 +49,25 @@ pub fn recent(limit: usize) -> Result<Vec<LedgerRow>, String> {
     recent_with_conn(&conn, limit)
 }
 
-pub fn check_read_budget(client_label: &str) -> Result<Brake, String> {
+pub fn check_read_budget(client_id: &str) -> Result<Brake, String> {
     let conn = db::connect().map_err(|e| e.to_string())?;
-    check_read_budget_with_conn(&conn, client_label)
+    check_read_budget_with_conn(&conn, client_id)
 }
 
 // ---- injection-seam cores (unit-tested on an in-memory connection) ----------
 
 fn record_read_with_conn(
     conn: &Connection,
+    client_id: &str,
     client_label: &str,
     tool: &str,
     target: &str,
     result_count: usize,
 ) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO mcp_activity_ledger (client_label, tool, target, result_count)
-         VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![client_label, tool, target, result_count as i64],
+        "INSERT INTO mcp_activity_ledger (client_id, client_label, tool, target, result_count)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![client_id, client_label, tool, target, result_count as i64],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -73,18 +76,19 @@ fn record_read_with_conn(
 fn recent_with_conn(conn: &Connection, limit: usize) -> Result<Vec<LedgerRow>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT client_label, tool, target, result_count, at
+            "SELECT client_id, client_label, tool, target, result_count, at
              FROM mcp_activity_ledger ORDER BY id DESC LIMIT ?1",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([limit as i64], |row| {
             Ok(LedgerRow {
-                client_label: row.get(0)?,
-                tool: row.get(1)?,
-                target: row.get(2)?,
-                result_count: row.get::<_, i64>(3)?.max(0) as usize,
-                at: row.get(4)?,
+                client_id: row.get(0)?,
+                client_label: row.get(1)?,
+                tool: row.get(2)?,
+                target: row.get(3)?,
+                result_count: row.get::<_, i64>(4)?.max(0) as usize,
+                at: row.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -99,13 +103,13 @@ fn recent_with_conn(conn: &Connection, limit: usize) -> Result<Vec<LedgerRow>, S
 /// Count a client's reads within the recent window and map the count to a
 /// `Brake`. The window is expressed against SQLite's own clock so the test's
 /// just-inserted rows (default `at = now`) all fall inside it.
-fn check_read_budget_with_conn(conn: &Connection, client_label: &str) -> Result<Brake, String> {
+fn check_read_budget_with_conn(conn: &Connection, client_id: &str) -> Result<Brake, String> {
     let count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM mcp_activity_ledger
-             WHERE client_label = ?1
+             WHERE client_id = ?1
                AND at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?2)",
-            rusqlite::params![client_label, format!("-{WINDOW_SECS} seconds")],
+            rusqlite::params![client_id, format!("-{WINDOW_SECS} seconds")],
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
@@ -131,15 +135,17 @@ mod tests {
     #[test]
     fn record_read_inserts_a_row() {
         let conn = db::open_in_memory_migrated();
-        record_read_with_conn(&conn, "Claude Desktop", "kb_search", "alpha", 3).unwrap();
+        record_read_with_conn(&conn, "client-1", "Claude Desktop", "kb_search", "alpha", 3)
+            .unwrap();
 
-        let (label, tool, target, count): (String, String, String, i64) = conn
+        let (id, label, tool, target, count): (String, String, String, String, i64) = conn
             .query_row(
-                "SELECT client_label, tool, target, result_count FROM mcp_activity_ledger",
+                "SELECT client_id, client_label, tool, target, result_count FROM mcp_activity_ledger",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .unwrap();
+        assert_eq!(id, "client-1");
         assert_eq!(label, "Claude Desktop");
         assert_eq!(tool, "kb_search");
         assert_eq!(target, "alpha");
@@ -151,14 +157,17 @@ mod tests {
     #[test]
     fn recent_returns_rows_newest_first() {
         let conn = db::open_in_memory_migrated();
-        record_read_with_conn(&conn, "A", "kb_list", "-", 5).unwrap();
-        record_read_with_conn(&conn, "A", "kb_read_note", "notes/x.md", 1).unwrap();
+        record_read_with_conn(&conn, "client-1", "A", "kb_list", "-", 5).unwrap();
+        record_read_with_conn(&conn, "client-1", "A", "kb_read_note", "notes/x.md", 1).unwrap();
 
         let rows = recent_with_conn(&conn, 10).unwrap();
         assert_eq!(rows.len(), 2);
         // Newest (the read_note) first.
         assert_eq!(rows[0].tool, "kb_read_note");
         assert_eq!(rows[1].tool, "kb_list");
+        // Both client_id and client_label must be present.
+        assert_eq!(rows[0].client_id, "client-1");
+        assert_eq!(rows[0].client_label, "A");
     }
 
     #[test]
@@ -167,32 +176,32 @@ mod tests {
 
         // Below the notice threshold → Allow.
         for _ in 0..(NOTICE_THRESHOLD - 1) {
-            record_read_with_conn(&conn, "Bulk", "kb_read_note", "n.md", 1).unwrap();
+            record_read_with_conn(&conn, "client-bulk", "Bulk", "kb_read_note", "n.md", 1).unwrap();
         }
         assert_eq!(
-            check_read_budget_with_conn(&conn, "Bulk").unwrap(),
+            check_read_budget_with_conn(&conn, "client-bulk").unwrap(),
             Brake::Allow
         );
 
         // Cross the notice threshold → Notice.
-        record_read_with_conn(&conn, "Bulk", "kb_read_note", "n.md", 1).unwrap();
+        record_read_with_conn(&conn, "client-bulk", "Bulk", "kb_read_note", "n.md", 1).unwrap();
         assert_eq!(
-            check_read_budget_with_conn(&conn, "Bulk").unwrap(),
+            check_read_budget_with_conn(&conn, "client-bulk").unwrap(),
             Brake::Notice
         );
 
         // Cross the pause threshold → Pause.
         for _ in 0..(PAUSE_THRESHOLD - NOTICE_THRESHOLD) {
-            record_read_with_conn(&conn, "Bulk", "kb_read_note", "n.md", 1).unwrap();
+            record_read_with_conn(&conn, "client-bulk", "Bulk", "kb_read_note", "n.md", 1).unwrap();
         }
         assert_eq!(
-            check_read_budget_with_conn(&conn, "Bulk").unwrap(),
+            check_read_budget_with_conn(&conn, "client-bulk").unwrap(),
             Brake::Pause
         );
 
-        // A different client is unaffected (per-client budget).
+        // A DIFFERENT client_id is unaffected (per-client-id budget isolation).
         assert_eq!(
-            check_read_budget_with_conn(&conn, "Quiet").unwrap(),
+            check_read_budget_with_conn(&conn, "client-quiet").unwrap(),
             Brake::Allow
         );
     }
@@ -201,7 +210,7 @@ mod tests {
     fn recent_respects_limit() {
         let conn = db::open_in_memory_migrated();
         for i in 0..5 {
-            record_read_with_conn(&conn, "A", "kb_list", &format!("t{i}"), 1).unwrap();
+            record_read_with_conn(&conn, "client-1", "A", "kb_list", &format!("t{i}"), 1).unwrap();
         }
         assert_eq!(recent_with_conn(&conn, 3).unwrap().len(), 3);
     }
@@ -209,9 +218,31 @@ mod tests {
     #[test]
     fn record_read_accepts_zero_result_count() {
         let conn = db::open_in_memory_migrated();
-        record_read_with_conn(&conn, "A", "kb_search", "nomatch", 0).unwrap();
+        record_read_with_conn(&conn, "client-1", "A", "kb_search", "nomatch", 0).unwrap();
         let rows = recent_with_conn(&conn, 10).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].result_count, 0);
+    }
+
+    /// Fix 3: two tokens that share a label but have different client_ids must
+    /// have independent budgets (the old label-keyed scheme would merge them).
+    #[test]
+    fn budget_is_isolated_by_client_id_not_label() {
+        let conn = db::open_in_memory_migrated();
+
+        // Two different client ids, same label "Shared".
+        for _ in 0..NOTICE_THRESHOLD {
+            record_read_with_conn(&conn, "client-a", "Shared", "kb_read_note", "n.md", 1).unwrap();
+        }
+        // client-a has crossed the notice threshold.
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "client-a").unwrap(),
+            Brake::Notice
+        );
+        // client-b (same label, different id) is completely unaffected.
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "client-b").unwrap(),
+            Brake::Allow
+        );
     }
 }

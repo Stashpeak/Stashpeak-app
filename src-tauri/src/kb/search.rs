@@ -69,6 +69,9 @@ pub fn search_in(
 /// Whole-vault search. Enumerates all notes via `read::list` and ranks them.
 /// For a pre-gated search (e.g. access control), use `search_in` directly with
 /// a filtered candidate slice so excluded notes are never opened or scored.
+///
+/// UNGATED app-local surface (the user's own UI sees their whole KB). MCP / agent
+/// callers MUST use `kb::access::*`, which applies the `resolve_readable` gate.
 pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError> {
     search_in(vault_root, &read::list(vault_root)?, query, limit)
 }

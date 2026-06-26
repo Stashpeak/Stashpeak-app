@@ -5,6 +5,9 @@ const MD_EXT: &str = "md";
 
 /// Read the UTF-8 contents of a vault note identified by its canonical path.
 ///
+/// UNGATED app-local surface (the user's own UI sees their whole KB). MCP / agent
+/// callers MUST use `kb::access::*`, which applies the `resolve_readable` gate.
+///
 /// Security guarantees:
 /// 1. `.md` extension is required (lexical, before any I/O).
 /// 2. `path::to_os_path` provides the lexical vault-containment gate (Phase 2).
@@ -53,6 +56,9 @@ pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> 
 
 /// Return the sorted canonical paths of every `.md` file under `vault_root`
 /// (recursive), skipping dotfiles and dot-directories.
+///
+/// UNGATED app-local surface (the user's own UI sees their whole KB). MCP / agent
+/// callers MUST use `kb::access::*`, which applies the `resolve_readable` gate.
 ///
 /// Security guarantees:
 /// - Uses `entry.file_type()` which is NO-FOLLOW: it reports the type of the

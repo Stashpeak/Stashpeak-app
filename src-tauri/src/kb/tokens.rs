@@ -90,6 +90,23 @@ pub fn list() -> Result<Vec<TokenInfo>, String> {
     list_with_conn(&conn)
 }
 
+// ---- shape helpers ----------------------------------------------------------
+
+/// Returns true only if `raw` looks like a token we could have minted:
+/// exactly `TOKEN_PREFIX.len() + TOKEN_BYTES * 2` characters, prefixed with
+/// `TOKEN_PREFIX`, and the suffix is all lower-hex digits.
+///
+/// This gates `validate_with_conn` BEFORE `remember_secret` so that garbage
+/// inputs from an attacker probing the validate endpoint cannot grow the secret
+/// registry (which scrubs all registered strings from log output).
+fn looks_like_raw_token(raw: &str) -> bool {
+    raw.len() == TOKEN_PREFIX.len() + TOKEN_BYTES * 2
+        && raw.starts_with(TOKEN_PREFIX)
+        && raw[TOKEN_PREFIX.len()..]
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit())
+}
+
 // ---- injection-seam cores (unit-tested on an in-memory connection) ----------
 
 fn mint_with_conn(conn: &Connection, label: String, scope: Scope) -> Result<String, String> {
@@ -109,6 +126,11 @@ fn mint_with_conn(conn: &Connection, label: String, scope: Scope) -> Result<Stri
 }
 
 fn validate_with_conn(conn: &Connection, raw: &str) -> Result<Option<TokenInfo>, String> {
+    // Shape-check BEFORE registering with the log-scrubber: garbage inputs must
+    // not grow the secret registry (MCP_KB_CONTRACT.md §6.1).
+    if !looks_like_raw_token(raw) {
+        return Ok(None);
+    }
     // A raw token reaching validate is a live secret — scrub it from logs.
     crate::logging::remember_secret(raw);
     let token_hash = hash_token(raw);
@@ -140,8 +162,15 @@ fn validate_with_conn(conn: &Connection, raw: &str) -> Result<Option<TokenInfo>,
 }
 
 fn revoke_with_conn(conn: &Connection, id: &str) -> Result<(), String> {
-    conn.execute("UPDATE mcp_clients SET revoked = 1 WHERE id = ?1", [id])
+    let affected = conn
+        .execute(
+            "UPDATE mcp_clients SET revoked = 1 WHERE id = ?1 AND revoked = 0",
+            [id],
+        )
         .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err("no active token found for revocation".to_string());
+    }
     Ok(())
 }
 
@@ -289,5 +318,47 @@ mod tests {
         assert!(validate_with_conn(&conn, &raw).is_err());
         // list must also fail closed rather than silently dropping/elevating the row.
         assert!(list_with_conn(&conn).is_err());
+    }
+
+    /// Fix 4: garbage inputs to validate must be rejected BEFORE the secret
+    /// registry is touched. The existing "wrong-length valid-prefix" case
+    /// (`spk_mcp_not_a_real_token`) continues to return Ok(None), and now so do
+    /// a bare empty string, completely unrelated garbage, and an oversized string.
+    #[test]
+    fn validate_rejects_malformed_tokens_before_remember_secret() {
+        let conn = db::open_in_memory_migrated();
+
+        // Completely unrelated garbage.
+        assert_eq!(validate_with_conn(&conn, "garbage").unwrap(), None);
+        // Oversized: right prefix but too long.
+        let oversized = format!("spk_mcp_{}", "a".repeat(TOKEN_BYTES * 2 + 10));
+        assert_eq!(validate_with_conn(&conn, &oversized).unwrap(), None);
+        // Empty string.
+        assert_eq!(validate_with_conn(&conn, "").unwrap(), None);
+        // Wrong prefix, right length.
+        let wrong_prefix = format!("bad_pfx_{}", "a".repeat(TOKEN_BYTES * 2));
+        assert_eq!(validate_with_conn(&conn, &wrong_prefix).unwrap(), None);
+        // The existing case from validate_matches_minted_token_and_rejects_garbage:
+        // right prefix but wrong (shorter) length.
+        assert_eq!(
+            validate_with_conn(&conn, "spk_mcp_not_a_real_token").unwrap(),
+            None
+        );
+    }
+
+    /// Fix 5: `revoke_with_conn` must return Err for a non-existent or already-revoked id.
+    #[test]
+    fn revoke_nonexistent_id_is_err() {
+        let conn = db::open_in_memory_migrated();
+        // No tokens minted — id doesn't exist.
+        let result = revoke_with_conn(&conn, "nonexistent-id");
+        assert!(result.is_err(), "expected Err for nonexistent id, got Ok");
+
+        // Mint and revoke once → revoking again (already-revoked) is also Err.
+        let raw = mint_with_conn(&conn, "TestClient".into(), Scope::Read).unwrap();
+        let info = validate_with_conn(&conn, &raw).unwrap().unwrap();
+        revoke_with_conn(&conn, &info.id).unwrap(); // first revoke: Ok
+        let result2 = revoke_with_conn(&conn, &info.id); // second revoke: Err
+        assert!(result2.is_err(), "expected Err on double-revoke, got Ok");
     }
 }

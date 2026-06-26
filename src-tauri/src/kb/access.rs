@@ -17,16 +17,19 @@ pub(crate) fn is_default_excluded(canonical: &str) -> bool {
         return true;
     }
     // Secret-shaped extension on the final segment.
+    // Strip a trailing `.md` note suffix first so that `server.pem.md` / `config.env.md`
+    // are caught by the secret-ext check below (the outer ext is `md`, not `pem`/`env`).
     let last = canonical.rsplit('/').next().unwrap_or(canonical);
-    if let Some((stem, ext)) = last.rsplit_once('.') {
+    let secret_name = last.strip_suffix(".md").unwrap_or(last);
+    let entropy_stem = if let Some((stem, ext)) = secret_name.rsplit_once('.') {
         if SECRET_EXTS.contains(&ext.to_ascii_lowercase().as_str()) {
             return true;
         }
-        if is_high_entropy_stem(stem) {
-            return true;
-        }
-    }
-    false
+        stem
+    } else {
+        secret_name
+    };
+    is_high_entropy_stem(entropy_stem)
 }
 
 /// Heuristic: a long stem made entirely of base64/hex-class characters with
@@ -55,8 +58,23 @@ pub(crate) struct KbIgnore {
 impl KbIgnore {
     /// Load + parse the vault-root `.kbignore`. A missing file yields an empty
     /// rule set (matches nothing). Blank lines and `#` comments are ignored.
+    ///
+    /// Fail-closed: a non-NotFound I/O error (e.g. permission denied, invalid
+    /// UTF-8) returns a catch-all `*` rule that excludes the entire vault rather
+    /// than silently treating the error as "no rules" (which would fail-open and
+    /// risk exposing paths the user meant to hide).
     pub(crate) fn load(vault_root: &Path) -> KbIgnore {
-        let raw = std::fs::read_to_string(vault_root.join(KBIGNORE_FILE)).unwrap_or_default();
+        let raw = match std::fs::read_to_string(vault_root.join(KBIGNORE_FILE)) {
+            Ok(raw) => raw,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+            // Fail CLOSED on any other error (permission, invalid UTF-8): exclude everything
+            // rather than risk exposing a path the user meant to hide.
+            Err(_) => {
+                return KbIgnore {
+                    patterns: vec!["*".to_string()],
+                }
+            }
+        };
         let patterns = raw
             .lines()
             .map(|l| l.trim())
@@ -242,6 +260,17 @@ mod tests {
         assert!(!is_default_excluded("meeting-notes-2026.md"));
     }
 
+    /// Fix 1: a note whose name ends in a secret ext + `.md` must be excluded.
+    /// `server.pem.md` and `config.env.md` are secret-shaped even though their
+    /// outermost extension is `md`. Ordinary notes must still pass through.
+    #[test]
+    fn default_excludes_secret_ext_dotmd_variants() {
+        assert!(is_default_excluded("server.pem.md")); // secret ext hidden under .md
+        assert!(is_default_excluded("config.env.md")); // ditto
+        assert!(!is_default_excluded("notes/todo.md")); // ordinary note: allowed
+        assert!(!is_default_excluded("meeting-notes-2026.md")); // normal: allowed
+    }
+
     #[test]
     fn kbignore_parses_and_matches() {
         let dir = tempdir().unwrap();
@@ -267,6 +296,24 @@ mod tests {
         let dir = tempdir().unwrap();
         let ig = KbIgnore::load(dir.path());
         assert!(!ig.matches("notes/todo.md"));
+    }
+
+    /// Fix 2: a `.kbignore` file that cannot be read (e.g. invalid UTF-8) must
+    /// fail CLOSED — the vault is fully excluded rather than exposed as if the
+    /// file were absent.
+    #[test]
+    fn kbignore_unreadable_fails_closed() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        // Write invalid UTF-8 bytes so `read_to_string` fails.
+        fs::write(root.join(".kbignore"), [0xFF_u8, 0xFE]).unwrap();
+
+        let ig = KbIgnore::load(root);
+        // The catch-all `*` rule must match every path.
+        assert!(ig.matches("anything.md"));
+        assert!(ig.matches("notes/private.md"));
+        // resolve_readable must also return false (fail-closed end-to-end).
+        assert!(!resolve_readable(root, "anything.md"));
     }
 
     // ── Task 2.2 tests ────────────────────────────────────────────────────────
