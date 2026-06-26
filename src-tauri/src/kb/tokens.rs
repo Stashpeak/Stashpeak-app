@@ -354,8 +354,13 @@ mod tests {
     #[test]
     fn validate_rejects_shape_valid_but_unminted_token() {
         let conn = db::open_in_memory_migrated();
-        let fake = format!("{}{}", "spk_mcp_", "a".repeat(64)); // shape-valid, never minted
+        let fake = format!("{TOKEN_PREFIX}{}", "a".repeat(TOKEN_BYTES * 2)); // shape-valid, never minted
+                                                                             // Not a known secret before validate (scrubber leaves it unchanged).
+        assert_eq!(crate::logging::scrub_snippet(&fake), fake);
         assert!(validate_with_conn(&conn, &fake).unwrap().is_none());
+        // Still not registered AFTER validate: a non-matching guess must not grow the
+        // scrub registry (guards against reintroducing remember_secret before the DB match).
+        assert_eq!(crate::logging::scrub_snippet(&fake), fake);
     }
 
     /// Fix 5: `revoke_with_conn` must return Err for a non-existent or already-revoked id.
