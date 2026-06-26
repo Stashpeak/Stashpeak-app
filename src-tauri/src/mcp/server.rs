@@ -4,6 +4,130 @@ use crate::mcp::manifest;
 use crate::mcp::wire::{IpcRequest, IpcResponse};
 use crate::settings;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
+
+/// Poll cadence: a blocked per-connection read wakes this often to honor `stop`.
+const POLL: Duration = Duration::from_millis(250);
+
+/// Fan-out of changed canonical paths to connected notify (Subscribe) streams.
+/// std mpsc, not tokio broadcast — the IPC workers are blocking threads.
+#[derive(Default)]
+pub struct Notifier {
+    subs: Mutex<Vec<mpsc::Sender<String>>>,
+}
+
+impl Notifier {
+    /// Fan a (already-GATED) changed canonical out to every notify stream, pruning
+    /// hung-up receivers. Callers MUST gate the path first (see McpService::notify_changed).
+    pub fn notify(&self, canonical: &str) {
+        let mut subs = self.subs.lock().expect("notifier lock poisoned");
+        subs.retain(|tx| tx.send(canonical.to_string()).is_ok());
+    }
+
+    /// Register a notify stream; returns its receiver.
+    pub fn subscribe(&self) -> mpsc::Receiver<String> {
+        let (tx, rx) = mpsc::channel();
+        self.subs.lock().expect("notifier lock poisoned").push(tx);
+        rx
+    }
+}
+
+enum FrameStep {
+    Ok,
+    Stopped,
+    Closed,
+    Bad,
+}
+
+/// Fill `buf` fully, waking every recv-timeout to re-check `stop`. Keeps bytes
+/// across timeouts so a mid-frame timeout never desyncs framing.
+/// On WouldBlock (non-blocking stream fallback), sleeps briefly before retrying
+/// to avoid a busy spin.
+fn read_exact_interruptible<S: std::io::Read>(
+    stream: &mut S,
+    buf: &mut [u8],
+    stop: &AtomicBool,
+) -> FrameStep {
+    let mut filled = 0;
+    while filled < buf.len() {
+        if stop.load(Ordering::Relaxed) {
+            return FrameStep::Stopped;
+        }
+        match stream.read(&mut buf[filled..]) {
+            Ok(0) => {
+                return if filled == 0 {
+                    FrameStep::Closed
+                } else {
+                    FrameStep::Bad
+                }
+            }
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // Non-blocking fallback (e.g. Windows named pipes where
+                // set_recv_timeout is unsupported): sleep for one POLL cadence
+                // before retrying so we don't spin 100% CPU.
+                std::thread::sleep(POLL);
+                continue;
+            }
+            Err(_) => return FrameStep::Bad,
+        }
+    }
+    FrameStep::Ok
+}
+
+enum FrameRead {
+    Got(IpcRequest),
+    Stopped,
+    Done,
+}
+
+/// Read one length-prefixed IpcRequest frame, interruptible by `stop`.
+fn read_frame_interruptible<S: std::io::Read>(stream: &mut S, stop: &AtomicBool) -> FrameRead {
+    let mut len_buf = [0u8; 4];
+    match read_exact_interruptible(stream, &mut len_buf, stop) {
+        FrameStep::Ok => {}
+        FrameStep::Stopped => return FrameRead::Stopped,
+        FrameStep::Closed | FrameStep::Bad => return FrameRead::Done,
+    }
+    let len = u32::from_be_bytes(len_buf);
+    if len > crate::mcp::wire::MAX_FRAME {
+        return FrameRead::Done;
+    }
+    let mut body = vec![0u8; len as usize];
+    match read_exact_interruptible(stream, &mut body, stop) {
+        FrameStep::Ok => {}
+        FrameStep::Stopped => return FrameRead::Stopped,
+        FrameStep::Closed | FrameStep::Bad => return FrameRead::Done,
+    }
+    match serde_json::from_slice::<IpcRequest>(&body) {
+        Ok(req) => FrameRead::Got(req),
+        Err(_) => FrameRead::Done,
+    }
+}
+
+/// Park a notify (Subscribe) connection: block on the change channel, write a
+/// Changed frame per readable change, honoring `stop` via recv_timeout.
+fn run_notify_loop<S: std::io::Write>(stream: &mut S, stop: &AtomicBool, notifier: &Notifier) {
+    use crate::mcp::wire::write_frame;
+    let rx = notifier.subscribe();
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        match rx.recv_timeout(POLL) {
+            Ok(canonical) => {
+                if write_frame(stream, &IpcResponse::Changed { canonical }).is_err() {
+                    return;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+    }
+}
 
 fn err(kind: &str, message: impl Into<String>) -> IpcResponse {
     IpcResponse::Error {
@@ -36,7 +160,7 @@ pub fn handle_request(req: &IpcRequest) -> IpcResponse {
     if let IpcRequest::Manifest { .. } = req {
         return IpcResponse::Manifest(manifest::current());
     }
-    // Subscribe is served by the notify channel (Phase 4), never via handle_request.
+    // Subscribe is served by the notify channel, never via handle_request.
     if let IpcRequest::Subscribe { .. } = req {
         return err(
             "Protocol",
@@ -117,13 +241,13 @@ pub fn ipc_socket_name() -> String {
 /// per-run name to avoid any socket-name collision.
 pub fn serve_named(
     name: &str,
-    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    stop: Arc<AtomicBool>,
+    notifier: Arc<Notifier>,
 ) -> Result<(), crate::mcp::McpError> {
     use interprocess::local_socket::{
-        traits::Listener as _, GenericNamespaced, ListenerNonblockingMode, ListenerOptions,
-        ToNsName,
+        traits::{Listener as _, Stream as _},
+        GenericNamespaced, ListenerNonblockingMode, ListenerOptions, ToNsName,
     };
-    use std::sync::atomic::Ordering;
 
     let ns_name = name
         .to_ns_name::<GenericNamespaced>()
@@ -143,22 +267,45 @@ pub fn serve_named(
     while !stop.load(Ordering::Relaxed) {
         match listener.accept() {
             Ok(stream) => {
-                // Each worker shares the stop flag and checks it between frames,
-                // so a disable interrupts even an idle long-lived connection.
+                // Try recv timeout so blocked reads wake to honor stop.
+                // Windows named pipes return Unsupported; fall back to non-blocking
+                // mode in that case (read_exact_interruptible handles WouldBlock with
+                // a POLL sleep so it's not a busy-spin, just with 250ms granularity).
+                // Any other error (e.g. OS resource exhaustion) drops the connection.
+                match stream.set_recv_timeout(Some(POLL)) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
+                        if let Err(nb_err) = stream.set_nonblocking(true) {
+                            tracing::warn!(
+                                error = %nb_err,
+                                "mcp: set_nonblocking fallback failed; dropping connection"
+                            );
+                            continue;
+                        }
+                        tracing::debug!(
+                            "mcp: recv_timeout unsupported; using non-blocking fallback"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "mcp: set_recv_timeout failed; dropping connection");
+                        continue;
+                    }
+                }
                 let worker_stop = stop.clone();
+                let worker_notifier = notifier.clone();
                 workers.push(std::thread::spawn(move || {
-                    handle_connection(stream, worker_stop);
+                    handle_connection(stream, worker_stop, worker_notifier);
                 }));
                 // Reap any workers that finished on their own (closed connections)
                 // so the tracking Vec does not grow unbounded over the session.
                 workers.retain(|w| !w.is_finished());
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                std::thread::sleep(Duration::from_millis(50));
             }
             Err(_) => {
                 // Transient accept error: keep serving.
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                std::thread::sleep(Duration::from_millis(50));
             }
         }
     }
@@ -173,43 +320,51 @@ pub fn serve_named(
 
 /// Bind the production local socket and serve requests until `stop` flips true.
 /// Thin wrapper around `serve_named` using the build-namespaced socket name.
-pub fn serve(
-    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Result<(), crate::mcp::McpError> {
-    serve_named(&ipc_socket_name(), stop)
+pub fn serve(stop: Arc<AtomicBool>, notifier: Arc<Notifier>) -> Result<(), crate::mcp::McpError> {
+    serve_named(&ipc_socket_name(), stop, notifier)
 }
 
 /// One connection: frame in -> handle -> frame out, until EOF, error, or stop.
 /// The shared `stop` flag is checked before every read so an idle long-lived
 /// connection (e.g. a shim that pins the socket) is torn down promptly on stop.
+/// On a Subscribe request, transitions to the notify push loop.
 fn handle_connection<S: std::io::Read + std::io::Write>(
     mut stream: S,
-    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    stop: Arc<AtomicBool>,
+    notifier: Arc<Notifier>,
 ) {
-    use crate::mcp::wire::{read_frame, write_frame};
-    use std::sync::atomic::Ordering;
+    use crate::mcp::wire::write_frame;
 
-    // A short read timeout would let a blocking read also notice `stop`; on the
-    // `interprocess` blocking stream this is best-effort. The between-frame check
-    // below is the guaranteed teardown point; pending shim reads end at EOF when
-    // the app process tears down its end on shutdown.
     loop {
-        if stop.load(Ordering::Relaxed) {
-            return; // disabled while idle/between frames: drop this connection.
+        match read_frame_interruptible(&mut stream, &stop) {
+            FrameRead::Stopped => return,
+            FrameRead::Done => return,
+            FrameRead::Got(req) => {
+                if stop.load(Ordering::Relaxed) {
+                    return;
+                }
+                // Subscribe is auth-gated here since it never goes through handle_request.
+                if let IpcRequest::Subscribe { token } = &req {
+                    match tokens::validate(token) {
+                        Ok(Some(_)) => {
+                            run_notify_loop(&mut stream, &stop, &notifier);
+                            return;
+                        }
+                        _ => {
+                            let _ =
+                                write_frame(&mut stream, &err("Unauthorized", "no valid token"));
+                            return;
+                        }
+                    }
+                }
+                let resp = handle_request(&req);
+                if write_frame(&mut stream, &resp).is_err() {
+                    return;
+                }
+                // A Manifest exchange is one-shot in practice but we keep the loop so a
+                // shim may reuse the connection for several reads.
+            }
         }
-        let req: IpcRequest = match read_frame(&mut stream) {
-            Ok(r) => r,
-            Err(_) => return, // EOF or bad frame: close this connection only.
-        };
-        if stop.load(Ordering::Relaxed) {
-            return; // disabled mid-exchange: do not serve another read.
-        }
-        let resp = handle_request(&req);
-        if write_frame(&mut stream, &resp).is_err() {
-            return;
-        }
-        // A Manifest exchange is one-shot in practice but we keep the loop so a
-        // shim may reuse the connection for several reads.
     }
 }
 
@@ -318,7 +473,7 @@ mod ipc_tests {
             let stop2 = stop.clone();
             let sock2 = sock.clone();
             let server = std::thread::spawn(move || {
-                let _ = serve_named(&sock2, stop2);
+                let _ = serve_named(&sock2, stop2, Arc::new(Notifier::default()));
             });
             // RAII guard: sets stop on drop so the server exits even if this thread panics.
             let _stop_guard = StopGuard(stop.clone());
@@ -432,5 +587,58 @@ mod ipc_tests {
                 "expected a 0-result kb_read_note row in ledger; got {recent:?}"
             );
         });
+    }
+
+    /// Regression test for the stop()-hang gate: prove stop() does NOT hang on an
+    /// idle-open connection. A worker blocked in read_frame_interruptible must wake
+    /// within POLL (250ms) and exit; the join must therefore return promptly.
+    #[test]
+    fn stop_does_not_hang_on_idle_open_connection() {
+        let sock = format!(
+            "stashpeak-mcp-nohang-{}-{}.sock",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop2 = stop.clone();
+        let sock2 = sock.clone();
+
+        // Start the server.
+        let server = std::thread::spawn(move || {
+            let _ = serve_named(&sock2, stop2, Arc::new(Notifier::default()));
+        });
+        let _stop_guard = StopGuard(stop.clone());
+
+        // Connect a client and send NOTHING (worker blocks in read_frame_interruptible).
+        let name = sock.to_ns_name::<GenericNamespaced>().unwrap();
+        let mut last_err = None;
+        let mut client = None;
+        for _ in 0..50 {
+            match Stream::connect(name.clone()) {
+                Ok(s) => {
+                    client = Some(s);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+        }
+        let _conn = client.unwrap_or_else(|| panic!("failed to connect to listener: {last_err:?}"));
+
+        // Sleep ~300ms so the worker is parked in the blocked read.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        // Signal stop WITHOUT closing the client connection — the key condition.
+        stop.store(true, Ordering::Relaxed);
+
+        // Join must return promptly (within the test harness timeout).
+        // The test completing proves no hang — the worker woke within POLL.
+        let _ = server.join();
+
+        // Keep _conn alive until after join to prove an idle peer cannot pin stop().
+        drop(_conn);
     }
 }

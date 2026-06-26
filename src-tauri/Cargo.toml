@@ -67,6 +67,12 @@ tauri-plugin-updater = "2"
 # (RS256 / from_rsa_pem) can be exercised offline WITHOUT committing a private key.
 rsa = { version = "0.9", features = ["pem"] }
 tempfile = "3"
+# NOTE: tauri "test" feature / mock_app() intentionally NOT added here.
+# On Windows headless environments, enabling it causes STATUS_ENTRYPOINT_NOT_FOUND
+# at test binary startup (Windows UI DLLs added by feature unification can't be
+# resolved). Lifecycle tests use start_server_only() instead of mock_app() — the
+# IPC server code path is identical; the vault watcher is separately covered by
+# notify_changed_gates_excluded_paths.
 
 # The stashpeak-mcp shim: a separate binary the MCP client spawns. It links
 # stashpeak_lib (reusing mcp::wire/mcp::uri) and speaks MCP on stdio + the
