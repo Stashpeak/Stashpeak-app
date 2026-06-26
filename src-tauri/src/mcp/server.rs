@@ -104,14 +104,19 @@ pub fn ipc_socket_name() -> String {
     }
 }
 
-/// Bind the local socket and serve requests until `stop` flips true.
+/// Bind the named local socket `name` and serve requests until `stop` flips true.
 /// One blocking thread per connection (KB reads are short, single-user volume).
 ///
 /// Every per-connection worker shares the same `stop` flag and its `JoinHandle`
 /// is tracked, so when `stop` flips true we both (a) make every in-flight worker
 /// notice and exit between frames and (b) join them before returning — no client
 /// connection survives a disable (the toggle truly stops the server).
-pub fn serve(
+///
+/// This function is the real implementation; `serve` is a one-line wrapper that
+/// passes the production socket name. Tests can call `serve_named` with a unique
+/// per-run name to avoid any socket-name collision.
+pub fn serve_named(
+    name: &str,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), crate::mcp::McpError> {
     use interprocess::local_socket::{
@@ -120,11 +125,11 @@ pub fn serve(
     };
     use std::sync::atomic::Ordering;
 
-    let name = ipc_socket_name()
+    let ns_name = name
         .to_ns_name::<GenericNamespaced>()
         .map_err(|e| crate::mcp::McpError::Io(e.to_string()))?;
     let listener = ListenerOptions::new()
-        .name(name)
+        .name(ns_name)
         .create_sync()
         .map_err(|e| crate::mcp::McpError::Io(e.to_string()))?;
     // Non-blocking accept so the stop flag is honored promptly.
@@ -166,6 +171,14 @@ pub fn serve(
     Ok(())
 }
 
+/// Bind the production local socket and serve requests until `stop` flips true.
+/// Thin wrapper around `serve_named` using the build-namespaced socket name.
+pub fn serve(
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), crate::mcp::McpError> {
+    serve_named(&ipc_socket_name(), stop)
+}
+
 /// One connection: frame in -> handle -> frame out, until EOF, error, or stop.
 /// The shared `stop` flag is checked before every read so an idle long-lived
 /// connection (e.g. a shim that pins the socket) is torn down promptly on stop.
@@ -197,9 +210,6 @@ fn handle_connection<S: std::io::Read + std::io::Write>(
         }
         // A Manifest exchange is one-shot in practice but we keep the loop so a
         // shim may reuse the connection for several reads.
-        if matches!(resp, IpcResponse::Error { .. }) && matches!(req, IpcRequest::Manifest { .. }) {
-            return;
-        }
     }
 }
 
@@ -253,23 +263,8 @@ mod tests {
     }
 }
 
-/// Integration test: loopback IPC over the real Windows named pipe.
-///
-/// This test is `#[ignore]` because on this Windows host the Cargo test harness
-/// launches multiple test-binary instances concurrently, and Windows named pipes
-/// cannot be overwritten (`reclaim_name` is a no-op on Windows per interprocess
-/// docs). When two test invocations race to bind `stashpeak-mcp-dev.sock`, the
-/// second one connects to the first process's server, gets an Unauthorized response
-/// (wrong DB / different minted token), and the assertion fails — which leaves the
-/// server thread running (stop flag is set after the assert), causing the test
-/// harness to timeout at 60 s. With the RAII StopGuard the server now exits on
-/// panic, but the bind-race itself is unfixable without a per-run unique name (which
-/// would require passing a name parameter to `serve`, changing the production API).
-///
-/// Run manually (one process at a time) with:
-///   cargo test --lib -- mcp::server::ipc_tests::loopback_list_round_trip --ignored
-///
-/// The `handle_request` unit tests (Task 3.1) are the always-on security coverage.
+/// Integration tests: loopback IPC over a unique per-run local socket, plus
+/// server-layer security brake tests. These are always-on (not `#[ignore]`).
 #[cfg(test)]
 mod ipc_tests {
     use super::*;
@@ -277,9 +272,13 @@ mod ipc_tests {
     use crate::settings;
     use interprocess::local_socket::{traits::Stream as _, GenericNamespaced, Stream, ToNsName};
     use std::fs;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
     use tempfile::tempdir;
+
+    /// Monotonic counter for unique per-run socket names (safe across threads
+    /// and across repeated runs within the same process).
+    static NEXT: AtomicU32 = AtomicU32::new(0);
 
     /// RAII guard: sets the stop flag on drop so the server thread always shuts
     /// down even if the test panics before the explicit stop.store(true) line.
@@ -290,8 +289,15 @@ mod ipc_tests {
         }
     }
 
+    /// Loopback IPC over a unique per-run local socket.
+    ///
+    /// Uses `serve_named` with a name that combines the OS process-id and a
+    /// per-process counter, guaranteeing no collision across Cargo test processes
+    /// or across repeated runs within a single process. The client connection is
+    /// dropped BEFORE signalling stop + joining the server — mirroring a real
+    /// one-request-per-connection shim and giving the worker EOF so `serve_named`
+    /// can complete its join without deadlocking.
     #[test]
-    #[ignore = "Windows named-pipe bind race when Cargo runs multiple test processes; run manually (see module doc)"]
     fn loopback_list_round_trip() {
         use crate::mcp::wire::{read_frame, write_frame};
 
@@ -301,17 +307,25 @@ mod ipc_tests {
             settings::set_vault_root(dir.path().to_string_lossy().into()).unwrap();
             let raw = tokens::mint("Test".into(), Scope::Read).unwrap();
 
+            // Unique socket name: pid + monotonic counter → no collision ever.
+            let sock = format!(
+                "stashpeak-mcp-test-{}-{}.sock",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            );
+
             let stop = Arc::new(AtomicBool::new(false));
             let stop2 = stop.clone();
+            let sock2 = sock.clone();
             let server = std::thread::spawn(move || {
-                let _ = serve(stop2);
+                let _ = serve_named(&sock2, stop2);
             });
             // RAII guard: sets stop on drop so the server exits even if this thread panics.
             let _stop_guard = StopGuard(stop.clone());
 
             // Retry-connect loop: try to connect every 20ms for up to ~1s so the
-            // test never races the listener bind (replaces the fixed sleep).
-            let name = ipc_socket_name().to_ns_name::<GenericNamespaced>().unwrap();
+            // test never races the listener bind.
+            let name = sock.to_ns_name::<GenericNamespaced>().unwrap();
             let mut conn = {
                 let mut last_err = None;
                 let mut stream = None;
@@ -336,8 +350,87 @@ mod ipc_tests {
                 matches!(resp, IpcResponse::List { ref paths } if paths == &vec!["a.md".to_string()])
             );
 
+            // Drop the client connection FIRST — gives the per-connection worker
+            // EOF so serve_named can join it cleanly without deadlocking.
+            drop(conn);
             stop.store(true, Ordering::Relaxed);
             let _ = server.join();
+        });
+    }
+
+    /// Hitting the PAUSE brake returns RateLimited and serves no further reads.
+    #[test]
+    fn pause_returns_rate_limited() {
+        crate::test_support::with_temp_data_dir(|| {
+            let dir = tempdir().unwrap();
+            fs::write(dir.path().join("b.md"), "beta").unwrap();
+            settings::set_vault_root(dir.path().to_string_lossy().into()).unwrap();
+
+            let raw = tokens::mint("BrakeClient".into(), Scope::Read).unwrap();
+            // Get the client_id by listing tokens and finding the one we just minted.
+            let token_list = tokens::list().unwrap();
+            let id = token_list
+                .iter()
+                .find(|t| t.label == "BrakeClient")
+                .expect("minted token not found")
+                .id
+                .clone();
+
+            // Seed the read budget past PAUSE_THRESHOLD (100 results in 60 s window).
+            // One call with result_count=100 crosses the threshold.
+            crate::kb::ledger::record_read(&id, "BrakeClient", "kb_search", "q", 100).unwrap();
+
+            let resp = handle_request(&IpcRequest::List { token: raw.clone() });
+            assert!(
+                matches!(resp, IpcResponse::Error { ref kind, .. } if kind == "RateLimited"),
+                "expected RateLimited, got {resp:?}"
+            );
+
+            // No successful list was served: the only ledger row is the seeded one.
+            let recent = crate::kb::ledger::recent(10).unwrap();
+            assert!(
+                !recent.iter().any(|r| r.tool == "kb_list"),
+                "kb_list should not appear in ledger when paused"
+            );
+        });
+    }
+
+    /// A missing/gated-out ReadNote records a 0-result row and returns a
+    /// path-free error (the canonical path is not echoed back to the client).
+    #[test]
+    fn gated_out_read_records_zero_and_errs_path_free() {
+        crate::test_support::with_temp_data_dir(|| {
+            let dir = tempdir().unwrap();
+            settings::set_vault_root(dir.path().to_string_lossy().into()).unwrap();
+
+            let raw = tokens::mint("PathFreeClient".into(), Scope::Read).unwrap();
+            let resp = handle_request(&IpcRequest::ReadNote {
+                token: raw,
+                canonical: "does-not-exist.md".into(),
+            });
+
+            // Response is a Kb error.
+            let message = match &resp {
+                IpcResponse::Error { kind, message } => {
+                    assert_eq!(kind, "Kb", "expected Kb error kind, got {resp:?}");
+                    message.clone()
+                }
+                other => panic!("expected Error, got {other:?}"),
+            };
+            // The error message must NOT leak the canonical path back to the client.
+            assert!(
+                !message.contains("does-not-exist"),
+                "error message leaks the canonical path: {message:?}"
+            );
+
+            // A 0-result ledger row must exist for kb_read_note.
+            let recent = crate::kb::ledger::recent(10).unwrap();
+            assert!(
+                recent
+                    .iter()
+                    .any(|r| r.tool == "kb_read_note" && r.result_count == 0),
+                "expected a 0-result kb_read_note row in ledger; got {recent:?}"
+            );
         });
     }
 }
