@@ -413,7 +413,11 @@ pub fn run() {
                 let relay = app.handle().clone();
                 app.listen("kb://list_changed", move |event| {
                     if let Some(svc) = relay.try_state::<crate::mcp::lifecycle::McpService>() {
-                        let canonical = event.payload().trim_matches('"').to_string();
+                        // event.payload() is the JSON-serialized string; deserialize it
+                        // rather than trimming quotes (which leaves escape sequences
+                        // intact and corrupts a canonical containing `"` or `\`).
+                        let canonical = serde_json::from_str::<String>(event.payload())
+                            .unwrap_or_else(|_| event.payload().to_string());
                         svc.notify_changed(&canonical);
                     }
                 });

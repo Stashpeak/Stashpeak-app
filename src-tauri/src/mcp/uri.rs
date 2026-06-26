@@ -65,6 +65,13 @@ fn decode_segment(seg: &str) -> Result<String, McpError> {
     String::from_utf8(out).map_err(|_| McpError::Protocol(format!("invalid utf8 in {seg}")))
 }
 
+/// True when `seg` begins with a Windows drive prefix (`C:`, `d:`, ...). Such a
+/// first segment is an absolute path in disguise and must never canonicalize.
+fn starts_with_windows_drive_prefix(seg: &str) -> bool {
+    let bytes = seg.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
 /// `kb://vault/<encoded>` -> canonical string. Rejects wrong scheme/authority,
 /// any query/fragment, and (after decode) any traversal/absolute form.
 pub fn uri_to_canonical(uri: &str) -> Result<String, McpError> {
@@ -87,6 +94,7 @@ pub fn uri_to_canonical(uri: &str) -> Result<String, McpError> {
             || decoded.contains('/')
             || decoded.contains('\\')
             || decoded.contains('\u{0000}')
+            || (segs.is_empty() && starts_with_windows_drive_prefix(&decoded))
         {
             return Err(McpError::Protocol(format!("rejected segment: {decoded}")));
         }
@@ -154,5 +162,12 @@ mod tests {
     fn decode_rejects_traversal_after_decode() {
         // A percent-encoded ".." must not smuggle traversal back in.
         assert!(uri_to_canonical("kb://vault/%2E%2E/secret.md").is_err());
+    }
+
+    #[test]
+    fn decode_rejects_windows_drive_prefix_after_decode() {
+        // A percent-encoded `C:` first segment is an absolute path in disguise.
+        assert!(uri_to_canonical("kb://vault/C%3A/Windows/system.ini").is_err());
+        assert!(uri_to_canonical("kb://vault/C%3Arelative/file.md").is_err());
     }
 }

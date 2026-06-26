@@ -61,16 +61,34 @@ impl McpService {
         Ok(())
     }
 
-    /// Internal: spawn the IPC server thread with an optional pre-built watcher.
+    /// Internal: bind the IPC socket SYNCHRONOUSLY, then spawn the accept loop.
+    ///
+    /// Binding before the spawn is what makes `start()` honest: a bind conflict
+    /// (the socket is already in use) returns `Err` here instead of a thread that
+    /// exits silently while the toggle reports "on". Only after a successful bind
+    /// do we mark the service running and move the listener into the accept loop.
     fn start_server_inner(
         &self,
         watcher: Option<RecommendedWatcher>,
     ) -> Result<McpHandle, McpError> {
+        self.start_server_inner_named(&server::ipc_socket_name(), watcher)
+    }
+
+    /// Bind `socket_name` synchronously then spawn the accept loop. A test seam:
+    /// production passes `ipc_socket_name()`; tests pass a unique per-run name so
+    /// the bind-conflict path can be exercised hermetically without colliding on
+    /// the shared production socket.
+    fn start_server_inner_named(
+        &self,
+        socket_name: &str,
+        watcher: Option<RecommendedWatcher>,
+    ) -> Result<McpHandle, McpError> {
+        let listener = server::bind_listener(socket_name)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stop_thread = stop.clone();
         let notifier = self.notifier.clone();
         let join = std::thread::spawn(move || {
-            if let Err(e) = server::serve(stop_thread, notifier) {
+            if let Err(e) = server::serve_with_listener(listener, stop_thread, notifier) {
                 tracing::error!(error = %e, "mcp ipc server exited with error");
             }
         });
@@ -119,15 +137,17 @@ impl McpService {
         self.notifier.subscribe()
     }
 
-    /// Test-only: start the IPC server without an AppHandle (no vault watcher).
-    /// Used in headless tests where tauri::test::mock_app() causes DLL issues on Windows.
+    /// Test-only: start the IPC server without an AppHandle (no vault watcher),
+    /// binding `socket_name`. Used in headless tests where tauri::test::mock_app()
+    /// causes DLL issues on Windows. Tests pass a unique per-run name so they
+    /// never collide on the shared production socket.
     #[cfg(test)]
-    pub(crate) fn start_server_only(&self) -> Result<(), McpError> {
+    pub(crate) fn start_server_only_named(&self, socket_name: &str) -> Result<(), McpError> {
         let mut guard = self.running.lock().expect("mcp service lock poisoned");
         if guard.is_some() {
             return Ok(());
         }
-        let handle = self.start_server_inner(None)?;
+        let handle = self.start_server_inner_named(socket_name, None)?;
         *guard = Some(handle);
         tracing::info!("mcp ipc server started (test mode, no watcher)");
         Ok(())
@@ -137,7 +157,20 @@ impl McpService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicU32;
     use std::time::Duration;
+
+    /// Monotonic counter for unique per-run socket names (no cross-test collision
+    /// on the shared production socket now that bind happens synchronously).
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+
+    fn unique_sock(tag: &str) -> String {
+        format!(
+            "stashpeak-mcp-lifecycle-{tag}-{}-{}.sock",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        )
+    }
 
     /// start_server_only() is idempotent and stop() is safe to call multiple times.
     /// No vault root set → watcher is None; exercises IPC server start/stop idempotency
@@ -154,12 +187,38 @@ mod tests {
     fn start_is_idempotent_and_stop_is_safe() {
         crate::test_support::with_temp_data_dir(|| {
             let svc = McpService::default();
-            svc.start_server_only().unwrap();
-            svc.start_server_only().unwrap(); // idempotent: already running
+            let sock = unique_sock("idem");
+            svc.start_server_only_named(&sock).unwrap();
+            svc.start_server_only_named(&sock).unwrap(); // idempotent: already running
             assert!(svc.is_running());
             svc.stop();
             svc.stop(); // safe: already stopped
             assert!(!svc.is_running());
+        });
+    }
+
+    /// Bind-before-spawn correctness: a SECOND service binding the SAME socket
+    /// name while the first is live must return Err from start (the bind conflict
+    /// surfaces synchronously), NOT a false Ok with a thread that exits silently.
+    #[test]
+    fn second_start_on_same_socket_errors() {
+        crate::test_support::with_temp_data_dir(|| {
+            let sock = unique_sock("conflict");
+
+            let first = McpService::default();
+            first.start_server_only_named(&sock).unwrap();
+            assert!(first.is_running());
+
+            // A different service instance binding the same name must fail to bind.
+            let second = McpService::default();
+            let res = second.start_server_only_named(&sock);
+            assert!(
+                res.is_err(),
+                "second bind on the same socket must Err, got {res:?}"
+            );
+            assert!(!second.is_running(), "failed start must not mark running");
+
+            first.stop();
         });
     }
 

@@ -119,11 +119,10 @@ fn main() {
     //     can never interleave inside a response line.
     let out = Arc::new(Mutex::new(std::io::stdout()));
 
-    // (5) Notify relay: a std thread that subscribes over a SECOND IPC
-    //     connection and emits notifications/resources/list_changed.
-    spawn_notify_relay(token.clone(), out.clone());
-
-    // (6) The stdio JSON-RPC loop, until stdin EOF.
+    // (5) The stdio JSON-RPC loop, until stdin EOF. The notify relay is NOT
+    //     spawned here: it is started from inside the loop, only after the client
+    //     sends `notifications/initialized` and only if the manifest advertises
+    //     resources.listChanged (MCP forbids notifications before initialized).
     run_stdio_loop(&token, &manifest, out);
 }
 
@@ -188,6 +187,11 @@ fn run_stdio_loop(token: &str, manifest: &CapabilityManifest, out: Arc<Mutex<std
     // dispatch logic can build requests with a placeholder token and stay token-
     // agnostic (the token is a transport concern, not a dispatch concern).
     let mut call = |req: IpcRequest| ipc_call(&with_token(req, token));
+    // The notify relay is started lazily: at most once, only after the client
+    // sends `notifications/initialized`, and only if the manifest advertises
+    // resources.listChanged. This prevents emitting a list_changed notification
+    // before the handshake completes or when the capability is off.
+    let mut relay_started = false;
     for line in stdin.lock().lines() {
         let line = match line {
             Ok(l) => l,
@@ -207,23 +211,30 @@ fn run_stdio_loop(token: &str, manifest: &CapabilityManifest, out: Arc<Mutex<std
                 let method = req.get("method").and_then(Value::as_str).unwrap_or("");
                 let params = req.get("params").cloned().unwrap_or(Value::Null);
                 if method.is_empty() {
-                    // A message with no method (e.g. a stray response) is malformed
-                    // for us as a server; if it has an id, return -32600.
-                    if let Some(id) = id {
-                        write_message(&out, &rpc_error(id, -32600, "invalid request: no method"));
-                    } else {
-                        tracing::warn!("stashpeak-mcp: dropping line with no method/id");
-                    }
+                    // A parsed-but-invalid request (object with no method): reply
+                    // -32600. Per JSON-RPC, use the message's id if present, else
+                    // null. Keep the stream alive.
+                    let rid = id.unwrap_or(Value::Null);
+                    write_message(&out, &rpc_error(rid, -32600, "invalid request: no method"));
                     continue;
+                }
+                // The client signalled it finished initializing: now it is safe to
+                // start the notify relay (once), but only if the capability is on.
+                if method == "notifications/initialized"
+                    && manifest.resources_list_changed
+                    && !relay_started
+                {
+                    spawn_notify_relay(token.to_string(), out.clone());
+                    relay_started = true;
                 }
                 if let Some(resp) = dispatch(method, id, &params, manifest, &mut call) {
                     write_message(&out, &resp);
                 }
             }
-            Err(e) => {
-                // Parse failure: we cannot recover an id reliably → log + skip.
-                // Never write junk to stdout, never crash.
-                tracing::warn!(error = %e, "stashpeak-mcp: skipping unparseable line");
+            Err(_) => {
+                // Parse failure: per JSON-RPC, reply -32700 with id: null and keep
+                // the stream alive so a caller is never left hanging on a reply.
+                write_message(&out, &rpc_error(Value::Null, -32700, "parse error"));
             }
         }
     }
@@ -256,7 +267,7 @@ fn tool_input_schema(name: &str) -> Value {
             "type": "object",
             "properties": {
                 "query": { "type": "string" },
-                "limit": { "type": "integer" }
+                "limit": { "type": "integer", "minimum": 1, "default": 10 }
             },
             "required": ["query"]
         }),
@@ -456,9 +467,13 @@ fn dispatch_tool_call(
                 Some(q) if !q.is_empty() => q.to_string(),
                 _ => return tool_error("missing required argument: query".to_string()),
             };
+            // Schema advertises { integer, minimum: 1, default: 10 }. Mirror it:
+            // a missing limit, or one below 1 (including negatives), falls back to
+            // the documented default of 10 rather than silently becoming 0.
             let limit = args
                 .get("limit")
                 .and_then(Value::as_u64)
+                .filter(|&n| n >= 1)
                 .map(|n| n as usize)
                 .unwrap_or(10);
             match call(IpcRequest::Search {
@@ -746,6 +761,40 @@ mod tests {
         assert!(text.contains("a.md"));
         assert!(text.contains("score 3"));
         assert!(text.contains("alpha beta"));
+    }
+
+    #[test]
+    fn tools_call_kb_search_clamps_out_of_range_limit_to_default() {
+        // Schema advertises minimum:1, default:10. A limit below 1 (here 0) must
+        // fall back to the documented default rather than passing 0 to the parser.
+        let m = test_manifest();
+        let mut call = caller(|req| match req {
+            IpcRequest::Search { query, limit, .. } => {
+                assert_eq!(query, "alpha");
+                assert_eq!(limit, 10, "limit < 1 should clamp to the default 10");
+                Ok(IpcResponse::Search { hits: vec![] })
+            }
+            _ => panic!("unexpected request"),
+        });
+        let resp = dispatch(
+            "tools/call",
+            Some(json!(20)),
+            &json!({ "name": "kb_search", "arguments": { "query": "alpha", "limit": 0 } }),
+            &m,
+            &mut call,
+        )
+        .unwrap();
+        assert_eq!(resp["result"]["isError"], false);
+    }
+
+    #[test]
+    fn kb_search_schema_advertises_minimum_and_default_limit() {
+        // The advertised schema must match the parser's contract (minimum 1, default 10).
+        let schema = tool_input_schema("kb_search");
+        let limit = &schema["properties"]["limit"];
+        assert_eq!(limit["type"], "integer");
+        assert_eq!(limit["minimum"], 1);
+        assert_eq!(limit["default"], 10);
     }
 
     #[test]

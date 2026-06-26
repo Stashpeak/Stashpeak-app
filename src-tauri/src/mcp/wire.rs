@@ -59,7 +59,7 @@ impl std::fmt::Debug for IpcRequest {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum IpcResponse {
     Manifest(crate::mcp::manifest::CapabilityManifest),
@@ -82,10 +82,51 @@ pub enum IpcResponse {
     },
 }
 
-/// 4-byte big-endian length prefix, then the JSON body.
+// Hand-written Debug so a stray {:?} can never leak KB content: note bodies,
+// search snippets, vault paths, or a `Changed` canonical. Mirrors the request-
+// side redaction; only structural summaries (counts, error kind) are printed.
+impl std::fmt::Debug for IpcResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IpcResponse::Manifest(_) => f.write_str("IpcResponse::Manifest(..)"),
+            IpcResponse::List { paths } => f
+                .debug_struct("IpcResponse::List")
+                .field("path_count", &paths.len())
+                .finish(),
+            IpcResponse::Note { content } => f
+                .debug_struct("IpcResponse::Note")
+                .field("content", &"[REDACTED]")
+                .field("content_len", &content.len())
+                .finish(),
+            IpcResponse::Search { hits } => f
+                .debug_struct("IpcResponse::Search")
+                .field("hit_count", &hits.len())
+                .finish(),
+            IpcResponse::Changed { .. } => {
+                f.write_str("IpcResponse::Changed { canonical: \"[REDACTED]\" }")
+            }
+            IpcResponse::Error { kind, .. } => f
+                .debug_struct("IpcResponse::Error")
+                .field("kind", kind)
+                .field("message", &"[REDACTED]")
+                .finish(),
+        }
+    }
+}
+
+/// 4-byte big-endian length prefix, then the JSON body. Bounded by MAX_FRAME so
+/// an oversized payload errors BEFORE any bytes hit the wire (read_frame applies
+/// the same bound on the receive side; keeping both aligned avoids desyncing the
+/// peer with a half-written frame).
 pub fn write_frame<W: Write>(w: &mut W, value: &impl Serialize) -> std::io::Result<()> {
     let body = serde_json::to_vec(value)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    if body.len() > MAX_FRAME as usize {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("frame too large: {}", body.len()),
+        ));
+    }
     let len = body.len() as u32;
     w.write_all(&len.to_be_bytes())?;
     w.write_all(&body)?;
@@ -147,6 +188,38 @@ mod tests {
         let mut cur = Cursor::new(buf);
         let res: Result<IpcRequest, _> = read_frame(&mut cur);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn response_debug_redacts_note_content() {
+        // A {:?} on a Note must never print the body, only its length + REDACTED.
+        let resp = IpcResponse::Note {
+            content: "secret body".into(),
+        };
+        let dbg = format!("{resp:?}");
+        assert!(!dbg.contains("secret body"), "note content leaked: {dbg}");
+        assert!(dbg.contains("REDACTED"), "expected REDACTED marker: {dbg}");
+        assert!(dbg.contains("content_len"), "expected content_len: {dbg}");
+    }
+
+    #[test]
+    fn write_frame_rejects_oversized_body() {
+        // A payload whose serialized form exceeds MAX_FRAME must error before any
+        // bytes are written, mirroring read_frame's bound.
+        let huge = "a".repeat(MAX_FRAME as usize + 1);
+        let resp = IpcResponse::Note { content: huge };
+        let mut buf = Vec::new();
+        let res = write_frame(&mut buf, &resp);
+        assert!(res.is_err(), "oversized frame should error");
+        assert_eq!(
+            res.unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData,
+            "oversized frame should be InvalidData"
+        );
+        assert!(
+            buf.is_empty(),
+            "no bytes should be written on an oversized frame"
+        );
     }
 
     #[test]

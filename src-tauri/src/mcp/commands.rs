@@ -32,6 +32,14 @@ pub async fn mcp_set_enabled(
     {
         if enabled {
             service.stop();
+        } else if let Err(start_err) = service.start(&app) {
+            // The disable was applied to the live service but the persist failed,
+            // so the stored value may still say `true`. Restart to keep settings
+            // and live state from disagreeing (boot reads the persisted value).
+            tracing::error!(
+                error = %start_err,
+                "failed to restore mcp service after disable setting write failed"
+            );
         }
         return Err(e);
     }
@@ -43,7 +51,14 @@ pub async fn mcp_mint_token(label: String, scope: String) -> Result<String, Stri
     crate::run_blocking("mcp_mint_token", move || {
         let scope = match scope.as_str() {
             "read" => tokens::Scope::Read,
-            "read_write" => tokens::Scope::ReadWrite,
+            // Read-only phase: refuse to mint a higher-privilege credential that
+            // would silently gain write power when write tools land. Plan 5
+            // re-enables this alongside the write path + consent UI.
+            "read_write" => {
+                return Err(
+                    "read_write MCP tokens are not supported yet (read-only phase)".to_string(),
+                )
+            }
             other => return Err(format!("unknown scope '{other}'")),
         };
         tokens::mint(label, scope)

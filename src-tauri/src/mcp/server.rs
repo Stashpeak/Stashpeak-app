@@ -128,6 +128,13 @@ fn write_frame_interruptible<S: std::io::Write>(
         Ok(b) => b,
         Err(_) => return false,
     };
+    // Bound the write by MAX_FRAME (mirrors wire::write_frame and read_frame). An
+    // oversized response is dropped here rather than half-written, which would
+    // desync the peer's length-prefixed framing.
+    if body.len() > crate::mcp::wire::MAX_FRAME as usize {
+        tracing::warn!(len = body.len(), "mcp: dropping oversized response frame");
+        return false;
+    }
     let len = (body.len() as u32).to_be_bytes();
     if !write_all_interruptible(stream, &len, stop) {
         return false;
@@ -247,30 +254,50 @@ pub fn handle_request(req: &IpcRequest) -> IpcResponse {
 
     // (4) Run the GATED op (never raw kb::read/kb::search) + (5) record the read.
     //     RECONCILE: record_read takes (client_id, client_label, tool, target, result_count).
+    // Fail-closed audit (§7): never serve a read whose ledger row could not be
+    // written. A dropped row both loses the audit trail AND lets the bulk-read
+    // brake be bypassed, so a record failure surfaces as an Io error instead.
     match req {
         IpcRequest::List { .. } => match access::list_readable(&root) {
             Ok(paths) => {
-                let _ = ledger::record_read(&info.id, &info.label, "kb_list", "", paths.len());
+                if let Err(e) =
+                    ledger::record_read(&info.id, &info.label, "kb_list", "", paths.len())
+                {
+                    return err("Io", e);
+                }
                 IpcResponse::List { paths }
             }
             Err(e) => err("Kb", e.to_string()),
         },
         IpcRequest::ReadNote { canonical, .. } => match access::read_note(&root, canonical) {
             Ok(content) => {
-                let _ = ledger::record_read(&info.id, &info.label, "kb_read_note", canonical, 1);
+                if let Err(e) =
+                    ledger::record_read(&info.id, &info.label, "kb_read_note", canonical, 1)
+                {
+                    return err("Io", e);
+                }
                 IpcResponse::Note { content }
             }
             Err(e) => {
                 // access::read_note maps gated-out AND missing to the same path-free
                 // error (Plan 2 Fix C) — record a 0-result read for visibility, then
                 // surface a recoverable error. Do NOT assume Err == "definitely absent".
-                let _ = ledger::record_read(&info.id, &info.label, "kb_read_note", canonical, 0);
+                // Audit stays fail-closed here too: a record failure → Io error.
+                if let Err(rec_err) =
+                    ledger::record_read(&info.id, &info.label, "kb_read_note", canonical, 0)
+                {
+                    return err("Io", rec_err);
+                }
                 err("Kb", e.to_string())
             }
         },
         IpcRequest::Search { query, limit, .. } => match access::search(&root, query, *limit) {
             Ok(hits) => {
-                let _ = ledger::record_read(&info.id, &info.label, "kb_search", query, hits.len());
+                if let Err(e) =
+                    ledger::record_read(&info.id, &info.label, "kb_search", query, hits.len())
+                {
+                    return err("Io", e);
+                }
                 IpcResponse::Search { hits }
             }
             Err(e) => err("Kb", e.to_string()),
@@ -289,25 +316,18 @@ pub fn ipc_socket_name() -> String {
     }
 }
 
-/// Bind the named local socket `name` and serve requests until `stop` flips true.
-/// One blocking thread per connection (KB reads are short, single-user volume).
+/// Bind the named local socket `name`, returning the ready-to-accept listener.
 ///
-/// Every per-connection worker shares the same `stop` flag and its `JoinHandle`
-/// is tracked, so when `stop` flips true we both (a) make every in-flight worker
-/// notice and exit between frames and (b) join them before returning — no client
-/// connection survives a disable (the toggle truly stops the server).
-///
-/// This function is the real implementation; `serve` is a one-line wrapper that
-/// passes the production socket name. Tests can call `serve_named` with a unique
-/// per-run name to avoid any socket-name collision.
-pub fn serve_named(
+/// SYNCHRONOUS bind: the caller (lifecycle) runs this on the calling thread
+/// BEFORE spawning the accept loop, so a bind conflict (socket already in use)
+/// surfaces as `start()` returning `Err` instead of a thread that exits silently
+/// while the toggle falsely reports "on".
+pub fn bind_listener(
     name: &str,
-    stop: Arc<AtomicBool>,
-    notifier: Arc<Notifier>,
-) -> Result<(), crate::mcp::McpError> {
+) -> Result<interprocess::local_socket::Listener, crate::mcp::McpError> {
     use interprocess::local_socket::{
-        traits::{Listener as _, Stream as _},
-        GenericNamespaced, ListenerNonblockingMode, ListenerOptions, ToNsName,
+        traits::Listener as _, GenericNamespaced, ListenerNonblockingMode, ListenerOptions,
+        ToNsName,
     };
 
     let ns_name = name
@@ -321,6 +341,22 @@ pub fn serve_named(
     listener
         .set_nonblocking(ListenerNonblockingMode::Accept)
         .map_err(|e| crate::mcp::McpError::Io(e.to_string()))?;
+    Ok(listener)
+}
+
+/// Serve requests on an ALREADY-BOUND `listener` until `stop` flips true.
+/// One blocking thread per connection (KB reads are short, single-user volume).
+///
+/// Every per-connection worker shares the same `stop` flag and its `JoinHandle`
+/// is tracked, so when `stop` flips true we both (a) make every in-flight worker
+/// notice and exit between frames and (b) join them before returning — no client
+/// connection survives a disable (the toggle truly stops the server).
+pub fn serve_with_listener(
+    listener: interprocess::local_socket::Listener,
+    stop: Arc<AtomicBool>,
+    notifier: Arc<Notifier>,
+) -> Result<(), crate::mcp::McpError> {
+    use interprocess::local_socket::traits::{Listener as _, Stream as _};
 
     // Track every live per-connection worker so stop() can join them all.
     let mut workers: Vec<std::thread::JoinHandle<()>> = Vec::new();
@@ -377,6 +413,19 @@ pub fn serve_named(
         let _ = w.join();
     }
     Ok(())
+}
+
+/// Bind the named local socket `name` and serve requests until `stop` flips true.
+/// Thin convenience that binds THEN serves on the current thread — used by the
+/// loopback/no-hang tests where bind failure isn't the thing under test.
+/// Production code (lifecycle) binds via `bind_listener` synchronously and only
+/// then spawns `serve_with_listener` so a bind error surfaces from `start()`.
+pub fn serve_named(
+    name: &str,
+    stop: Arc<AtomicBool>,
+    notifier: Arc<Notifier>,
+) -> Result<(), crate::mcp::McpError> {
+    serve_with_listener(bind_listener(name)?, stop, notifier)
 }
 
 /// Bind the production local socket and serve requests until `stop` flips true.
