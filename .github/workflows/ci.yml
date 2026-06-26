@@ -127,3 +127,7 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: MCP stdout-discipline smoke
+        shell: bash
+        run: bash src-tauri/scripts/mcp_smoke.sh

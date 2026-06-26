@@ -51,8 +51,8 @@ impl EchoFilter {
 /// dropping it stops the watch.  Wiring into app startup is deferred to
 /// Phase 6 — this function is pure construction and does not modify any
 /// global state.
-pub fn start_watch(
-    app: tauri::AppHandle,
+pub fn start_watch<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     vault_root: PathBuf,
     echo: Arc<EchoFilter>,
 ) -> Result<notify::RecommendedWatcher, KbError> {

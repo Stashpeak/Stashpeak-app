@@ -141,6 +141,36 @@ pub fn set_vault_root(path: String) -> Result<(), String> {
     Ok(())
 }
 
+const KEY_MCP_ENABLED: &str = "mcp_kb_access_enabled";
+
+/// Returns whether the MCP KB access server is enabled. Defaults to `false`.
+pub fn get_mcp_enabled() -> Result<bool, String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    let val: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [KEY_MCP_ENABLED],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(val.map(|v| v == "true").unwrap_or(false))
+}
+
+/// Persists whether the MCP KB access server is enabled.
+// Used in tests and will be wired as a Tauri command in a future phase.
+#[allow(dead_code)]
+pub fn set_mcp_enabled(enabled: bool) -> Result<(), String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![KEY_MCP_ENABLED, if enabled { "true" } else { "false" }],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Returns the user's chosen home currency (e.g. "USD", "CZK").
 /// Defaults to "USD" if not set.
 pub fn get_home_currency() -> Result<String, String> {
@@ -177,66 +207,56 @@ pub fn set_home_currency(currency: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// Hermetic round-trip for get_mcp_enabled / set_mcp_enabled.
+    #[test]
+    fn mcp_enabled_defaults_false_and_round_trips() {
+        crate::test_support::with_temp_data_dir(|| {
+            // Default: not set → false.
+            assert!(!get_mcp_enabled().unwrap());
+
+            // Enable and read back.
+            set_mcp_enabled(true).unwrap();
+            assert!(get_mcp_enabled().unwrap());
+
+            // Disable and read back.
+            set_mcp_enabled(false).unwrap();
+            assert!(!get_mcp_enabled().unwrap());
+        });
+    }
+
     /// Hermetic round-trip test for get_vault_root / set_vault_root.
     ///
-    /// Uses STASHPEAK_DATA_DIR to redirect all DB I/O to a throwaway tempdir so the
-    /// developer's real DB is never touched and CI (no settings table) passes cleanly.
-    ///
-    /// NOTE (forward): this is the only DB-touching test in the crate. Plan 2 will add
-    /// more and MUST serialize them — `std::env::set_var` is process-global, so parallel
-    /// DB tests racing on `STASHPEAK_DATA_DIR` will stomp each other. Use a `Mutex` or
-    /// `serial_test` crate at that point. Not needed here (YAGNI for one test).
+    /// Uses the shared DB test harness (serializes on `DB_TEST_LOCK` and redirects
+    /// `STASHPEAK_DATA_DIR` to a throwaway temp DB) so it can run in parallel with
+    /// the new server tests without racing on the process-global env var.
     #[test]
     fn vault_root_round_trips() {
-        let db_dir = tempfile::tempdir().unwrap();
-        let previous = std::env::var_os("STASHPEAK_DATA_DIR");
-        // SAFETY: test-only; single-threaded (see forward note above).
-        unsafe {
-            std::env::set_var("STASHPEAK_DATA_DIR", db_dir.path());
-        }
-        // Drop guard: ensures STASHPEAK_DATA_DIR is restored to its prior value (or removed
-        // if it wasn't set) even if the test panics, so a dev/CI override isn't wiped.
-        struct StashpeakDataDirGuard(Option<std::ffi::OsString>);
-        impl Drop for StashpeakDataDirGuard {
-            fn drop(&mut self) {
-                // SAFETY: test-only cleanup.
-                unsafe {
-                    match &self.0 {
-                        Some(v) => std::env::set_var("STASHPEAK_DATA_DIR", v),
-                        None => std::env::remove_var("STASHPEAK_DATA_DIR"),
-                    }
-                }
-            }
-        }
-        let _guard = StashpeakDataDirGuard(previous);
+        crate::test_support::with_temp_data_dir(|| {
+            let vault = tempfile::tempdir().unwrap();
 
-        // open() runs migrations so the `settings` table exists in the temp DB.
-        crate::db::open().unwrap();
+            // Before any set: should return None.
+            assert_eq!(get_vault_root().unwrap(), None);
 
-        let vault = tempfile::tempdir().unwrap();
+            // Round-trip: compare against the canonicalized path (on Windows this is the
+            // \\?\... extended form; on macOS /var tempdirs resolve to /private/var).
+            let input = vault.path().to_string_lossy().to_string();
+            let want = std::fs::canonicalize(vault.path())
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+            set_vault_root(input).unwrap();
+            assert_eq!(get_vault_root().unwrap(), Some(want));
 
-        // Before any set: should return None.
-        assert_eq!(get_vault_root().unwrap(), None);
-
-        // Round-trip: compare against the canonicalized path (on Windows this is the
-        // \\?\... extended form; on macOS /var tempdirs resolve to /private/var).
-        let input = vault.path().to_string_lossy().to_string();
-        let want = std::fs::canonicalize(vault.path())
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-        set_vault_root(input).unwrap();
-        assert_eq!(get_vault_root().unwrap(), Some(want));
-
-        // Rejection cases.
-        assert!(set_vault_root("".into()).is_err(), "empty must be rejected");
-        assert!(
-            set_vault_root("relative/dir".into()).is_err(),
-            "relative path must be rejected"
-        );
-        assert!(
-            set_vault_root(vault.path().join("missing").to_string_lossy().to_string()).is_err(),
-            "non-existent path must be rejected"
-        );
+            // Rejection cases.
+            assert!(set_vault_root("".into()).is_err(), "empty must be rejected");
+            assert!(
+                set_vault_root("relative/dir".into()).is_err(),
+                "relative path must be rejected"
+            );
+            assert!(
+                set_vault_root(vault.path().join("missing").to_string_lossy().to_string()).is_err(),
+                "non-existent path must be rejected"
+            );
+        });
     }
 }

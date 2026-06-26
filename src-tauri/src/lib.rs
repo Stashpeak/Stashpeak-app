@@ -3,12 +3,17 @@ mod currency;
 mod db;
 pub mod kb;
 mod logging;
+// `pub` so the `stashpeak-mcp` shim binary (a separate crate that links
+// `stashpeak_lib`) can consume mcp::wire / mcp::uri / mcp::manifest / mcp::server.
+pub mod mcp;
 mod notifications;
 mod products;
 mod providers;
 mod secrets;
 mod settings;
 mod subscriptions;
+#[cfg(test)]
+mod test_support;
 
 pub(crate) async fn run_blocking<T, F>(task_name: &'static str, work: F) -> Result<T, String>
 where
@@ -392,6 +397,32 @@ pub fn run() {
                 }
             });
 
+            // MCP KB access server: register the service state, auto-start if enabled,
+            // and wire the kb://list_changed event relay with the confidentiality gate.
+            {
+                use tauri::{Listener, Manager};
+
+                app.manage(crate::mcp::lifecycle::McpService::default());
+                if settings::get_mcp_enabled().unwrap_or(false) {
+                    if let Some(svc) = app.try_state::<crate::mcp::lifecycle::McpService>() {
+                        if let Err(e) = svc.start(app.handle()) {
+                            tracing::error!(error = %e, "failed to start mcp service at boot");
+                        }
+                    }
+                }
+                let relay = app.handle().clone();
+                app.listen("kb://list_changed", move |event| {
+                    if let Some(svc) = relay.try_state::<crate::mcp::lifecycle::McpService>() {
+                        // event.payload() is the JSON-serialized string; deserialize it
+                        // rather than trimming quotes (which leaves escape sequences
+                        // intact and corrupts a canonical containing `"` or `\`).
+                        let canonical = serde_json::from_str::<String>(event.payload())
+                            .unwrap_or_else(|_| event.payload().to_string());
+                        svc.notify_changed(&canonical);
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -426,6 +457,13 @@ pub fn run() {
             kb::commands::kb_list,
             kb::commands::kb_read_note,
             kb::commands::kb_search,
+            mcp::commands::mcp_get_enabled,
+            mcp::commands::mcp_set_enabled,
+            mcp::commands::mcp_mint_token,
+            mcp::commands::mcp_list_tokens,
+            mcp::commands::mcp_revoke_token,
+            mcp::commands::mcp_recent_activity,
+            mcp::commands::mcp_client_config_snippet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
