@@ -12,7 +12,15 @@ pub struct SearchHit {
 
 const SNIPPET_MAX: usize = 200;
 
-pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError> {
+/// Rank ONLY the supplied candidate paths (the caller has already gated them).
+/// Excluded notes must be absent from `candidates` so they are never opened,
+/// scored, or counted — preventing ranking/hit-count/timing side-channel leaks.
+pub fn search_in(
+    vault_root: &Path,
+    candidates: &[String],
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, KbError> {
     if limit == 0 {
         return Ok(Vec::new());
     }
@@ -21,8 +29,8 @@ pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<Search
         return Ok(Vec::new());
     }
     let mut hits = Vec::new();
-    for path in read::list(vault_root)? {
-        let body = match read::read_note(vault_root, &path) {
+    for path in candidates {
+        let body = match read::read_note(vault_root, path) {
             Ok(b) => b,
             Err(_) => continue, // unreadable note: skip, never fail the whole search
         };
@@ -48,7 +56,7 @@ pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<Search
             })
             .unwrap_or_default();
         hits.push(SearchHit {
-            path,
+            path: path.clone(),
             snippet,
             score,
         });
@@ -56,6 +64,13 @@ pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<Search
     hits.sort_by(|a, b| b.score.cmp(&a.score).then(a.path.cmp(&b.path)));
     hits.truncate(limit);
     Ok(hits)
+}
+
+/// Whole-vault search. Enumerates all notes via `read::list` and ranks them.
+/// For a pre-gated search (e.g. access control), use `search_in` directly with
+/// a filtered candidate slice so excluded notes are never opened or scored.
+pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, KbError> {
+    search_in(vault_root, &read::list(vault_root)?, query, limit)
 }
 
 #[cfg(test)]
@@ -131,5 +146,19 @@ mod tests {
             "snippet must contain the match"
         );
         assert!(hits[0].snippet.chars().count() <= 200);
+    }
+
+    #[test]
+    fn search_in_restricts_to_supplied_candidates() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        // Two notes both match the query.
+        fs::write(root.join("included.md"), "alpha content").unwrap();
+        fs::write(root.join("excluded.md"), "alpha content").unwrap();
+        // Only one is in the candidate slice — the other must not appear.
+        let candidates = vec!["included.md".to_string()];
+        let hits = search_in(root, &candidates, "alpha", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "included.md");
     }
 }
