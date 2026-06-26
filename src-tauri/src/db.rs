@@ -10,8 +10,9 @@ use std::path::PathBuf;
 /// Override via `STASHPEAK_DATA_DIR` (primarily a test seam; also allows relocating data).
 pub fn data_dir() -> PathBuf {
     if let Ok(override_dir) = std::env::var("STASHPEAK_DATA_DIR") {
-        if !override_dir.is_empty() {
-            return PathBuf::from(override_dir);
+        let trimmed = override_dir.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
         }
     }
     let base = dirs::data_dir().expect("could not locate platform data directory");

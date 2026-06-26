@@ -225,5 +225,11 @@ mod tests {
             set_vault_root(vault.path().join("missing").to_string_lossy().to_string()).is_err(),
             "non-existent path must be rejected"
         );
+
+        // SAFETY: test-only; mirrors the set_var above; prevents the deleted tempdir from
+        // leaking into later tests that call db::connect() / db::data_dir().
+        unsafe {
+            std::env::remove_var("STASHPEAK_DATA_DIR");
+        }
     }
 }
