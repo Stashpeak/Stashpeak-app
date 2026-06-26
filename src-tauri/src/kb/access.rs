@@ -77,6 +77,19 @@ impl KbIgnore {
 }
 
 fn rule_matches(rule: &str, canonical: &str) -> bool {
+    // Fix A: a bare `*` opts the whole vault out (expose nothing).
+    if rule == "*" {
+        return true;
+    }
+
+    // Fix B: case-insensitive matching so `Private/` excludes `private/x.md`
+    // on case-insensitive filesystems (Windows/macOS). Over-exclusion on
+    // case-sensitive Linux is the safe direction; under-exclusion leaks.
+    let rule_lc = rule.to_lowercase();
+    let canonical_lc = canonical.to_lowercase();
+    let rule = rule_lc.as_str();
+    let canonical = canonical_lc.as_str();
+
     if let Some(dir) = rule.strip_suffix('/') {
         // `dir/` → anything under that directory.
         return canonical == dir || canonical.starts_with(&format!("{dir}/"));
@@ -127,6 +140,11 @@ pub fn resolve_readable(vault_root: &Path, canonical: &str) -> bool {
 /// True if any ancestor directory of `canonical` (within the vault) contains
 /// a `.nokb` marker file.
 fn any_ancestor_has_nokb(vault_root: &Path, canonical: &str) -> bool {
+    // Fix D: a `.nokb` at the vault root opts out the entire vault.
+    if vault_root.join(NOKB_MARKER).exists() {
+        return true;
+    }
+
     let mut dir = vault_root.to_path_buf();
     let segments: Vec<&str> = canonical.split('/').collect();
     // Walk the directory chain, excluding the final (file) segment.
@@ -161,7 +179,10 @@ pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> 
         // in the returned error.
         return Err(KbError::PathRejected("not found".to_string()));
     }
+    // Fix C: uniform, path-free absence — a readable-but-missing/invalid note
+    // is indistinguishable from an excluded one and never echoes the path.
     read::read_note(vault_root, canonical)
+        .map_err(|_| KbError::PathRejected("not found".to_string()))
 }
 
 /// Gated `search`: gates the **candidate file list up front** — excluded notes
@@ -322,6 +343,70 @@ mod tests {
             }
             other => panic!("expected path-free PathRejected, got {other:?}"),
         }
+    }
+
+    // ── Fix A–D regression tests ──────────────────────────────────────────────
+
+    /// Fix A: a bare `*` in .kbignore opts the whole vault out.
+    #[test]
+    fn kbignore_bare_star_excludes_everything() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join(".kbignore"), "*\n").unwrap();
+
+        assert!(!resolve_readable(root, "anything.md"));
+        assert!(!resolve_readable(root, "notes/x.md"));
+    }
+
+    /// Fix B: a `Private/` rule in .kbignore must exclude a `private/x.md` path
+    /// (case-mismatched rule still closes the under-exclusion hole).
+    #[test]
+    fn kbignore_case_insensitive_dir_rule_excludes_lower_path() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join(".kbignore"), "Private/\n").unwrap();
+
+        assert!(!resolve_readable(root, "private/secret.md"));
+    }
+
+    /// Fix C: a readable path that does NOT physically exist returns a path-free
+    /// PathRejected — indistinguishable from an excluded note.
+    #[test]
+    fn read_note_readable_but_missing_returns_path_free_error() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        // No .kbignore → notes/missing.md is readable per policy, but the file
+        // does not exist on disk.
+        let err = read_note(root, "notes/missing.md").unwrap_err();
+        match err {
+            KbError::PathRejected(msg) => {
+                assert!(!msg.contains("missing"), "path leaked in error: {msg}");
+                assert!(!msg.contains("notes"), "path leaked in error: {msg}");
+            }
+            other => panic!("expected path-free PathRejected, got {other:?}"),
+        }
+    }
+
+    /// Fix C (positive): a readable, physically-present note still reads fine.
+    #[test]
+    fn read_note_readable_existing_note_returns_content() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("notes")).unwrap();
+        fs::write(root.join("notes/hello.md"), "hello world").unwrap();
+
+        let content = read_note(root, "notes/hello.md").unwrap();
+        assert_eq!(content.trim(), "hello world");
+    }
+
+    /// Fix D: a `.nokb` at the vault root must exclude everything.
+    #[test]
+    fn root_nokb_marker_excludes_entire_vault() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join(".nokb"), "").unwrap();
+
+        assert!(!resolve_readable(root, "anything.md"));
     }
 
     #[test]
