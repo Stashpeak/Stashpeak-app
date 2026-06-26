@@ -187,9 +187,15 @@ Add to the `#[cfg(test)]` module in `settings.rs` (match the existing settings t
 #[test]
 fn vault_root_round_trips() {
     // (use the same in-temp-dir DB setup the other settings tests use)
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
     assert_eq!(get_vault_root().unwrap(), None);
-    set_vault_root("C:/Users/me/Vault".into()).unwrap();
-    assert_eq!(get_vault_root().unwrap().as_deref(), Some("C:/Users/me/Vault"));
+    set_vault_root(root.clone()).unwrap();
+    assert_eq!(get_vault_root().unwrap(), Some(root));
+    // Rejected up front: empty, relative, and non-directory (missing / file) roots.
+    assert!(set_vault_root("".into()).is_err());
+    assert!(set_vault_root("relative/dir".into()).is_err());
+    assert!(set_vault_root(dir.path().join("missing").to_string_lossy().to_string()).is_err());
 }
 ```
 
@@ -218,8 +224,15 @@ pub fn get_vault_root() -> Result<Option<String>, String> {
 
 pub fn set_vault_root(path: String) -> Result<(), String> {
     // Reject empty/relative roots up front, or later containment checks are ambiguous.
-    if path.trim().is_empty() || !std::path::Path::new(&path).is_absolute() {
+    let p = std::path::Path::new(&path);
+    if path.trim().is_empty() || !p.is_absolute() {
         return Err("vault root must be a non-empty absolute path".into());
+    }
+    // Must be an EXISTING DIRECTORY: a file path or a missing dir would otherwise only
+    // fail later in the read layer (read_dir/canonicalize). `is_dir()` follows symlinks
+    // and is false for both missing paths and files.
+    if !p.is_dir() {
+        return Err("vault root must be an existing directory".into());
     }
     let conn = crate::db::connect().map_err(|e| e.to_string())?;
     conn.execute(
