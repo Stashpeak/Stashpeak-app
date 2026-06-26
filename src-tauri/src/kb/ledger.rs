@@ -1,1 +1,199 @@
-// placeholder
+use crate::db;
+use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+
+/// The bulk-read brake decision returned by `check_read_budget`.
+/// `Notice` = a non-dismissable warning (N reads in T seconds);
+/// `Pause`  = a hard cap requiring re-confirmation (MCP_KB_CONTRACT.md §7.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Brake {
+    Allow,
+    Notice,
+    Pause,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")] // repo convention: camelCase to the frontend; Plan 4 reads `clientLabel` / `resultCount`
+pub struct LedgerRow {
+    pub client_label: String,
+    pub tool: String,
+    pub target: String,
+    pub result_count: usize,
+    pub at: String,
+}
+
+/// Bulk-read brake tuning (a single point of truth). A sliding window of
+/// `WINDOW_SECS` seconds; `NOTICE_THRESHOLD` reads raises a non-dismissable
+/// notice; `PAUSE_THRESHOLD` reads pauses the client pending re-confirmation.
+pub(crate) const WINDOW_SECS: i64 = 60;
+pub(crate) const NOTICE_THRESHOLD: i64 = 30;
+pub(crate) const PAUSE_THRESHOLD: i64 = 100;
+
+// ---- public wrappers --------------------------------------------------------
+
+pub fn record_read(
+    client_label: &str,
+    tool: &str,
+    target: &str,
+    result_count: usize,
+) -> Result<(), String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    record_read_with_conn(&conn, client_label, tool, target, result_count)
+}
+
+pub fn recent(limit: usize) -> Result<Vec<LedgerRow>, String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    recent_with_conn(&conn, limit)
+}
+
+pub fn check_read_budget(client_label: &str) -> Result<Brake, String> {
+    let conn = db::connect().map_err(|e| e.to_string())?;
+    check_read_budget_with_conn(&conn, client_label)
+}
+
+// ---- injection-seam cores (unit-tested on an in-memory connection) ----------
+
+fn record_read_with_conn(
+    conn: &Connection,
+    client_label: &str,
+    tool: &str,
+    target: &str,
+    result_count: usize,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO mcp_activity_ledger (client_label, tool, target, result_count)
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![client_label, tool, target, result_count as i64],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn recent_with_conn(conn: &Connection, limit: usize) -> Result<Vec<LedgerRow>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT client_label, tool, target, result_count, at
+             FROM mcp_activity_ledger ORDER BY id DESC LIMIT ?1",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([limit as i64], |row| {
+            Ok(LedgerRow {
+                client_label: row.get(0)?,
+                tool: row.get(1)?,
+                target: row.get(2)?,
+                result_count: row.get::<_, i64>(3)? as usize,
+                at: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+/// Count a client's reads within the recent window and map the count to a
+/// `Brake`. The window is expressed against SQLite's own clock so the test's
+/// just-inserted rows (default `at = now`) all fall inside it.
+fn check_read_budget_with_conn(conn: &Connection, client_label: &str) -> Result<Brake, String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM mcp_activity_ledger
+             WHERE client_label = ?1
+               AND at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?2)",
+            rusqlite::params![client_label, format!("-{WINDOW_SECS} seconds")],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(if count >= PAUSE_THRESHOLD {
+        Brake::Pause
+    } else if count >= NOTICE_THRESHOLD {
+        Brake::Notice
+    } else {
+        Brake::Allow
+    })
+}
+
+// ---- tests ------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db;
+
+    // ---- Task 4.1 tests --------------------------------------------------------
+
+    #[test]
+    fn record_read_inserts_a_row() {
+        let conn = db::open_in_memory_migrated();
+        record_read_with_conn(&conn, "Claude Desktop", "kb_search", "alpha", 3).unwrap();
+
+        let (label, tool, target, count): (String, String, String, i64) = conn
+            .query_row(
+                "SELECT client_label, tool, target, result_count FROM mcp_activity_ledger",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(label, "Claude Desktop");
+        assert_eq!(tool, "kb_search");
+        assert_eq!(target, "alpha");
+        assert_eq!(count, 3);
+    }
+
+    // ---- Task 4.2 tests --------------------------------------------------------
+
+    #[test]
+    fn recent_returns_rows_newest_first() {
+        let conn = db::open_in_memory_migrated();
+        record_read_with_conn(&conn, "A", "kb_list", "-", 5).unwrap();
+        record_read_with_conn(&conn, "A", "kb_read_note", "notes/x.md", 1).unwrap();
+
+        let rows = recent_with_conn(&conn, 10).unwrap();
+        assert_eq!(rows.len(), 2);
+        // Newest (the read_note) first.
+        assert_eq!(rows[0].tool, "kb_read_note");
+        assert_eq!(rows[1].tool, "kb_list");
+    }
+
+    #[test]
+    fn check_read_budget_escalates_allow_notice_pause() {
+        let conn = db::open_in_memory_migrated();
+
+        // Below the notice threshold → Allow.
+        for _ in 0..(NOTICE_THRESHOLD - 1) {
+            record_read_with_conn(&conn, "Bulk", "kb_read_note", "n.md", 1).unwrap();
+        }
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "Bulk").unwrap(),
+            Brake::Allow
+        );
+
+        // Cross the notice threshold → Notice.
+        record_read_with_conn(&conn, "Bulk", "kb_read_note", "n.md", 1).unwrap();
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "Bulk").unwrap(),
+            Brake::Notice
+        );
+
+        // Cross the pause threshold → Pause.
+        for _ in 0..(PAUSE_THRESHOLD - NOTICE_THRESHOLD) {
+            record_read_with_conn(&conn, "Bulk", "kb_read_note", "n.md", 1).unwrap();
+        }
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "Bulk").unwrap(),
+            Brake::Pause
+        );
+
+        // A different client is unaffected (per-client budget).
+        assert_eq!(
+            check_read_budget_with_conn(&conn, "Quiet").unwrap(),
+            Brake::Allow
+        );
+    }
+}
