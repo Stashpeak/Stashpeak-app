@@ -75,21 +75,21 @@ pub fn start_watch(
             {
                 continue;
             }
-            let Ok(meta) = std::fs::symlink_metadata(&p) else {
-                continue;
-            };
-            if meta.file_type().is_symlink() || !meta.file_type().is_file() {
-                continue;
-            }
-            // Skip our own writes (write path records into `echo`).
-            // BEST-EFFORT / TOCTOU: the file is read AFTER the watcher event fires, so a
-            // concurrent external write may hash to a different value than what was recorded.
-            // False-negatives (missed suppression) are safe — we just emit an extra event.
-            // False-positives (suppressed external edit) are transient and self-correct on
-            // the next save.  Accepted debt for v1 (Plan 5 write path can tighten this).
-            if let Ok(bytes) = std::fs::read(&p) {
-                if echo.consume_echo(canonical.as_str(), content_hash(&bytes)) {
+            // Existing file: guard symlink/non-regular exclusion + echo suppression.
+            // On Err (removed / renamed-away / moved-out): the listing changed — fall through and emit.
+            if let Ok(meta) = std::fs::symlink_metadata(&p) {
+                // Never follow a symlink / non-regular file (symmetric with `list`).
+                if meta.file_type().is_symlink() || !meta.file_type().is_file() {
                     continue;
+                }
+                // Skip our own writes (write path records into `echo`).
+                // BEST-EFFORT / TOCTOU: file read AFTER the event; a concurrent write may hash
+                // differently. False-negatives (missed suppression) are safe; false-positives are
+                // transient and self-correct on the next save. Accepted debt for v1 (Plan 5).
+                if let Ok(bytes) = std::fs::read(&p) {
+                    if echo.consume_echo(canonical.as_str(), content_hash(&bytes)) {
+                        continue;
+                    }
                 }
             }
             let _ = app.emit("kb://list_changed", canonical.as_str());

@@ -189,23 +189,26 @@ mod tests {
     #[test]
     fn vault_root_round_trips() {
         let db_dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("STASHPEAK_DATA_DIR");
         // SAFETY: test-only; single-threaded (see forward note above).
         unsafe {
             std::env::set_var("STASHPEAK_DATA_DIR", db_dir.path());
         }
-        // Drop guard: ensures STASHPEAK_DATA_DIR is removed even if the test panics,
-        // preventing the deleted tempdir from leaking into later tests that call
-        // db::connect() / db::data_dir().
-        struct StashpeakDataDirGuard;
+        // Drop guard: ensures STASHPEAK_DATA_DIR is restored to its prior value (or removed
+        // if it wasn't set) even if the test panics, so a dev/CI override isn't wiped.
+        struct StashpeakDataDirGuard(Option<std::ffi::OsString>);
         impl Drop for StashpeakDataDirGuard {
             fn drop(&mut self) {
-                // SAFETY: test-only cleanup; mirrors the set_var above.
+                // SAFETY: test-only cleanup.
                 unsafe {
-                    std::env::remove_var("STASHPEAK_DATA_DIR");
+                    match &self.0 {
+                        Some(v) => std::env::set_var("STASHPEAK_DATA_DIR", v),
+                        None => std::env::remove_var("STASHPEAK_DATA_DIR"),
+                    }
                 }
             }
         }
-        let _guard = StashpeakDataDirGuard;
+        let _guard = StashpeakDataDirGuard(previous);
 
         // open() runs migrations so the `settings` table exists in the temp DB.
         crate::db::open().unwrap();

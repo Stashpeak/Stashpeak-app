@@ -33,6 +33,11 @@ pub fn to_canonical(vault_root: &Path, abs_path: &Path) -> Result<CanonicalPath,
         match comp {
             Component::Normal(os) => {
                 let s = os.to_str().ok_or_else(reject)?;
+                // Reject `:` for symmetry with to_os_path (drive-prefix safety on Windows; keeps list/read
+                // symmetric so list never emits an ID that read_note/search would refuse).
+                if s.contains(':') {
+                    return Err(reject());
+                }
                 // Canonical form is NFC (Decision #40). Reject non-NFC on-disk names rather than
                 // normalizing them: normalizing would list a name that can't be reopened on byte-exact
                 // filesystems. Non-NFC names are outside the canonical surface in v1 (a future resolver
@@ -189,5 +194,10 @@ mod tests {
     fn empty_relative_is_root_and_not_round_trippable() {
         assert_eq!(to_canonical(root(), root()).unwrap().as_str(), "");
         assert!(to_os_path(root(), "").is_err());
+    }
+
+    #[test]
+    fn to_canonical_rejects_colon_in_component() {
+        assert!(to_canonical(root(), Path::new("/vault/notes/a:b.md")).is_err());
     }
 }

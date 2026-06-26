@@ -35,11 +35,18 @@ pub fn search(vault_root: &Path, query: &str, limit: usize) -> Result<Vec<Search
         }
         let snippet = body
             .lines()
-            .find(|l| l.to_lowercase().contains(&needle))
-            .unwrap_or("")
-            .chars()
-            .take(SNIPPET_MAX)
-            .collect::<String>();
+            .find_map(|line| {
+                let lower = line.to_lowercase();
+                let hit = lower.find(&needle)?;
+                let start = lower[..hit].chars().count().saturating_sub(SNIPPET_MAX / 2);
+                Some(
+                    line.chars()
+                        .skip(start)
+                        .take(SNIPPET_MAX)
+                        .collect::<String>(),
+                )
+            })
+            .unwrap_or_default();
         hits.push(SearchHit {
             path,
             snippet,
@@ -109,5 +116,20 @@ mod tests {
         let hits = search(root, "x", 10).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].snippet.chars().count(), 200);
+    }
+
+    #[test]
+    fn snippet_centers_on_match_in_long_line() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let line = format!("{}NEEDLE tail", "x".repeat(400));
+        fs::write(root.join("long.md"), line).unwrap();
+        let hits = search(root, "needle", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(
+            hits[0].snippet.to_lowercase().contains("needle"),
+            "snippet must contain the match"
+        );
+        assert!(hits[0].snippet.chars().count() <= 200);
     }
 }

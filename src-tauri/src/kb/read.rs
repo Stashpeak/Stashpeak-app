@@ -24,6 +24,17 @@ pub fn read_note(vault_root: &Path, canonical: &str) -> Result<String, KbError> 
         return Err(KbError::PathRejected(canonical.to_string()));
     }
     let os = path::to_os_path(vault_root, canonical)?;
+    // No symlinks in the read surface (symmetric with `list`, which skips them): a symlink whose
+    // name has no dot could otherwise resolve to a hidden/other in-vault file and bypass the
+    // dotfile check above. Reject any symlinked path component before resolving.
+    let mut probe = vault_root.to_path_buf();
+    for seg in canonical.split('/') {
+        probe.push(seg);
+        let meta = std::fs::symlink_metadata(&probe).map_err(|e| KbError::Io(e.to_string()))?;
+        if meta.file_type().is_symlink() {
+            return Err(KbError::PathRejected(canonical.to_string()));
+        }
+    }
     // Symlink-escape defense: resolve ALL symlinks (incl. intermediate dirs) and
     // re-assert vault containment before reading. `Path::starts_with` is component-wise,
     // so a sibling like `<root>-evil` cannot pass as inside `<root>`.
@@ -72,7 +83,11 @@ fn walk(vault_root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), KbEr
             continue;
         }
         if ft.is_dir() {
-            walk(vault_root, &p, out)?;
+            match path::to_canonical(vault_root, &p) {
+                Ok(_) => walk(vault_root, &p, out)?,
+                Err(KbError::PathRejected(_)) => continue, // non-UTF-8/non-NFC/`:`-named dir: skip, don't descend
+                Err(e) => return Err(e),
+            }
         } else if ft.is_file() && p.extension().and_then(|e| e.to_str()) == Some(MD_EXT) {
             // `ft.is_file()` keeps FIFOs/sockets/devices out of the read surface.
             match path::to_canonical(vault_root, &p) {
@@ -122,8 +137,29 @@ mod tests {
             crate::kb::read::list(root).unwrap(),
             vec!["real.md".to_string()]
         );
-        // read_note canonicalizes + re-asserts containment → the escaping symlink is rejected.
+        // read_note now rejects symlinks via the component-walk before canonicalize.
         assert!(read_note(root, "link.md").is_err());
+        assert_eq!(read_note(root, "real.md").unwrap(), "ok");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_note_rejects_symlinks_even_to_in_vault_targets() {
+        use std::os::unix::fs::symlink;
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("real.md"), "ok").unwrap();
+        fs::write(root.join(".secret.md"), "TOP").unwrap();
+        symlink(root.join(".secret.md"), root.join("public.md")).unwrap(); // name has no dot
+        symlink(root.join("real.md"), root.join("alias.md")).unwrap();
+        assert!(
+            read_note(root, "public.md").is_err(),
+            "symlink to hidden in-vault file must be rejected"
+        );
+        assert!(
+            read_note(root, "alias.md").is_err(),
+            "symlink to in-vault regular file must be rejected (symmetric with list)"
+        );
         assert_eq!(read_note(root, "real.md").unwrap(), "ok");
     }
 
