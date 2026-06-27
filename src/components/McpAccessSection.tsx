@@ -107,28 +107,23 @@ export function McpAccessSection({
             default — turn it on only when you want to grant access.
           </p>
         </div>
-        <label className="relative block h-6 w-10 shrink-0 cursor-pointer">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={enabled}
-            disabled={busy}
-            aria-label="Toggle KB access for AI agents"
-            onChange={onToggleEnabled}
-            className="peer sr-only"
-          />
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          disabled={busy}
+          aria-label="Toggle KB access for AI agents"
+          onClick={onToggleEnabled}
+          className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-(--focus-ring) ${
+            enabled ? "bg-primary" : "bg-zinc-200"
+          }`}
+        >
           <span
-            className={`absolute inset-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-(--focus-ring) ${
-              enabled ? "bg-primary" : "bg-zinc-200"
+            className={`absolute top-1 h-4 w-4 rounded-full bg-(--toggle-thumb) shadow-sm transition-all ${
+              enabled ? "left-5" : "left-1"
             }`}
-          >
-            <span
-              className={`absolute top-1 h-4 w-4 rounded-full bg-(--toggle-thumb) shadow-sm transition-all ${
-                enabled ? "left-5" : "left-1"
-              }`}
-            />
-          </span>
-        </label>
+          />
+        </button>
       </div>
 
       {enabled && (
