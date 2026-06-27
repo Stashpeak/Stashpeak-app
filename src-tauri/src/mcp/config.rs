@@ -13,23 +13,24 @@ fn shim_command_in(dir: &Path) -> String {
 }
 
 /// Resolve the shim `command` to an absolute path next to the running app
-/// executable. Falls back to the bare binary name if `current_exe()` (or its
-/// parent) can't be resolved, so the snippet is always producible.
-fn resolve_shim_command() -> String {
-    match std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
-    {
-        Some(dir) => shim_command_in(&dir),
-        None => SHIM_BIN_NAME.to_string(),
-    }
+/// executable. Returns an error if `current_exe()` (or its parent) can't be
+/// resolved — we never emit a bare relative command, which would silently break
+/// the pasted config unless the MCP client happened to start in the app's dir.
+fn resolve_shim_command() -> Result<String, String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("could not resolve the app executable path: {e}"))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "app executable has no parent directory".to_string())?;
+    Ok(shim_command_in(dir))
 }
 
 /// The paste-ready MCP client config (Claude Desktop / Cursor share the
 /// `mcpServers` shape). The token rides in `env`. The `command` is the
-/// resolved absolute path of the stashpeak-mcp shim next to the app executable.
-pub fn client_config_snippet(token: &str) -> String {
-    let command = resolve_shim_command();
+/// resolved absolute path of the stashpeak-mcp shim next to the app executable;
+/// errors rather than emit a non-absolute command (see `resolve_shim_command`).
+pub fn client_config_snippet(token: &str) -> Result<String, String> {
+    let command = resolve_shim_command()?;
     let config = serde_json::json!({
         "mcpServers": {
             "stashpeak-kb": {
@@ -39,7 +40,7 @@ pub fn client_config_snippet(token: &str) -> String {
             }
         }
     });
-    serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string())
+    Ok(serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string()))
 }
 
 #[cfg(test)]
@@ -49,7 +50,7 @@ mod tests {
 
     #[test]
     fn snippet_includes_binary_and_token_and_is_valid_json() {
-        let s = client_config_snippet("spk_mcp_abc123");
+        let s = client_config_snippet("spk_mcp_abc123").expect("snippet resolves in tests");
         assert!(s.contains("stashpeak-mcp"));
         assert!(s.contains("spk_mcp_abc123"));
         assert!(s.contains("STASHPEAK_MCP_TOKEN"));
@@ -88,7 +89,7 @@ mod tests {
 
     #[test]
     fn snippet_command_is_absolute() {
-        let s = client_config_snippet("spk_mcp_test");
+        let s = client_config_snippet("spk_mcp_test").expect("snippet resolves in tests");
         let v: serde_json::Value = serde_json::from_str(&s).expect("snippet is valid json");
         let cmd = v["mcpServers"]["stashpeak-kb"]["command"]
             .as_str()

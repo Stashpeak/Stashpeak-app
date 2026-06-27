@@ -42,6 +42,11 @@ export function McpAccessSectionContainer({
   // await invalidates the stale result and a discarded secret can't reappear.
   const mintRequestIdRef = useRef(0);
 
+  // One copy-flash timer per button, so a quick second copy doesn't let the
+  // first timer flip the "Copied" label back to false mid-flash.
+  const copyTokenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copySnippetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const refreshTokens = useCallback(async () => {
     setTokens(await listMcpTokens());
   }, []);
@@ -164,7 +169,10 @@ export function McpAccessSectionContainer({
     try {
       await navigator.clipboard.writeText(mintedToken);
       setCopiedToken(true);
-      setTimeout(() => setCopiedToken(false), COPY_FLASH_MS);
+      if (copyTokenTimer.current) {
+        clearTimeout(copyTokenTimer.current);
+      }
+      copyTokenTimer.current = setTimeout(() => setCopiedToken(false), COPY_FLASH_MS);
     } catch (error) {
       onError(String(error));
     }
@@ -177,7 +185,10 @@ export function McpAccessSectionContainer({
     try {
       await navigator.clipboard.writeText(mintedSnippet);
       setCopiedSnippet(true);
-      setTimeout(() => setCopiedSnippet(false), COPY_FLASH_MS);
+      if (copySnippetTimer.current) {
+        clearTimeout(copySnippetTimer.current);
+      }
+      copySnippetTimer.current = setTimeout(() => setCopiedSnippet(false), COPY_FLASH_MS);
     } catch (error) {
       onError(String(error));
     }
