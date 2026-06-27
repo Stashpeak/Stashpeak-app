@@ -39,7 +39,6 @@ src-tauri/gen/
 *.njsproj
 *.sln
 *.sw?
-AGENTS.md
 .roo/rules-architect/AGENTS.md
 .roo/rules-ask/AGENTS.md
 .roo/rules-code/AGENTS.md
