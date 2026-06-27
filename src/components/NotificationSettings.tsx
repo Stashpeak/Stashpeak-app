@@ -40,27 +40,22 @@ export function NotificationSettings({
             Notify when a subscription is about to renew
           </p>
         </div>
-        <label className="relative block w-10 h-6 shrink-0 cursor-pointer">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={enabled}
-            aria-label="Toggle billing renewal reminders"
-            onChange={onToggleEnabled}
-            className="sr-only"
-          />
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Toggle billing renewal reminders"
+          onClick={onToggleEnabled}
+          className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-(--focus-ring) ${
+            enabled ? "bg-primary" : "bg-zinc-200"
+          }`}
+        >
           <span
-            className={`absolute inset-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-zinc-200"
+            className={`absolute top-1 h-4 w-4 rounded-full bg-(--toggle-thumb) shadow-sm transition-all ${
+              enabled ? "left-5" : "left-1"
             }`}
-          >
-            <span
-              className={`absolute top-1 w-4 h-4 rounded-full bg-(--toggle-thumb) shadow-sm transition-all ${
-                enabled ? "left-5" : "left-1"
-              }`}
-            />
-          </span>
-        </label>
+          />
+        </button>
       </div>
 
       {enabled && (

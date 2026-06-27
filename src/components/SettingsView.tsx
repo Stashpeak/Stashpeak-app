@@ -175,20 +175,22 @@ export function SettingsView({
                   <div key={provider.id} className="flex items-center justify-between">
                     <span className="text-sm text-ink">{provider.name}</span>
                     <button
+                      type="button"
                       role="switch"
                       aria-checked={providerStates[provider.id] ?? true}
+                      aria-label={`Toggle ${provider.name} connector`}
                       onClick={() =>
                         void handleProviderToggle(
                           provider.id,
                           !(providerStates[provider.id] ?? true),
                         )
                       }
-                      className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors ${
+                      className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-(--focus-ring) ${
                         (providerStates[provider.id] ?? true) ? "bg-primary" : "bg-zinc-200"
                       }`}
                     >
                       <span
-                        className={`absolute top-1 h-4 w-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
+                        className={`absolute top-1 h-4 w-4 rounded-full bg-(--toggle-thumb) shadow-sm transition-all ${
                           (providerStates[provider.id] ?? true) ? "left-5" : "left-1"
                         }`}
                       />
