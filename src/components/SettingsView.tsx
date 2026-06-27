@@ -183,12 +183,12 @@ export function SettingsView({
                           !(providerStates[provider.id] ?? true),
                         )
                       }
-                      className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors ${
+                      className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-(--focus-ring) ${
                         (providerStates[provider.id] ?? true) ? "bg-primary" : "bg-zinc-200"
                       }`}
                     >
                       <span
-                        className={`absolute top-1 h-4 w-4 rounded-full bg-[var(--toggle-thumb)] shadow-sm transition-all ${
+                        className={`absolute top-1 h-4 w-4 rounded-full bg-(--toggle-thumb) shadow-sm transition-all ${
                           (providerStates[provider.id] ?? true) ? "left-5" : "left-1"
                         }`}
                       />
