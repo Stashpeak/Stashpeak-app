@@ -111,7 +111,6 @@ export function McpAccessSection({
           type="button"
           role="switch"
           aria-checked={enabled}
-          disabled={busy}
           aria-label="Toggle KB access for AI agents"
           onClick={onToggleEnabled}
           className={`relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-(--focus-ring) ${
