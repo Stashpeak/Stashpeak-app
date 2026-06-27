@@ -175,8 +175,10 @@ export function SettingsView({
                   <div key={provider.id} className="flex items-center justify-between">
                     <span className="text-sm text-ink">{provider.name}</span>
                     <button
+                      type="button"
                       role="switch"
                       aria-checked={providerStates[provider.id] ?? true}
+                      aria-label={`Toggle ${provider.name} connector`}
                       onClick={() =>
                         void handleProviderToggle(
                           provider.id,
