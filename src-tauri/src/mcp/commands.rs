@@ -60,5 +60,5 @@ pub async fn mcp_recent_activity(limit: usize) -> Result<Vec<ledger::LedgerRow>,
 
 #[tauri::command]
 pub async fn mcp_client_config_snippet(token: String) -> Result<String, String> {
-    Ok(config::client_config_snippet(&token))
+    config::client_config_snippet(&token)
 }

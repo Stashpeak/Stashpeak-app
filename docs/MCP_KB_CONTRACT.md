@@ -257,6 +257,8 @@ The token model says **nothing** about the most realistic vector: a **legitimate
 - **Resource-holding contribution** (Decision #24): the in-app MCP service (the IPC listener + token store + ledger) **starts/stops with the KB connector** (~0.6.0 lifecycle). v1 **binds no network port** (stdio + local IPC only).
 - **Shim installation/registration:** enabling the feature surfaces the exact MCP-client config snippet (the `stashpeak-mcp` command + the minted token) for Claude Desktop / Cursor, so the user can paste it in. Shipping/locating the shim binary alongside the app is an implementation detail for the plan.
 
+> **Implementation status:** the Settings "KB access for AI agents" section (this enable toggle, token mint/revoke, the config snippet, and the read activity-log view) is built in **Plan 4** — `docs/superpowers/plans/2026-06-26-mcp-plan4-frontend-settings.md`; it consumes the Plan 3 `mcp_*` Tauri commands. Plan 4 also makes `config::client_config_snippet` emit the shim's **absolute** path (#227); bundling the shim as a sidecar so that path resolves in a packaged build is tracked in #230.
+
 ---
 
 ## 12. Threat model — T13 (owned here) + residuals

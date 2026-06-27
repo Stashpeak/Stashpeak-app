@@ -3,6 +3,7 @@ import { getProviderEnabled, setProviderEnabled } from "../lib/connectors";
 import type { ResolvedTheme, Theme } from "../hooks/useTheme";
 import { SECONDARY_BUTTON_SURFACE } from "../lib/surfaceStyles";
 import { ExchangeRatesSection } from "./ExchangeRatesSection";
+import { McpAccessSectionContainer } from "./McpAccessSectionContainer";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { SelectableErrorMessage } from "./SelectableErrorMessage";
 import { UpdateSection } from "./UpdateSection";
@@ -45,6 +46,7 @@ export function SettingsView({
   const [subCurrencies, setSubCurrencies] = useState<string[]>([]);
   const [notificationReady, setNotificationReady] = useState(false);
   const [exchangeReady, setExchangeReady] = useState(false);
+  const [mcpReady, setMcpReady] = useState(false);
 
   useEffect(() => {
     Promise.all(
@@ -82,7 +84,7 @@ export function SettingsView({
     }
   }
 
-  const contentReady = notificationReady && exchangeReady;
+  const contentReady = notificationReady && exchangeReady && mcpReady;
 
   return (
     <div className="flex h-full flex-col">
@@ -199,6 +201,10 @@ export function SettingsView({
             <div className="border-t border-zinc-100" />
 
             <UpdateSection updateAvailable={updateAvailable} onUpdateConsumed={onUpdateConsumed} />
+
+            <div className="border-t border-zinc-100" />
+
+            <McpAccessSectionContainer onError={setLoadError} onReadyChange={setMcpReady} />
           </div>
         </div>
       </div>
