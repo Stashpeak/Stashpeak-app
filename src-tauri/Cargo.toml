@@ -4,6 +4,10 @@ version = "0.3.0"
 description = "A dashboard for your AI ecosystem"
 authors = ["Stashpeak"]
 edition = "2021"
+# Two binaries ship from this crate (the app + the `stashpeak-mcp` shim), so a
+# bare `cargo run` (used by `tauri dev`) is ambiguous without this — point it at
+# the app binary.
+default-run = "stashpeak"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
