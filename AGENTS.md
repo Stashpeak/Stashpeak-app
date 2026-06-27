@@ -32,7 +32,7 @@ Tauri 2 desktop app: React 19 + TypeScript + Tailwind CSS v4 frontend, Rust back
 
 ## Git Hooks
 
-- Commit messages MUST reference an issue: `#N` (e.g., `fix: label alignment (refs #29)`)
+- Commit messages MUST reference an issue: `#N` (e.g., `fix: label alignment (refs #29)`). Doc-only `docs:`-prefixed commits are exempt (see `CONTRIBUTING.md`).
 - Hook at [`.githooks/commit-msg`](.githooks/commit-msg); auto-configured via `npm install`
 
 ## Architecture Notes
@@ -71,4 +71,4 @@ Before adding a UI element, helper, or pattern, GREP for how it's already done a
 
 - Comment the WHY, not the WHAT — explain non-obvious decisions, constraints, invariants, gotchas, and security-sensitive steps; never write comments that restate the code.
 - Doc-comment public/exported items (Rust `///`, TS JSDoc). English only.
-- Applies to AI agents too. Full policy: `../internal-docs/Operations/Code Documentation Policy.md`.
+- Applies to AI agents too. Full policy: `Operations/Code Documentation Policy.md` in the `internal-docs` repo (a sibling repository, not part of this checkout).
