@@ -222,6 +222,11 @@ export function CategorySelector({
               setActiveIndex(-1);
             }}
             onFocus={() => {
+              // Dropdown (readonly) mode: focus alone must not open the menu, so
+              // Tab only moves focus. It still opens on click, Enter/Space, and the
+              // arrow keys. Autocomplete mode keeps open-on-focus so suggestions
+              // show as the field gains focus.
+              if (readonlyInput) return;
               setIsOpen(true);
               setIsFiltering(false);
               setActiveIndex(-1);
