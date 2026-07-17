@@ -1,5 +1,6 @@
 # Copy to .github/workflows/review-bot.yml in a Stashpeak org repo.
-# Secrets needed (org level): CLAUDE_CODE_OAUTH_TOKEN, OPENROUTER_API_KEY, REVIEWBOT_PAT.
+# Secrets needed (org level): CLAUDE_CODE_OAUTH_TOKEN, OPENROUTER_API_KEY, REVIEWBOT_PAT,
+#   REVIEWBOT_SUPABASE_URL + REVIEWBOT_SUPABASE_KEY (optional - central data store).
 # REVIEWBOT_PAT is required because review-bot is a private repo and public org repos
 # cannot resolve private actions via `uses:` - we checkout with the PAT instead.
 name: Review Bot
